@@ -1,0 +1,40 @@
+name: gymbroapp
+description: "GymBro — Flutter client (trainee + coach-lite) for the existing GymBro platform."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.6.0
+  flutter: ">=3.27.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management — the Riverpod analogue of the Portal's "state in service signals".
+  flutter_riverpod: ^2.5.1
+
+  # Networking — Dio + a native cookie jar so the client speaks the EXISTING cookie-based
+  # refresh protocol (the planned native/body refresh transport was never added to the API).
+  dio: ^5.7.0
+  cookie_jar: ^4.0.8
+  dio_cookie_manager: ^3.1.1
+
+  # Secrets at rest: access token stays in memory; the refresh cookie is persisted in the
+  # OS keystore via a secure-storage-backed cookie jar (see core/network/secure_cookie_storage.dart).
+  flutter_secure_storage: ^9.2.2
+
+  # Navigation
+  go_router: ^14.6.2
+
+  # Design fidelity — Inter Tight (the portal/design typeface), fetched + cached at runtime.
+  google_fonts: ^6.2.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  mocktail: ^1.0.4
+
+flutter:
+  uses-material-design: true

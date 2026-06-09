@@ -1,0 +1,221 @@
+/* ============================================================
+   GymBro Mobile — design tokens ported from the Angular portal
+   (src/styles.scss :root). Single source of truth for the
+   prototype + strategy doc. Hex values are 1:1 with the portal.
+   ============================================================ */
+
+:root {
+  --inv-font-sans: 'Inter Tight', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  /* spacing */
+  --inv-space-1: 0.25rem;
+  --inv-space-2: 0.5rem;
+  --inv-space-3: 0.75rem;
+  --inv-space-4: 1rem;
+  --inv-space-5: 1.5rem;
+  --inv-space-6: 2rem;
+  --inv-space-7: 2.5rem;
+  --inv-space-8: 3rem;
+
+  /* radii */
+  --inv-radius-sm: 8px;
+  --inv-radius-md: 12px;
+  --inv-radius-lg: 16px;
+
+  /* shadows */
+  --inv-shadow-card: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --inv-shadow-md:   0 4px 6px -1px rgba(0,0,0,0.07), 0 2px 4px -2px rgba(0,0,0,0.04);
+  --inv-shadow-lg:   0 10px 15px -3px rgba(0,0,0,0.08), 0 4px 6px -4px rgba(0,0,0,0.03);
+
+  /* type scale */
+  --inv-text-h1: 3rem;
+  --inv-text-h2: 2.5rem;
+  --inv-text-h3: 2rem;
+  --inv-text-h4: 1.5rem;
+  --inv-text-h5: 1.25rem;
+  --inv-text-h6: 1rem;
+  --inv-text-body-lg: 1.125rem;
+  --inv-text-body-md: 1rem;
+  --inv-text-body-sm: 0.875rem;
+  --inv-text-body-mini: 0.75rem;
+
+  /* primary — blue only (no purple) */
+  --inv-primary-0: #eff6ff;
+  --inv-primary-25: #dbeafe;
+  --inv-primary-50: #bfdbfe;
+  --inv-primary-100: #93c5fd;
+  --inv-primary-200: #60a5fa;
+  --inv-primary-300: #1e3a8a;
+  --inv-primary-400: #38bdf8;
+  --inv-primary-500: #3b82f6;
+  --inv-primary-600: #2563eb;
+  --inv-primary-700: #1d4ed8;
+  --inv-primary-800: #1e40af;
+  --inv-primary-900: #172554;
+
+  --inv-surface-base: #ffffff;
+
+  --inv-secondary-0: #eff6ff;
+  --inv-secondary-25: #e0f2fe;
+  --inv-secondary-50: #bae6fd;
+  --inv-secondary-100: #7dd3fc;
+  --inv-secondary-200: #38bdf8;
+  --inv-secondary-300: #0284c7;
+
+  --inv-grey-0: #f7f8f9;
+  --inv-grey-25: #eceff2;
+  --inv-grey-50: #d0d5dd;
+  --inv-grey-100: #c8ccd4;
+  --inv-grey-200: #b5bac5;
+  --inv-grey-300: #98a1b0;
+  --inv-grey-400: #858c9d;
+  --inv-grey-500: #667085;
+  --inv-grey-600: #475467;
+  --inv-grey-700: #344054;
+  --inv-grey-800: #1a2230;
+  --inv-grey-900: #0b1220; /* portal uses #000; nudged to near-black for screen comfort */
+
+  --inv-sky-0: #e0f5ff;
+  --inv-sky-25: #b8e8fc;
+  --inv-sky-50: #7ed4f2;
+  --inv-sky-100: #3db8e0;
+  --inv-sky-200: #1a8fb8;
+  --inv-sky-300: #0084b3;
+
+  --inv-success-0: #e6f9f4;
+  --inv-success-25: #c5efe3;
+  --inv-success-50: #7fd9c1;
+  --inv-success-100: #3fbf9a;
+  --inv-success-200: #259e7c;
+  --inv-success-300: #178265;
+
+  --inv-warning-0: #fff9e6;
+  --inv-warning-25: #ffeec2;
+  --inv-warning-50: #fbd582;
+  --inv-warning-100: #ffb040;
+  --inv-warning-200: #996021;
+  --inv-warning-300: #5d3e1c;
+
+  --inv-error-0: #ffe6e6;
+  --inv-error-25: #ffc8c8;
+  --inv-error-50: #f28e8e;
+  --inv-error-100: #e02424;
+  --inv-error-200: #a32020;
+  --inv-error-300: #802626;
+
+  --inv-border-card: #e5e7eb;
+  --inv-border-field: #d1d5db;
+  --inv-catalog-chip-radius: 4px;
+
+  /* ==========================================================
+     Athletic-Premium polish layer (additive — refines the
+     mobile prototype without altering portal-parity tokens).
+     ========================================================== */
+
+  /* App canvas — a touch cooler & deeper than flat grey */
+  --gb-canvas: #f1f4f9;
+  --gb-card: #ffffff;
+  --gb-ink: #0b1220;          /* near-black display ink */
+  --gb-ink-soft: #2b3647;
+
+  /* Signature gradients */
+  --gb-hero: linear-gradient(150deg, #2f6bff 0%, #1d4ed8 52%, #1b2f8a 100%);
+  --gb-hero-deep: linear-gradient(155deg, #1e3a8a 0%, #14235e 100%);
+  --gb-accent: #3b82f6;
+  --gb-accent-ink: #1d4ed8;
+
+  /* Athletic accents */
+  --gb-emerald: #10b981;
+  --gb-emerald-soft: #d6f5ea;
+  --gb-emerald-ink: #0f7a5a;
+  --gb-amber: #f59e0b;
+  --gb-amber-soft: #fdf0d4;
+  --gb-amber-ink: #b4730b;
+
+  /* Premium shadows — softer, more spread, lower opacity */
+  --gb-shadow-sm: 0 1px 2px rgba(16,28,54,0.05), 0 2px 6px rgba(16,28,54,0.04);
+  --gb-shadow:    0 2px 6px rgba(16,28,54,0.05), 0 10px 24px -10px rgba(16,28,54,0.14);
+  --gb-shadow-lg: 0 8px 18px -8px rgba(16,28,54,0.16), 0 22px 48px -22px rgba(16,28,54,0.22);
+  --gb-shadow-blue: 0 10px 26px -8px rgba(37,99,235,0.45);
+  --gb-shadow-blue-sm: 0 4px 14px -4px rgba(37,99,235,0.42);
+
+  /* Radii — slightly rounder for a friendlier, premium feel */
+  --gb-r-sm: 12px;
+  --gb-r-md: 16px;
+  --gb-r-lg: 20px;
+  --gb-r-xl: 26px;
+}
+
+/* tabular, athletic number display */
+.gb-num { font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.gb-eyebrow {
+  font-size: 10.5px; font-weight: 800; letter-spacing: 0.12em;
+  text-transform: uppercase; white-space: nowrap;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: var(--inv-font-sans);
+  color: var(--inv-grey-900);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ============================================================
+   Strategy-doc utility layer (used only by the doc, not the
+   prototype, which inlines styles via var() references).
+   ============================================================ */
+
+.doc-wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+.eyebrow {
+  font-size: 12px; font-weight: 700; letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--inv-primary-600);
+}
+.muted { color: var(--inv-grey-500); }
+
+.card {
+  background: var(--inv-surface-base);
+  border: 1px solid var(--inv-border-card);
+  border-radius: var(--inv-radius-lg);
+  box-shadow: var(--inv-shadow-card);
+}
+
+.pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  border-radius: 999px; padding: 4px 12px;
+  font-size: 12px; font-weight: 600; line-height: 1.2;
+}
+.pill--include { background: var(--inv-success-0); color: var(--inv-success-300); }
+.pill--exclude { background: var(--inv-grey-25); color: var(--inv-grey-600); }
+.pill--future  { background: var(--inv-warning-0); color: var(--inv-warning-300); }
+
+.tag {
+  display: inline-flex; align-items: center; gap: 6px;
+  border-radius: var(--inv-catalog-chip-radius);
+  padding: 3px 8px; font-size: 12px; font-weight: 600;
+  background: var(--inv-primary-0); color: var(--inv-primary-700);
+}
+
+.doc-table { width: 100%; border-collapse: collapse; }
+.doc-table th {
+  text-align: left; font-size: 12px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--inv-grey-500); padding: 12px 16px;
+  border-bottom: 1px solid var(--inv-border-card);
+}
+.doc-table td {
+  padding: 14px 16px; font-size: 14px; vertical-align: top;
+  border-bottom: 1px solid var(--inv-border-card);
+  color: var(--inv-grey-700); line-height: 1.5;
+}
+.doc-table tr:last-child td { border-bottom: none; }
+.doc-table td strong { color: var(--inv-grey-900); font-weight: 600; }
+
+code.tok {
+  font-family: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 0.86em; background: var(--inv-grey-0);
+  border: 1px solid var(--inv-border-card); border-radius: 5px;
+  padding: 1px 6px; color: var(--inv-primary-700);
+}
