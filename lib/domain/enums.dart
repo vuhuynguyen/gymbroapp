@@ -93,6 +93,28 @@ enum PerformedSetType implements WireEnum {
       };
 }
 
+/// How an exercise is logged. Mirrors the API's `ExerciseTrackingType` (BuildingBlocks.Shared.Tracking)
+/// and drives which set metrics the live logger shows/requires. See `exercise_tracking.dart`.
+enum ExerciseTrackingType implements WireEnum {
+  strength('strength', 1),
+  bodyweight('bodyweight', 2),
+  cardio('cardio', 3),
+  timed('timed', 4),
+  hiit('hiit', 5),
+  mobility('mobility', 6),
+  custom('custom', 7);
+
+  const ExerciseTrackingType(this.wire, this.value);
+  @override
+  final String wire;
+  @override
+  final int value;
+
+  static ExerciseTrackingType parse(Object? raw,
+          {ExerciseTrackingType fallback = ExerciseTrackingType.strength}) =>
+      parseWire(values, raw) ?? fallback;
+}
+
 enum ExercisePerformStatus implements WireEnum {
   inProgress('inProgress', 1),
   completed('completed', 2),

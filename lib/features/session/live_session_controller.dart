@@ -75,6 +75,8 @@ class LiveSessionState {
 /// single-active rule; this controller mirrors the Portal's optimistic in-place updates.
 class LiveSessionController extends AutoDisposeNotifier<LiveSessionState> {
   Timer? _ticker;
+  /// Wall-clock moment the current rest began; used to auto-capture the actual rest taken on the next set.
+  DateTime? _restStartedAt;
   SessionRepository get _repo => ref.read(sessionRepositoryProvider);
 
   @override
@@ -162,6 +164,13 @@ class LiveSessionController extends AutoDisposeNotifier<LiveSessionState> {
     double? weightKg,
     int? rpe,
     PerformedSetType? setType,
+    int? durationSeconds,
+    int? distanceM,
+    int? calories,
+    int? avgHeartRate,
+    int? rounds,
+    int? restSeconds,
+    String? parentSetId,
   }) async {
     final session = state.session;
     final ex = _findExercise(exerciseId);
@@ -169,9 +178,35 @@ class LiveSessionController extends AutoDisposeNotifier<LiveSessionState> {
 
     final setNumber = ex.sets.length + 1;
     final snap = _snapshotFor(session, ex);
-    final snapSet = (snap != null && snap.sets.length >= setNumber)
+
+    final resolvedType = parentSetId != null
+        ? PerformedSetType.drop
+        : (setType ??
+            ((snap != null && snap.sets.length >= setNumber)
+                ? PerformedSetType.parse(snap.sets[setNumber - 1].setType.wire)
+                : PerformedSetType.working));
+
+    // A Drop set auto-links to the last lead set, so the cluster rolls up as ONE logical set —
+    // the user just picks "Drop" from the set-type selector (no separate "add drop" action).
+    var linkParent = parentSetId;
+    if (linkParent == null && resolvedType == PerformedSetType.drop) {
+      final leads = ex.sets.where((s) => s.parentSetId == null).toList();
+      if (leads.isNotEmpty) linkParent = leads.last.id;
+    }
+    final isDropStage = linkParent != null;
+
+    // A drop stage continues the lead set, so it doesn't pull from the plan's next prescribed set.
+    final snapSet = (!isDropStage && snap != null && snap.sets.length >= setNumber)
         ? snap.sets[setNumber - 1]
         : null;
+
+    // Rest is logged only on a lead set; a passed value overrides the auto-captured actual rest taken.
+    final effectiveRest = isDropStage
+        ? null
+        : (restSeconds ??
+            (_restStartedAt != null
+                ? DateTime.now().difference(_restStartedAt!).inSeconds
+                : null));
 
     await _mutate(() async {
       final logged = await _repo.logSet(
@@ -179,21 +214,57 @@ class LiveSessionController extends AutoDisposeNotifier<LiveSessionState> {
         ex.id,
         LogSetRequest(
           planSetId: snapSet?.planSetId,
+          parentSetId: linkParent,
           setNumber: setNumber,
-          setType: setType ??
-              (snapSet != null
-                  ? PerformedSetType.parse(snapSet.setType.wire)
-                  : PerformedSetType.working),
+          setType: resolvedType,
           reps: reps,
           weightKg: weightKg,
           rpe: rpe,
+          durationSeconds: durationSeconds,
+          distanceM: distanceM,
+          calories: calories,
+          avgHeartRate: avgHeartRate,
+          rounds: rounds,
+          restSeconds: effectiveRest,
         ),
       );
       _replaceExercise(ex.id, ex.copyWith(sets: [...ex.sets, logged]));
-      final plannedRest = snapSet?.restSeconds ?? 0;
-      final restSeconds = plannedRest > 0 ? plannedRest : 90;
-      state = state.copyWith(rest: RestTimerState(restSeconds, restSeconds));
+      _restStartedAt = null;
+      if (isDropStage) return; // drop stage: no rest timer, no superset rotation
+      _advanceAfterSet(ex, snapSet?.restSeconds ?? 0);
     });
+  }
+
+  /// Exercises performed together as a superset (same group id), ordered; just [ex] when standalone.
+  List<PerformedExercise> _supersetPeers(PerformedExercise ex) {
+    final session = state.session;
+    if (session == null || ex.supersetGroupId == null) return [ex];
+    return session.exercises
+        .where((e) => e.supersetGroupId == ex.supersetGroupId)
+        .toList()
+      ..sort((a, b) => a.order.compareTo(b.order));
+  }
+
+  /// Superset-aware progression: rotate to the next peer; rest only after the round wraps to the first peer.
+  void _advanceAfterSet(PerformedExercise ex, int plannedRest) {
+    final rest = plannedRest > 0 ? plannedRest : 90;
+    final peers = _supersetPeers(ex);
+    if (peers.length > 1) {
+      final idx = peers.indexWhere((p) => p.id == ex.id);
+      final next = peers[(idx + 1) % peers.length];
+      if (next.id == peers.first.id) {
+        // Round complete → rest, then resume on the first peer.
+        _restStartedAt = DateTime.now();
+        state = state.copyWith(
+            currentExerciseId: next.id, rest: RestTimerState(rest, rest));
+      } else {
+        // Mid-round → straight to the next exercise, no rest.
+        state = state.copyWith(currentExerciseId: next.id, clearRest: true);
+      }
+      return;
+    }
+    _restStartedAt = DateTime.now();
+    state = state.copyWith(rest: RestTimerState(rest, rest));
   }
 
   Future<void> editSet(

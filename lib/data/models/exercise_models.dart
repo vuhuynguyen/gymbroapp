@@ -1,4 +1,5 @@
 import '../../core/utils/json.dart';
+import '../../domain/enums.dart';
 
 /// `GET /api/exercises` → ExerciseDto[] (global catalog; used by the add/substitute picker).
 class ExerciseSummary {
@@ -6,6 +7,7 @@ class ExerciseSummary {
     required this.id,
     required this.name,
     required this.type,
+    this.trackingType = ExerciseTrackingType.strength,
     required this.movementType,
     required this.difficulty,
     required this.equipment,
@@ -18,6 +20,9 @@ class ExerciseSummary {
   final String id;
   final String name;
   final String type;
+
+  /// Logging mode (Strength/Bodyweight/Cardio/Timed/Hiit/Mobility/Custom).
+  final ExerciseTrackingType trackingType;
   final String movementType;
   final String difficulty;
   final String equipment;
@@ -30,6 +35,7 @@ class ExerciseSummary {
         id: j['id'].toString(),
         name: asString(j['name']) ?? '',
         type: asString(j['type']) ?? '',
+        trackingType: ExerciseTrackingType.parse(j['trackingType']),
         movementType: asString(j['movementType']) ?? '',
         difficulty: asString(j['difficulty']) ?? '',
         equipment: asString(j['equipment']) ?? '',

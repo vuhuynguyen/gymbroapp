@@ -288,29 +288,30 @@ class GbStepper extends StatelessWidget {
                     letterSpacing: 0.8,
                     color: gb.grey400)),
           ),
-        // Scale the [−][value][+] group down to fit narrow halves (two steppers sit side by side in
-        // the live-session card) rather than overflowing; renders at natural size when there's room.
-        FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _btn(gb, Icons.remove, 'Decrease $name',
-                  () => onChanged((value - step).clamp(0, 100000))),
-              const SizedBox(width: 6),
-              Semantics(
-                label: announced,
-                excludeSemantics: true,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(minWidth: 48),
+        // Constant-width [−][value][+] group: fixed buttons + a fixed value slot whose number scales to fit.
+        // No outer scaling, so every stepper is the same size and the ± buttons line up across rows/columns,
+        // and the layout never shifts as the value changes.
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _btn(gb, Icons.remove, 'Decrease $name',
+                () => onChanged((value - step).clamp(0, 100000))),
+            const SizedBox(width: 6),
+            Semantics(
+              label: announced,
+              excludeSemantics: true,
+              child: SizedBox(
+                width: 58,
+                height: 34,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.center,
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.baseline,
                     textBaseline: TextBaseline.alphabetic,
                     children: [
                       Text(display,
-                          textAlign: TextAlign.center,
                           style: const TextStyle(
                                   fontSize: 26, fontWeight: FontWeight.w800)
                               .tabular),
@@ -324,11 +325,11 @@ class GbStepper extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 6),
-              _btn(gb, Icons.add, 'Increase $name',
-                  () => onChanged(value + step)),
-            ],
-          ),
+            ),
+            const SizedBox(width: 6),
+            _btn(gb, Icons.add, 'Increase $name',
+                () => onChanged(value + step)),
+          ],
         ),
       ],
     );

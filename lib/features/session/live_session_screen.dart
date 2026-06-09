@@ -6,6 +6,7 @@ import '../../data/models/exercise_models.dart';
 import '../../data/models/session_models.dart';
 import '../../data/repositories/exercise_repository.dart';
 import '../../domain/enums.dart';
+import '../../domain/exercise_tracking.dart';
 import '../../domain/session_metrics.dart';
 import '../../shared/widgets/widgets.dart';
 import 'live_session_controller.dart';
@@ -30,9 +31,13 @@ const _setTypeCycle = [
 
 class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
   String? _entryKey;
-  double _weight = 0;
-  int _reps = 0;
+  // Mode-aware entry values keyed by metric (weight is a double, the rest ints).
+  final Map<TrackingMetric, num> _entry = {};
   PerformedSetType _entryType = PerformedSetType.working;
+  /// Reveals the secondary metric inputs (calories / heart rate / rest) for the current entry.
+  bool _showMoreMetrics = false;
+
+  num _val(TrackingMetric m) => _entry[m] ?? 0;
 
   @override
   void initState() {
@@ -51,10 +56,22 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
     final key = '${ex.id}:${ex.sets.length}';
     if (key == _entryKey) return;
     _entryKey = key;
+    _showMoreMetrics = false;
     final snapSet = _snapshotSetFor(st, ex, ex.sets.length);
     final last = ex.sets.isNotEmpty ? ex.sets.last : null;
-    _weight = last?.weightKg ?? snapSet?.targetWeightKg ?? 0;
-    _reps = last?.reps ?? snapSet?.targetReps ?? 0;
+
+    // Seed each metric the exercise's mode uses, preferring the last logged value then the plan target.
+    _entry
+      ..clear()
+      ..[TrackingMetric.weight] = last?.weightKg ?? snapSet?.targetWeightKg ?? 0
+      ..[TrackingMetric.reps] = last?.reps ?? snapSet?.targetReps ?? 0
+      ..[TrackingMetric.duration] = last?.durationSeconds ?? snapSet?.targetDurationSeconds ?? 0
+      ..[TrackingMetric.distance] = last?.distanceM ?? snapSet?.targetDistanceM ?? 0
+      ..[TrackingMetric.rounds] = last?.rounds ?? snapSet?.targetRounds ?? 0
+      ..[TrackingMetric.calories] = last?.calories ?? 0
+      ..[TrackingMetric.heartRate] = last?.avgHeartRate ?? 0
+      // 0 = auto-capture the actual rest from the timer; the user can bump it to override.
+      ..[TrackingMetric.rest] = 0;
     _entryType = last?.setType ??
         (snapSet != null
             ? PerformedSetType.parse(snapSet.setType.wire)
@@ -86,13 +103,34 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
   int? _plannedCount(LiveSessionState st, PerformedExercise ex) =>
       _snapshotSetsFor(st, ex).length;
 
-  Future<void> _logSet(String exerciseId) async {
-    if (_reps <= 0 && _weight <= 0) {
-      showInfoSnack(context, 'Enter your reps (and weight) to log the set.');
+  Future<void> _logSet(String exerciseId, ExerciseTrackingType type) async {
+    final values = SetMetricValues(
+      reps: _val(TrackingMetric.reps).toInt(),
+      weightKg: _val(TrackingMetric.weight).toDouble(),
+      durationSeconds: _val(TrackingMetric.duration).toInt(),
+      distanceM: _val(TrackingMetric.distance).toInt(),
+      rounds: _val(TrackingMetric.rounds).toInt(),
+    );
+    // Mode-aware required-metric check (mirrors the server): strength needs reps, cardio
+    // duration/distance, HIIT rounds/duration; mobility accepts a marked-done set.
+    if (!hasRequiredMetric(type, values)) {
+      showInfoSnack(context, requiredMetricMessage(type));
       return;
     }
-    await _ctrl.logSet(exerciseId,
-        reps: _reps, weightKg: _weight, setType: _entryType);
+    final rest = _val(TrackingMetric.rest).toInt();
+    await _ctrl.logSet(
+      exerciseId,
+      reps: values.reps,
+      weightKg: values.weightKg,
+      setType: _entryType,
+      durationSeconds: values.durationSeconds,
+      distanceM: values.distanceM,
+      rounds: values.rounds,
+      calories: _val(TrackingMetric.calories).toInt(),
+      avgHeartRate: _val(TrackingMetric.heartRate).toInt(),
+      // 0 → let the controller auto-capture the actual rest taken from the timer; >0 overrides it.
+      restSeconds: rest > 0 ? rest : null,
+    );
   }
 
   Future<void> _confirmDeleteSet(String exerciseId, PerformedSet set) async {
@@ -134,7 +172,18 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
   }
 
   Future<void> _finish() async {
-    final id = ref.read(liveSessionControllerProvider).session?.sessionId;
+    final st = ref.read(liveSessionControllerProvider);
+    final id = st.session?.sessionId;
+    // Nothing logged → there's no workout to complete; save it as abandoned instead.
+    final hasAnySet = st.exercises.any((e) => e.sets.isNotEmpty);
+    if (!hasAnySet) {
+      final done = await _ctrl.abandon();
+      if (done && mounted) {
+        showInfoSnack(context, 'Nothing logged — session discarded.');
+        context.go('/log');
+      }
+      return;
+    }
     final done = await _ctrl.complete();
     if (done && mounted && id != null) {
       context.pushReplacement('/session-detail/$id?finished=true&me=1');
@@ -303,14 +352,26 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
                         exercise: ex,
                         catalog: catalog[ex.exerciseId],
                         snapshotSets: _snapshotSetsFor(st, ex),
-                        weight: _weight,
-                        reps: _reps,
+                        profile: trackingProfileFor(ex.trackingType),
+                        entry: _entry,
                         entryType: _entryType,
                         busy: st.busy,
-                        onWeight: (v) => setState(() => _weight = v.toDouble()),
-                        onReps: (v) => setState(() => _reps = v.toInt()),
+                        canLog: hasRequiredMetric(
+                          ex.trackingType,
+                          SetMetricValues(
+                            reps: _val(TrackingMetric.reps).toInt(),
+                            weightKg: _val(TrackingMetric.weight).toDouble(),
+                            durationSeconds: _val(TrackingMetric.duration).toInt(),
+                            distanceM: _val(TrackingMetric.distance).toInt(),
+                            rounds: _val(TrackingMetric.rounds).toInt(),
+                          ),
+                        ),
+                        showMore: _showMoreMetrics,
+                        onToggleMore: () =>
+                            setState(() => _showMoreMetrics = !_showMoreMetrics),
+                        onMetric: (m, v) => setState(() => _entry[m] = v),
                         onSetType: (t) => setState(() => _entryType = t),
-                        onLog: () => _logSet(ex.id),
+                        onLog: () => _logSet(ex.id, ex.trackingType),
                         onDeleteSet: (s) => _confirmDeleteSet(ex.id, s),
                         onMenu: () => _openExerciseMenu(ex),
                       ),
@@ -630,12 +691,14 @@ class _ExerciseCard extends StatelessWidget {
     required this.exercise,
     required this.catalog,
     required this.snapshotSets,
-    required this.weight,
-    required this.reps,
+    required this.profile,
+    required this.entry,
     required this.entryType,
     required this.busy,
-    required this.onWeight,
-    required this.onReps,
+    required this.canLog,
+    required this.showMore,
+    required this.onToggleMore,
+    required this.onMetric,
     required this.onSetType,
     required this.onLog,
     required this.onDeleteSet,
@@ -645,28 +708,39 @@ class _ExerciseCard extends StatelessWidget {
   final PerformedExercise exercise;
   final ExerciseSummary? catalog;
   final List<SessionSnapshotSet> snapshotSets;
-  final double weight;
-  final int reps;
+  final TrackingProfile profile;
+  final Map<TrackingMetric, num> entry;
   final PerformedSetType entryType;
   final bool busy;
-  final ValueChanged<num> onWeight;
-  final ValueChanged<num> onReps;
+  final bool canLog;
+  final bool showMore;
+  final VoidCallback onToggleMore;
+  final void Function(TrackingMetric, num) onMetric;
   final ValueChanged<PerformedSetType> onSetType;
   final VoidCallback onLog;
   final ValueChanged<PerformedSet> onDeleteSet;
   final VoidCallback onMenu;
 
+  /// Mode-aware "Last / Target" hint pill. Prefers the last actually-logged set (formatted exactly like the
+  /// set rows — weight × reps, no rounding, zeros hidden); otherwise the plan's first prescribed target.
   String? _metaTargets() {
-    final src = snapshotSets.isNotEmpty
-        ? snapshotSets
-            .map((s) => (reps: s.targetReps, kg: s.targetWeightKg))
-            .toList()
-        : exercise.sets.map((s) => (reps: s.reps, kg: s.weightKg)).toList();
-    if (src.isEmpty) return null;
-    final last = src.last;
-    final repsStr = last.reps?.toString() ?? '—';
-    final kgStr = last.kg != null ? ' @ ${last.kg!.toStringAsFixed(0)}kg' : '';
-    return '${src.length} × $repsStr$kgStr';
+    if (exercise.sets.isNotEmpty) {
+      return 'Last ${formatLoggedSet(exercise.sets.last)}';
+    }
+    if (snapshotSets.isEmpty) return null;
+    final t = snapshotSets.first;
+    final parts = <String>[];
+    final w = t.targetWeightKg ?? 0;
+    final r = t.targetReps ?? 0;
+    if (w > 0 && r > 0) {
+      parts.add('${w % 1 == 0 ? w.toInt() : w}kg × $r');
+    } else if (r > 0) {
+      parts.add('$r reps');
+    }
+    if ((t.targetDurationSeconds ?? 0) > 0) parts.add(formatDuration(t.targetDurationSeconds!));
+    if ((t.targetDistanceM ?? 0) > 0) parts.add('${t.targetDistanceM}m');
+    if ((t.targetRounds ?? 0) > 0) parts.add('${t.targetRounds} rounds');
+    return parts.isEmpty ? null : 'Target ${parts.join(' · ')}';
   }
 
   @override
@@ -675,13 +749,14 @@ class _ExerciseCard extends StatelessWidget {
     final name = exercise.exerciseName ?? 'Exercise ${exercise.order}';
     final isSkipped = exercise.status == ExercisePerformStatus.skipped;
     final targets = _metaTargets();
-    // Per-exercise set count (logged vs planned, or just the running count when ad-hoc).
-    final loggedCount = exercise.sets.length;
+    // Per-exercise set count (logged vs planned). Drop stages roll up into their lead, so count leads only.
+    final loggedCount = exercise.leadSetCount;
     final plannedCount = snapshotSets.length;
     final setsLabel = plannedCount > 0
         ? '$loggedCount/$plannedCount sets'
         : '$loggedCount ${loggedCount == 1 ? 'set' : 'sets'}';
     final pills = <String>[
+      if (exercise.supersetGroupId != null) '⇄ Superset',
       setsLabel,
       if (catalog?.muscleGroup.isNotEmpty ?? false) catalog!.muscleGroup,
       if (catalog?.equipment.isNotEmpty ?? false) catalog!.equipment,
@@ -745,8 +820,16 @@ class _ExerciseCard extends StatelessWidget {
             padding: const EdgeInsets.symmetric(vertical: 6),
             child: Column(
               children: [
-                for (final s in exercise.sets)
-                  _LoggedSetRow(set: s, onDelete: () => onDeleteSet(s)),
+                // Rest is stored as "rest before this set"; show it as the rest taken *after* a set
+                // (= the next set's stored value) so it reads naturally and the first set isn't mislabelled.
+                for (var i = 0; i < exercise.sets.length; i++)
+                  _LoggedSetRow(
+                    set: exercise.sets[i],
+                    restAfter: i + 1 < exercise.sets.length
+                        ? exercise.sets[i + 1].restSeconds
+                        : null,
+                    onDelete: () => onDeleteSet(exercise.sets[i]),
+                  ),
                 if (isSkipped)
                   Padding(
                     padding: const EdgeInsets.symmetric(
@@ -759,16 +842,18 @@ class _ExerciseCard extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
                     child: _EntryRow(
-                      setNumber: exercise.sets.length + 1,
-                      target: snapshotSets.length >= exercise.sets.length + 1
-                          ? snapshotSets[exercise.sets.length]
+                      setNumber: exercise.leadSetCount + 1,
+                      target: snapshotSets.length >= exercise.leadSetCount + 1
+                          ? snapshotSets[exercise.leadSetCount]
                           : null,
-                      weight: weight,
-                      reps: reps,
+                      profile: profile,
+                      entry: entry,
                       setType: entryType,
                       busy: busy,
-                      onWeight: onWeight,
-                      onReps: onReps,
+                      canLog: canLog,
+                      showMore: showMore,
+                      onToggleMore: onToggleMore,
+                      onMetric: onMetric,
                       onSetType: onSetType,
                       onLog: onLog,
                     ),
@@ -785,8 +870,12 @@ class _ExerciseCard extends StatelessWidget {
 /// A logged (done) set row — design layout: check + type on the left, weight×reps + e1RM right.
 /// Long-press to delete (the design keeps the row clean — no inline trash).
 class _LoggedSetRow extends StatelessWidget {
-  const _LoggedSetRow({required this.set, required this.onDelete});
+  const _LoggedSetRow(
+      {required this.set, this.restAfter, required this.onDelete});
   final PerformedSet set;
+
+  /// Rest taken *after* this set (derived from the next set's stored "rest before"); null for the last set.
+  final int? restAfter;
   final VoidCallback onDelete;
 
   @override
@@ -794,6 +883,12 @@ class _LoggedSetRow extends StatelessWidget {
     final gb = context.gb;
     final e1rm =
         set.estimatedOneRepMaxKg ?? epleyOneRepMax(set.weightKg, set.reps);
+    // Sub-line: e1RM (working strength sets) and/or the rest taken after the set.
+    final subParts = <String>[
+      if (set.setType == PerformedSetType.working && e1rm != null)
+        'e1RM ${e1rm.toStringAsFixed(1)}kg',
+      if ((restAfter ?? 0) > 0) 'rest ${formatRestClock(restAfter!)}',
+    ];
     return InkWell(
       onLongPress: onDelete,
       child: Padding(
@@ -810,39 +905,40 @@ class _LoggedSetRow extends StatelessWidget {
             ),
             const SizedBox(width: 12),
             SizedBox(
-              width: 64,
+              width: 56,
               child: Text(set.setType.label,
                   style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                       color: gb.grey500)),
             ),
-            const Spacer(),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text('${_fmtKg(set.weightKg)} × ${set.reps ?? '—'}',
-                    style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: gb.grey700,
-                        fontFeatures: const [FontFeature.tabularFigures()])),
-                if (set.setType == PerformedSetType.working && e1rm != null)
-                  Text('e1RM ${e1rm.toStringAsFixed(1)}kg',
+            // Value column takes ALL remaining space and right-aligns, so every row's value/sub-line is
+            // flush to the same right edge (no Spacer+Flexible splitting the space 50/50).
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(formatLoggedSet(set),
+                      textAlign: TextAlign.end,
                       style: TextStyle(
-                          fontSize: 11,
-                          color: gb.grey500,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: gb.grey700,
                           fontFeatures: const [FontFeature.tabularFigures()])),
-              ],
+                  if (subParts.isNotEmpty)
+                    Text(subParts.join(' · '),
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: gb.grey500,
+                            fontFeatures: const [FontFeature.tabularFigures()])),
+                ],
+              ),
             ),
           ],
         ),
       ),
     );
   }
-
-  static String _fmtKg(double? kg) =>
-      kg == null ? '—' : '${kg % 1 == 0 ? kg.toInt() : kg}kg';
 }
 
 /// The highlighted current-set entry card (design): set chip + set-type selector + target, big
@@ -851,25 +947,107 @@ class _EntryRow extends StatelessWidget {
   const _EntryRow({
     required this.setNumber,
     required this.target,
-    required this.weight,
-    required this.reps,
+    required this.profile,
+    required this.entry,
     required this.setType,
     required this.busy,
-    required this.onWeight,
-    required this.onReps,
+    required this.canLog,
+    required this.showMore,
+    required this.onToggleMore,
+    required this.onMetric,
     required this.onSetType,
     required this.onLog,
   });
   final int setNumber;
   final SessionSnapshotSet? target;
-  final double weight;
-  final int reps;
+  final TrackingProfile profile;
+  final Map<TrackingMetric, num> entry;
   final PerformedSetType setType;
   final bool busy;
-  final ValueChanged<num> onWeight;
-  final ValueChanged<num> onReps;
+  final bool canLog;
+  final bool showMore;
+  final VoidCallback onToggleMore;
+  final void Function(TrackingMetric, num) onMetric;
   final ValueChanged<PerformedSetType> onSetType;
   final VoidCallback onLog;
+
+  num _val(TrackingMetric m) => entry[m] ?? 0;
+
+  /// Essential steppers shown by default; secondary metrics (calories / HR / rest) appear only via "+ More".
+  List<TrackingMetric> get _stepperFields =>
+      [...profile.fields, if (showMore) ...profile.extras];
+
+  static ({String label, String? unit, num step}) _metricSpec(TrackingMetric m) =>
+      switch (m) {
+        TrackingMetric.weight => (label: 'WEIGHT', unit: 'kg', step: 2.5),
+        TrackingMetric.reps => (label: 'REPS', unit: null, step: 1),
+        TrackingMetric.duration => (label: 'DURATION', unit: 'sec', step: 5),
+        TrackingMetric.distance => (label: 'DISTANCE', unit: 'm', step: 50),
+        TrackingMetric.rounds => (label: 'ROUNDS', unit: null, step: 1),
+        TrackingMetric.calories => (label: 'CALORIES', unit: 'kcal', step: 5),
+        TrackingMetric.heartRate => (label: 'AVG HR', unit: 'bpm', step: 1),
+        TrackingMetric.rest => (label: 'REST', unit: 'sec', step: 5),
+        TrackingMetric.rpe => (label: 'RPE', unit: null, step: 1),
+      };
+
+  /// Mode-aware prescribed-target hint shown on the entry header.
+  String? _targetHint() {
+    final t = target;
+    if (t == null) return null;
+    final parts = <String>[];
+    if (t.targetWeightKg != null && t.targetReps != null) {
+      parts.add('${t.targetWeightKg!.toStringAsFixed(0)}kg × ${t.targetReps}');
+    } else if (t.targetReps != null) {
+      parts.add('${t.targetReps} reps');
+    }
+    if (t.targetDurationSeconds != null) parts.add('${t.targetDurationSeconds}s');
+    if (t.targetDistanceM != null) parts.add('${t.targetDistanceM}m');
+    if (t.targetRounds != null) parts.add('${t.targetRounds} rounds');
+    return parts.isEmpty ? null : 'Target ${parts.join(' · ')}';
+  }
+
+  /// Renders the mode's metric steppers in a fixed two-column grid. Each stepper is left-aligned in its
+  /// column so the ± buttons line up vertically across every row (the lone last stepper keeps the left column).
+  Widget _buildSteppers(GbColors gb) {
+    final fields = _stepperFields;
+    final rows = <Widget>[];
+    for (var i = 0; i < fields.length; i += 2) {
+      final pair = fields.skip(i).take(2).toList();
+      rows.add(IntrinsicHeight(
+        child: Row(
+          children: [
+            Expanded(
+                child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: _stepperFor(pair[0]))),
+            const SizedBox(width: 6),
+            Container(width: 1, color: gb.primary500.withValues(alpha: 0.18)),
+            const SizedBox(width: 6),
+            Expanded(
+                child: pair.length > 1
+                    ? Align(
+                        alignment: Alignment.centerLeft,
+                        child: _stepperFor(pair[1]))
+                    : const SizedBox.shrink()),
+          ],
+        ),
+      ));
+      if (i + 2 < fields.length) rows.add(const SizedBox(height: 10));
+    }
+    return Column(children: rows);
+  }
+
+  Widget _stepperFor(TrackingMetric m) {
+    final spec = _metricSpec(m);
+    return GbStepper(
+      label: spec.label,
+      semanticLabel: spec.label,
+      value: _val(m),
+      unit: spec.unit,
+      step: spec.step,
+      onChanged: (v) => onMetric(m, v),
+    );
+  }
 
   static String _setTypeDesc(PerformedSetType t) => switch (t) {
         PerformedSetType.warmup =>
@@ -918,7 +1096,8 @@ class _EntryRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final gb = context.gb;
-    final e1rm = epleyOneRepMax(weight, reps);
+    final e1rm = epleyOneRepMax(
+        _val(TrackingMetric.weight).toDouble(), _val(TrackingMetric.reps).toInt());
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -981,11 +1160,8 @@ class _EntryRow extends StatelessWidget {
                 ),
               ),
               const Spacer(),
-              if (target != null &&
-                  (target!.targetWeightKg != null ||
-                      target!.targetReps != null))
-                Text(
-                    'Target ${target!.targetWeightKg?.toStringAsFixed(0) ?? '—'}kg × ${target!.targetReps ?? '—'}',
+              if (_targetHint() != null)
+                Text(_targetHint()!,
                     style: TextStyle(
                         fontSize: 12,
                         color: gb.grey500,
@@ -993,31 +1169,44 @@ class _EntryRow extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-          IntrinsicHeight(
-            child: Row(
-              children: [
-                Expanded(
-                    child: GbStepper(
-                        label: 'WEIGHT',
-                        semanticLabel: 'Weight',
-                        value: weight,
-                        unit: 'kg',
-                        step: 2.5,
-                        onChanged: onWeight)),
-                const SizedBox(width: 6),
-                Container(
-                    width: 1, color: gb.primary500.withValues(alpha: 0.18)),
-                const SizedBox(width: 6),
-                Expanded(
-                    child: GbStepper(
-                        label: 'REPS',
-                        semanticLabel: 'Reps',
-                        value: reps,
-                        step: 1,
-                        onChanged: onReps)),
-              ],
+          _buildSteppers(gb),
+          if (profile.extras.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Center(
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(999),
+                    onTap: onToggleMore,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 7),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                              showMore
+                                  ? Icons.expand_less
+                                  : Icons.tune,
+                              size: 15,
+                              color: gb.primary600),
+                          const SizedBox(width: 6),
+                          Text(
+                              showMore
+                                  ? 'Hide extra fields'
+                                  : 'More fields (rest, calories…)',
+                              style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: gb.primary600)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ),
-          ),
           if (setType == PerformedSetType.working && e1rm != null) ...[
             const SizedBox(height: 12),
             Text.rich(
@@ -1035,10 +1224,11 @@ class _EntryRow extends StatelessWidget {
           ],
           const SizedBox(height: 12),
           FilledButton.icon(
-            // A logged set needs at least 1 rep (weight 0 stays valid — bodyweight movements).
-            onPressed: (busy || reps <= 0) ? null : onLog,
+            // Disabled until the mode's required metric is present; the labelled fields above make the
+            // requirement obvious, so the button stays a simple "Log set".
+            onPressed: (busy || !canLog) ? null : onLog,
             icon: const Icon(Icons.check),
-            label: Text(reps <= 0 ? 'Enter reps to log' : 'Log set'),
+            label: const Text('Log set'),
             style:
                 FilledButton.styleFrom(minimumSize: const Size.fromHeight(50)),
           ),

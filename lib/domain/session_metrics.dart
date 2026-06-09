@@ -4,6 +4,30 @@
 // truth for stored metrics (volume, e1RM, PR count); these mirror its client-side derivations.
 import '../data/models/session_models.dart';
 
+String _fmtKg(double kg) => kg % 1 == 0 ? '${kg.toInt()}kg' : '${kg}kg';
+
+/// Mode-aware, zero-suppressing summary of a logged set used everywhere a set is shown
+/// (live logger, session detail, history). Only metrics with a real (> 0) value appear, so a
+/// cardio set reads "00:15 · 150m" — never "—kg × —" or "0kcal".
+String formatLoggedSet(PerformedSet set) {
+  final parts = <String>[];
+  final w = set.weightKg ?? 0;
+  final r = set.reps ?? 0;
+  if (w > 0 && r > 0) {
+    parts.add('${_fmtKg(w)} × $r');
+  } else if (r > 0) {
+    parts.add('$r reps');
+  } else if (w > 0) {
+    parts.add(_fmtKg(w));
+  }
+  if ((set.durationSeconds ?? 0) > 0) parts.add(formatDuration(set.durationSeconds!));
+  if ((set.distanceM ?? 0) > 0) parts.add('${set.distanceM}m');
+  if ((set.rounds ?? 0) > 0) parts.add('${set.rounds} rounds');
+  if ((set.calories ?? 0) > 0) parts.add('${set.calories}kcal');
+  if ((set.avgHeartRate ?? 0) > 0) parts.add('${set.avgHeartRate}bpm');
+  return parts.isEmpty ? '—' : parts.join(' · ');
+}
+
 /// Format elapsed seconds as `H:MM:SS`, or `MM:SS` when under an hour.
 String formatDuration(int seconds) {
   final hrs = seconds ~/ 3600;
