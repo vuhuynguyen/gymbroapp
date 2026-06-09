@@ -1,0 +1,5 @@
+{
+  "_comment": "Development env — points the app at a locally-running API. Run with: flutter run --dart-define-from-file=config/dev.json. Edit GYMBRO_API_BASE_URL for your setup (Android emulator: http://10.0.2.2:5216, Dockerised API: http://localhost:8080). This is also the zero-flag default, so a plain `flutter run` uses the same local host.",
+  "GYMBRO_ENV": "dev",
+  "GYMBRO_API_BASE_URL": "http://localhost:5216"
+}

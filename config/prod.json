@@ -1,0 +1,5 @@
+{
+  "_comment": "Production env — points the app at the live host. Run with: flutter run --dart-define-from-file=config/prod.json (or build/release the same way).",
+  "GYMBRO_ENV": "prod",
+  "GYMBRO_API_BASE_URL": "https://gymbro.ddns.net"
+}
