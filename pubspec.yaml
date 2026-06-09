@@ -1,5 +1,5 @@
 name: gymbroapp
-description: "GymBro — Flutter Member (trainee) client for the existing GymBro platform."
+description: "GymBro — Flutter client (trainee + coach-lite) for the existing GymBro platform."
 publish_to: 'none'
 version: 0.1.0+1
 
