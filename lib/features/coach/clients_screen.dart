@@ -8,14 +8,78 @@ import '../../data/repositories/tenant_repository.dart';
 import '../../shared/widgets/widgets.dart';
 import 'coach_providers.dart';
 
+/// Open the coach invite-code generator sheet. Public so the Coach hub's header Invite action can
+/// reuse the exact same sheet the standalone roster used.
+void showCoachInviteSheet(BuildContext context) {
+  showGbSheet<void>(context,
+      scrollable: true, builder: (_) => const _InviteSheet());
+}
+
 /// Coach home — the client roster + an invite generator. Mirrors membership rules: 8-char,
 /// single-use, 7-day invite codes that always join as Client.
+///
+/// When [embedded] (the Coach hub's Clients segment), the screen drops its own Scaffold/header and
+/// returns just the roster body — the hub owns the shared header, segment control and Invite action.
 class CoachClientsScreen extends ConsumerWidget {
-  const CoachClientsScreen({super.key});
+  const CoachClientsScreen({this.embedded = false, super.key});
+
+  final bool embedded;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final clients = ref.watch(coachClientsProvider);
+
+    final body = AsyncValueView(
+      value: clients,
+      onRetry: () async => ref.invalidate(coachClientsProvider),
+      loading: const GbSkeletonList(count: 5),
+      data: (list) {
+        if (list.isEmpty) {
+          return EmptyState(
+            icon: Icons.group_outlined,
+            title: 'No clients yet',
+            subtitle: 'Invite a client with a code to start coaching.',
+            action: GbButton(
+              label: 'Invite a client',
+              icon: Icons.person_add_alt,
+              onPressed: () => showCoachInviteSheet(context),
+            ),
+          );
+        }
+        final withPlan = list.where((c) => c.hasActivePlan).length;
+        return RefreshIndicator(
+          onRefresh: () async {
+            ref.invalidate(coachClientsProvider);
+            await ref.read(coachClientsProvider.future);
+          },
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(
+                AppSpacing.screenH, AppSpacing.gap, AppSpacing.screenH, 90),
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                      child: GbStatTile(
+                          value: '${list.length}', label: 'Clients')),
+                  const SizedBox(width: AppSpacing.xs + 2),
+                  Expanded(
+                      child:
+                          GbStatTile(value: '$withPlan', label: 'On a plan')),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.gap),
+              for (final c in list)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                  child: _ClientRow(client: c),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (embedded) return body;
 
     return Scaffold(
       backgroundColor: context
@@ -29,69 +93,14 @@ class CoachClientsScreen extends ConsumerWidget {
                 label: 'Invite',
                 icon: Icons.person_add_alt,
                 size: GbButtonSize.sm,
-                onPressed: () => _openInviteSheet(context),
+                onPressed: () => showCoachInviteSheet(context),
               ),
             ],
           ),
-          Expanded(
-            child: AsyncValueView(
-              value: clients,
-              onRetry: () async => ref.invalidate(coachClientsProvider),
-              loading: const GbSkeletonList(count: 5),
-              data: (list) {
-                if (list.isEmpty) {
-                  return EmptyState(
-                    icon: Icons.group_outlined,
-                    title: 'No clients yet',
-                    subtitle: 'Invite a client with a code to start coaching.',
-                    action: GbButton(
-                      label: 'Invite a client',
-                      icon: Icons.person_add_alt,
-                      onPressed: () => _openInviteSheet(context),
-                    ),
-                  );
-                }
-                final withPlan = list.where((c) => c.hasActivePlan).length;
-                return RefreshIndicator(
-                  onRefresh: () async {
-                    ref.invalidate(coachClientsProvider);
-                    await ref.read(coachClientsProvider.future);
-                  },
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(AppSpacing.screenH,
-                        AppSpacing.gap, AppSpacing.screenH, 90),
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                              child: GbStatTile(
-                                  value: '${list.length}', label: 'Clients')),
-                          const SizedBox(width: AppSpacing.xs + 2),
-                          Expanded(
-                              child: GbStatTile(
-                                  value: '$withPlan', label: 'On a plan')),
-                        ],
-                      ),
-                      const SizedBox(height: AppSpacing.gap),
-                      for (final c in list)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-                          child: _ClientRow(client: c),
-                        ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ),
+          Expanded(child: body),
         ],
       ),
     );
-  }
-
-  void _openInviteSheet(BuildContext context) {
-    showGbSheet<void>(context,
-        scrollable: true, builder: (_) => const _InviteSheet());
   }
 }
 

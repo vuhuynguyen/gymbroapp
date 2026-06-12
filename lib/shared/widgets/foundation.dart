@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/theme/theme.dart';
 import '../../domain/enums.dart';
@@ -247,7 +248,7 @@ class DayBadge extends StatelessWidget {
 }
 
 /// Weight/reps stepper (design `Stepper`). Stateless — the parent owns the value.
-class GbStepper extends StatelessWidget {
+class GbStepper extends StatefulWidget {
   const GbStepper({
     required this.value,
     required this.onChanged,
@@ -255,6 +256,9 @@ class GbStepper extends StatelessWidget {
     this.step = 1,
     this.label,
     this.semanticLabel,
+    this.min = 0,
+    this.max = 100000,
+    this.editable = true,
     super.key,
   });
 
@@ -264,71 +268,145 @@ class GbStepper extends StatelessWidget {
   final num step;
   final String? label;
 
+  /// Inclusive bounds for both the ± buttons and direct typing.
+  final num min;
+  final num max;
+
+  /// Whether tapping the value opens an inline numeric field for direct entry.
+  final bool editable;
+
   /// Screen-reader name for the measure (e.g. "Weight", "Reps"). The stepper announces
   /// `name value unit` and labels its ± buttons (design a11y §). Defaults to [label].
   final String? semanticLabel;
 
   @override
+  State<GbStepper> createState() => _GbStepperState();
+}
+
+class _GbStepperState extends State<GbStepper> {
+  bool _editing = false;
+  late final TextEditingController _ctrl = TextEditingController();
+  final FocusNode _focus = FocusNode();
+
+  /// Decimals allowed when the step isn't a whole number (e.g. 0.5 servings).
+  bool get _decimal => widget.step != widget.step.roundToDouble();
+
+  String _fmt(num v) =>
+      v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(1);
+
+  void _beginEdit() {
+    if (!widget.editable) return;
+    _ctrl.text = _fmt(widget.value);
+    _ctrl.selection = TextSelection(baseOffset: 0, extentOffset: _ctrl.text.length);
+    setState(() => _editing = true);
+    _focus.requestFocus();
+  }
+
+  void _commit() {
+    if (!_editing) return;
+    final parsed = num.tryParse(_ctrl.text.trim());
+    setState(() => _editing = false);
+    if (parsed == null) return; // invalid → keep current value
+    final clamped = parsed.clamp(widget.min, widget.max);
+    if (clamped != widget.value) widget.onChanged(clamped);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final gb = context.gb;
-    final display = value is int || value == value.roundToDouble()
-        ? value.toInt().toString()
-        : value.toStringAsFixed(1);
-    final name = semanticLabel ?? label ?? 'value';
-    final announced = '$name $display${unit != null ? ' $unit' : ''}';
+    final display = _fmt(widget.value);
+    final name = widget.semanticLabel ?? widget.label ?? 'value';
+    final announced = '$name $display${widget.unit != null ? ' ${widget.unit}' : ''}';
     return Column(
       children: [
-        if (label != null)
+        if (widget.label != null)
           Padding(
             padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-            child: Text(label!,
+            child: Text(widget.label!,
                 style: TextStyle(
                     fontSize: 10,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0.8,
                     color: gb.grey400)),
           ),
-        // Scale the [−][value][+] group down to fit narrow halves (two steppers sit side by side in
-        // the live-session card) rather than overflowing; renders at natural size when there's room.
-        FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _btn(gb, Icons.remove, 'Decrease $name',
-                  () => onChanged((value - step).clamp(0, 100000))),
-              const SizedBox(width: 6),
-              Semantics(
-                label: announced,
-                excludeSemantics: true,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(minWidth: 48),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.baseline,
-                    textBaseline: TextBaseline.alphabetic,
-                    children: [
-                      Text(display,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                                  fontSize: 26, fontWeight: FontWeight.w800)
-                              .tabular),
-                      if (unit != null)
-                        Text(' $unit',
-                            style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: gb.grey400)),
-                    ],
-                  ),
-                ),
+        // Constant-width [−][value][+] group: fixed buttons + a fixed value slot whose number scales to fit.
+        // No outer scaling, so every stepper is the same size and the ± buttons line up across rows/columns,
+        // and the layout never shifts as the value changes.
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _btn(gb, Icons.remove, 'Decrease $name',
+                () => widget.onChanged((widget.value - widget.step).clamp(widget.min, widget.max))),
+            const SizedBox(width: 6),
+            Semantics(
+              label: announced,
+              excludeSemantics: true,
+              child: SizedBox(
+                width: 58,
+                height: 34,
+                child: _editing
+                    ? TextField(
+                        controller: _ctrl,
+                        focusNode: _focus,
+                        autofocus: true,
+                        textAlign: TextAlign.center,
+                        keyboardType: TextInputType.numberWithOptions(decimal: _decimal),
+                        inputFormatters: [
+                          FilteringTextInputFormatter.allow(
+                              RegExp(_decimal ? r'[0-9.]' : r'[0-9]')),
+                        ],
+                        style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)
+                            .tabular,
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          filled: false,
+                          contentPadding: EdgeInsets.zero,
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                        ),
+                        onTapOutside: (_) => _commit(),
+                        onSubmitted: (_) => _commit(),
+                        onEditingComplete: _commit,
+                      )
+                    : GestureDetector(
+                        onTap: _beginEdit,
+                        behavior: HitTestBehavior.opaque,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.center,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.baseline,
+                            textBaseline: TextBaseline.alphabetic,
+                            children: [
+                              Text(display,
+                                  style: const TextStyle(
+                                          fontSize: 26, fontWeight: FontWeight.w800)
+                                      .tabular),
+                              if (widget.unit != null)
+                                Text(' ${widget.unit}',
+                                    style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: gb.grey400)),
+                            ],
+                          ),
+                        ),
+                      ),
               ),
-              const SizedBox(width: 6),
-              _btn(gb, Icons.add, 'Increase $name',
-                  () => onChanged(value + step)),
-            ],
-          ),
+            ),
+            const SizedBox(width: 6),
+            _btn(gb, Icons.add, 'Increase $name',
+                () => widget.onChanged((widget.value + widget.step).clamp(widget.min, widget.max))),
+          ],
         ),
       ],
     );

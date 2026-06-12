@@ -191,32 +191,48 @@ class _Bar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final gb = context.gb;
+    // Value label + bar sit in an Expanded and are bottom-aligned; the bar height is a fraction of the
+    // *measured* available space (not a fixed 92), so the column can't overflow the chart box
+    // regardless of font metrics.
     return Column(
-      mainAxisAlignment: MainAxisAlignment.end,
       children: [
-        Text(
-          _toThousands(value),
-          style: AppText.label
-              .copyWith(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w800,
-                color: isLast ? gb.primary700 : gb.grey500,
-              )
-              .tabular,
-        ),
-        const SizedBox(height: AppSpacing.xs),
-        Container(
-          width: double.infinity,
-          height: (value / max * 92).clamp(2, 92),
-          decoration: BoxDecoration(
-            gradient: isLast ? GbColors.heroGradient : null,
-            color: isLast ? null : AppPalette.primary100,
-            borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(10), bottom: Radius.circular(4)),
-            boxShadow: isLast ? AppShadows.blueSm : null,
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, c) {
+              const labelH = 22.0, gap = 4.0;
+              final avail = (c.maxHeight - labelH - gap).clamp(2.0, c.maxHeight);
+              final h = ((value / max) * avail).clamp(2.0, avail);
+              return Column(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Text(
+                    _toThousands(value),
+                    style: AppText.label
+                        .copyWith(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w800,
+                          color: isLast ? gb.primary700 : gb.grey500,
+                        )
+                        .tabular,
+                  ),
+                  const SizedBox(height: gap),
+                  Container(
+                    width: double.infinity,
+                    height: h,
+                    decoration: BoxDecoration(
+                      gradient: isLast ? GbColors.heroGradient : null,
+                      color: isLast ? null : AppPalette.primary100,
+                      borderRadius: const BorderRadius.vertical(
+                          top: Radius.circular(10), bottom: Radius.circular(4)),
+                      boxShadow: isLast ? AppShadows.blueSm : null,
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
         ),
-        const SizedBox(height: AppSpacing.xs),
+        const SizedBox(height: 6),
         Eyebrow(label),
       ],
     );

@@ -4,11 +4,14 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/models/coach_models.dart';
 import '../../data/models/plan_models.dart';
+import '../../data/models/session_models.dart';
 import '../../data/repositories/plan_repository.dart';
 import '../../domain/enums.dart';
 import '../../domain/session_grouping.dart';
 import '../../domain/session_metrics.dart';
 import '../../shared/widgets/widgets.dart';
+import '../nutrition/client_nutrition_panel.dart';
+import 'client_progress_panel.dart';
 import 'coach_providers.dart';
 
 /// Read + light-mutation monitoring of one client: adherence, the version-pinned assignment
@@ -174,10 +177,76 @@ class _Body extends StatelessWidget {
         ],
         const SizedBox(height: AppSpacing.lg),
 
-        // Recent sessions.
+        // Workouts · Nutrition · Progress.
+        _ClientTabs(clientId: clientId, clientName: name, sessions: data.sessions),
+      ],
+    );
+  }
+
+  void _assign(BuildContext context) {
+    // The coach picks the plan first on the Coach hub's Plans segment; from here jump there.
+    context.go('/coach');
+  }
+}
+
+enum _ClientSegment { workouts, nutrition, progress }
+
+/// The three monitoring lenses on a client — their workout sessions, nutrition adherence, and
+/// progress trends. The fixed identity / assignment header sits above this in the monitor list.
+class _ClientTabs extends StatefulWidget {
+  const _ClientTabs(
+      {required this.clientId, required this.clientName, required this.sessions});
+  final String clientId;
+  final String clientName;
+  final List<SessionSummary> sessions;
+
+  @override
+  State<_ClientTabs> createState() => _ClientTabsState();
+}
+
+class _ClientTabsState extends State<_ClientTabs> {
+  _ClientSegment _seg = _ClientSegment.workouts;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        GbSegmented<_ClientSegment>(
+          value: _seg,
+          options: const [
+            (_ClientSegment.workouts, 'Workouts'),
+            (_ClientSegment.nutrition, 'Nutrition'),
+            (_ClientSegment.progress, 'Progress'),
+          ],
+          onChanged: (s) => setState(() => _seg = s),
+        ),
+        const SizedBox(height: AppSpacing.gap),
+        switch (_seg) {
+          _ClientSegment.workouts => _WorkoutsList(sessions: widget.sessions),
+          _ClientSegment.nutrition =>
+            ClientNutritionPanel(clientId: widget.clientId, clientName: widget.clientName),
+          _ClientSegment.progress => ClientProgressPanel(sessions: widget.sessions),
+        },
+      ],
+    );
+  }
+}
+
+/// The Workouts segment — recent sessions (the original monitor list).
+class _WorkoutsList extends StatelessWidget {
+  const _WorkoutsList({required this.sessions});
+  final List<SessionSummary> sessions;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
         const GbSectionTitle('Recent sessions'),
         const SizedBox(height: AppSpacing.sm),
-        if (data.sessions.isEmpty)
+        if (sessions.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
             child: Center(
@@ -185,7 +254,7 @@ class _Body extends StatelessWidget {
             ),
           )
         else
-          for (final s in data.sessions)
+          for (final s in sessions)
             GbSessionRow(
               day: _weekdayAbbr(s.startedAt),
               status: s.status,
@@ -200,11 +269,6 @@ class _Body extends StatelessWidget {
             ),
       ],
     );
-  }
-
-  void _assign(BuildContext context) {
-    // The coach picks the plan first on the Plans tab; from here jump there.
-    context.go('/coach-plans');
   }
 }
 

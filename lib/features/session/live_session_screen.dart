@@ -6,8 +6,10 @@ import '../../data/models/exercise_models.dart';
 import '../../data/models/session_models.dart';
 import '../../data/repositories/exercise_repository.dart';
 import '../../domain/enums.dart';
+import '../../domain/exercise_tracking.dart';
 import '../../domain/session_metrics.dart';
 import '../../shared/widgets/widgets.dart';
+import 'coach_guide.dart';
 import 'live_session_controller.dart';
 
 /// Full-screen Live Active Session — a faithful build of the design prototype (gradient focus header,
@@ -30,9 +32,13 @@ const _setTypeCycle = [
 
 class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
   String? _entryKey;
-  double _weight = 0;
-  int _reps = 0;
+  // Mode-aware entry values keyed by metric (weight is a double, the rest ints).
+  final Map<TrackingMetric, num> _entry = {};
   PerformedSetType _entryType = PerformedSetType.working;
+  /// Reveals the secondary metric inputs (calories / heart rate / rest) for the current entry.
+  bool _showMoreMetrics = false;
+
+  num _val(TrackingMetric m) => _entry[m] ?? 0;
 
   @override
   void initState() {
@@ -51,10 +57,22 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
     final key = '${ex.id}:${ex.sets.length}';
     if (key == _entryKey) return;
     _entryKey = key;
+    _showMoreMetrics = false;
     final snapSet = _snapshotSetFor(st, ex, ex.sets.length);
     final last = ex.sets.isNotEmpty ? ex.sets.last : null;
-    _weight = last?.weightKg ?? snapSet?.targetWeightKg ?? 0;
-    _reps = last?.reps ?? snapSet?.targetReps ?? 0;
+
+    // Seed each metric the exercise's mode uses, preferring the last logged value then the plan target.
+    _entry
+      ..clear()
+      ..[TrackingMetric.weight] = last?.weightKg ?? snapSet?.targetWeightKg ?? 0
+      ..[TrackingMetric.reps] = last?.reps ?? snapSet?.targetReps ?? 0
+      ..[TrackingMetric.duration] = last?.durationSeconds ?? snapSet?.targetDurationSeconds ?? 0
+      ..[TrackingMetric.distance] = last?.distanceM ?? snapSet?.targetDistanceM ?? 0
+      ..[TrackingMetric.rounds] = last?.rounds ?? snapSet?.targetRounds ?? 0
+      ..[TrackingMetric.calories] = last?.calories ?? 0
+      ..[TrackingMetric.heartRate] = last?.avgHeartRate ?? 0
+      // 0 = auto-capture the actual rest from the timer; the user can bump it to override.
+      ..[TrackingMetric.rest] = 0;
     _entryType = last?.setType ??
         (snapSet != null
             ? PerformedSetType.parse(snapSet.setType.wire)
@@ -86,13 +104,41 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
   int? _plannedCount(LiveSessionState st, PerformedExercise ex) =>
       _snapshotSetsFor(st, ex).length;
 
-  Future<void> _logSet(String exerciseId) async {
-    if (_reps <= 0 && _weight <= 0) {
-      showInfoSnack(context, 'Enter your reps (and weight) to log the set.');
+  Future<void> _logSet(String exerciseId, ExerciseTrackingType type) async {
+    // Only log the metrics this exercise's mode uses, so a Timed set never carries a stray reps/weight
+    // (and a strength set never carries duration). Non-relevant fields are dropped to null.
+    final profile = trackingProfileFor(type);
+    final keep = {...profile.fields, ...profile.extras};
+    int? gi(TrackingMetric m) => keep.contains(m) && _val(m) > 0 ? _val(m).toInt() : null;
+    double? gd(TrackingMetric m) => keep.contains(m) && _val(m) > 0 ? _val(m).toDouble() : null;
+
+    final values = SetMetricValues(
+      reps: gi(TrackingMetric.reps),
+      weightKg: gd(TrackingMetric.weight),
+      durationSeconds: gi(TrackingMetric.duration),
+      distanceM: gi(TrackingMetric.distance),
+      rounds: gi(TrackingMetric.rounds),
+    );
+    // Mode-aware required-metric check (mirrors the server): strength needs reps, cardio
+    // duration/distance, HIIT rounds/duration; mobility accepts a marked-done set.
+    if (!hasRequiredMetric(type, values)) {
+      showInfoSnack(context, requiredMetricMessage(type));
       return;
     }
-    await _ctrl.logSet(exerciseId,
-        reps: _reps, weightKg: _weight, setType: _entryType);
+    final rest = keep.contains(TrackingMetric.rest) ? _val(TrackingMetric.rest).toInt() : 0;
+    await _ctrl.logSet(
+      exerciseId,
+      reps: values.reps,
+      weightKg: values.weightKg,
+      setType: _entryType,
+      durationSeconds: values.durationSeconds,
+      distanceM: values.distanceM,
+      rounds: values.rounds,
+      calories: gi(TrackingMetric.calories),
+      avgHeartRate: gi(TrackingMetric.heartRate),
+      // 0 → let the controller auto-capture the actual rest taken from the timer; >0 overrides it.
+      restSeconds: rest > 0 ? rest : null,
+    );
   }
 
   Future<void> _confirmDeleteSet(String exerciseId, PerformedSet set) async {
@@ -134,7 +180,18 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
   }
 
   Future<void> _finish() async {
-    final id = ref.read(liveSessionControllerProvider).session?.sessionId;
+    final st = ref.read(liveSessionControllerProvider);
+    final id = st.session?.sessionId;
+    // Nothing logged → there's no workout to complete; save it as abandoned instead.
+    final hasAnySet = st.exercises.any((e) => e.sets.isNotEmpty);
+    if (!hasAnySet) {
+      final done = await _ctrl.abandon();
+      if (done && mounted) {
+        showInfoSnack(context, 'Nothing logged — session discarded.');
+        context.go('/log');
+      }
+      return;
+    }
     final done = await _ctrl.complete();
     if (done && mounted && id != null) {
       context.pushReplacement('/session-detail/$id?finished=true&me=1');
@@ -197,6 +254,18 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _openGuideSheet(PerformedExercise ex, ExerciseSummary? catalog) {
+    presentGuideSheet(
+      context,
+      _GuideSheet(
+        exerciseId: ex.exerciseId,
+        exerciseName: ex.exerciseName ?? catalog?.name ?? 'Exercise',
+        catalog: catalog,
+        repository: ref.read(exerciseRepositoryProvider),
       ),
     );
   }
@@ -303,16 +372,29 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
                         exercise: ex,
                         catalog: catalog[ex.exerciseId],
                         snapshotSets: _snapshotSetsFor(st, ex),
-                        weight: _weight,
-                        reps: _reps,
+                        profile: trackingProfileFor(ex.trackingType),
+                        entry: _entry,
                         entryType: _entryType,
                         busy: st.busy,
-                        onWeight: (v) => setState(() => _weight = v.toDouble()),
-                        onReps: (v) => setState(() => _reps = v.toInt()),
+                        canLog: hasRequiredMetric(
+                          ex.trackingType,
+                          SetMetricValues(
+                            reps: _val(TrackingMetric.reps).toInt(),
+                            weightKg: _val(TrackingMetric.weight).toDouble(),
+                            durationSeconds: _val(TrackingMetric.duration).toInt(),
+                            distanceM: _val(TrackingMetric.distance).toInt(),
+                            rounds: _val(TrackingMetric.rounds).toInt(),
+                          ),
+                        ),
+                        showMore: _showMoreMetrics,
+                        onToggleMore: () =>
+                            setState(() => _showMoreMetrics = !_showMoreMetrics),
+                        onMetric: (m, v) => setState(() => _entry[m] = v),
                         onSetType: (t) => setState(() => _entryType = t),
-                        onLog: () => _logSet(ex.id),
+                        onLog: () => _logSet(ex.id, ex.trackingType),
                         onDeleteSet: (s) => _confirmDeleteSet(ex.id, s),
                         onMenu: () => _openExerciseMenu(ex),
+                        onGuide: () => _openGuideSheet(ex, catalog[ex.exerciseId]),
                       ),
                       const SizedBox(height: AppSpacing.gap),
                       Center(
@@ -630,43 +712,58 @@ class _ExerciseCard extends StatelessWidget {
     required this.exercise,
     required this.catalog,
     required this.snapshotSets,
-    required this.weight,
-    required this.reps,
+    required this.profile,
+    required this.entry,
     required this.entryType,
     required this.busy,
-    required this.onWeight,
-    required this.onReps,
+    required this.canLog,
+    required this.showMore,
+    required this.onToggleMore,
+    required this.onMetric,
     required this.onSetType,
     required this.onLog,
     required this.onDeleteSet,
     required this.onMenu,
+    required this.onGuide,
   });
 
   final PerformedExercise exercise;
   final ExerciseSummary? catalog;
   final List<SessionSnapshotSet> snapshotSets;
-  final double weight;
-  final int reps;
+  final TrackingProfile profile;
+  final Map<TrackingMetric, num> entry;
   final PerformedSetType entryType;
   final bool busy;
-  final ValueChanged<num> onWeight;
-  final ValueChanged<num> onReps;
+  final bool canLog;
+  final bool showMore;
+  final VoidCallback onToggleMore;
+  final void Function(TrackingMetric, num) onMetric;
   final ValueChanged<PerformedSetType> onSetType;
   final VoidCallback onLog;
   final ValueChanged<PerformedSet> onDeleteSet;
   final VoidCallback onMenu;
+  final VoidCallback onGuide;
 
+  /// Mode-aware "Last / Target" hint pill. Prefers the last actually-logged set (formatted exactly like the
+  /// set rows — weight × reps, no rounding, zeros hidden); otherwise the plan's first prescribed target.
   String? _metaTargets() {
-    final src = snapshotSets.isNotEmpty
-        ? snapshotSets
-            .map((s) => (reps: s.targetReps, kg: s.targetWeightKg))
-            .toList()
-        : exercise.sets.map((s) => (reps: s.reps, kg: s.weightKg)).toList();
-    if (src.isEmpty) return null;
-    final last = src.last;
-    final repsStr = last.reps?.toString() ?? '—';
-    final kgStr = last.kg != null ? ' @ ${last.kg!.toStringAsFixed(0)}kg' : '';
-    return '${src.length} × $repsStr$kgStr';
+    if (exercise.sets.isNotEmpty) {
+      return 'Last ${formatLoggedSet(exercise.sets.last)}';
+    }
+    if (snapshotSets.isEmpty) return null;
+    final t = snapshotSets.first;
+    final parts = <String>[];
+    final w = t.targetWeightKg ?? 0;
+    final r = t.targetReps ?? 0;
+    if (w > 0 && r > 0) {
+      parts.add('${w % 1 == 0 ? w.toInt() : w}kg × $r');
+    } else if (r > 0) {
+      parts.add('$r reps');
+    }
+    if ((t.targetDurationSeconds ?? 0) > 0) parts.add(formatDuration(t.targetDurationSeconds!));
+    if ((t.targetDistanceM ?? 0) > 0) parts.add('${t.targetDistanceM}m');
+    if ((t.targetRounds ?? 0) > 0) parts.add('${t.targetRounds} rounds');
+    return parts.isEmpty ? null : 'Target ${parts.join(' · ')}';
   }
 
   @override
@@ -675,13 +772,14 @@ class _ExerciseCard extends StatelessWidget {
     final name = exercise.exerciseName ?? 'Exercise ${exercise.order}';
     final isSkipped = exercise.status == ExercisePerformStatus.skipped;
     final targets = _metaTargets();
-    // Per-exercise set count (logged vs planned, or just the running count when ad-hoc).
-    final loggedCount = exercise.sets.length;
+    // Per-exercise set count (logged vs planned). Drop stages roll up into their lead, so count leads only.
+    final loggedCount = exercise.leadSetCount;
     final plannedCount = snapshotSets.length;
     final setsLabel = plannedCount > 0
         ? '$loggedCount/$plannedCount sets'
         : '$loggedCount ${loggedCount == 1 ? 'set' : 'sets'}';
     final pills = <String>[
+      if (exercise.supersetGroupId != null) '⇄ Superset',
       setsLabel,
       if (catalog?.muscleGroup.isNotEmpty ?? false) catalog!.muscleGroup,
       if (catalog?.equipment.isNotEmpty ?? false) catalog!.equipment,
@@ -698,44 +796,55 @@ class _ExerciseCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
+          // Header — title + meta pills, the more-options button, and (inset, below the pills) the
+          // always-visible form-cue strip. The strip sits inside the 16px header padding, matching
+          // the design (a rounded tinted bar with left/right margin, not a full-bleed row).
           Padding(
             padding: const EdgeInsets.all(16),
-            child: Row(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(name,
-                          style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: -0.3)),
-                      if (exercise.substitutedFromExerciseName != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 2),
-                          child: Text(
-                              'Substituted from ${exercise.substitutedFromExerciseName}',
-                              style: Theme.of(context).textTheme.bodySmall),
-                        ),
-                      if (pills.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: Wrap(
-                              spacing: 8,
-                              runSpacing: 6,
-                              children: [for (final p in pills) GbMetaPill(p)]),
-                        ),
-                    ],
-                  ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(name,
+                              style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: -0.3)),
+                          if (exercise.substitutedFromExerciseName != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Text(
+                                  'Substituted from ${exercise.substitutedFromExerciseName}',
+                                  style: Theme.of(context).textTheme.bodySmall),
+                            ),
+                          if (pills.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: Wrap(
+                                  spacing: 8,
+                                  runSpacing: 6,
+                                  children: [
+                                    for (final p in pills) GbMetaPill(p)
+                                  ]),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    GbIconButton(
+                        icon: Icons.more_horiz,
+                        onTap: onMenu,
+                        semanticLabel: 'More options'),
+                  ],
                 ),
-                const SizedBox(width: 12),
-                GbIconButton(
-                    icon: Icons.more_horiz,
-                    onTap: onMenu,
-                    semanticLabel: 'More options'),
+                const SizedBox(height: 12),
+                _FormCueStrip(catalog: catalog, onTap: onGuide),
               ],
             ),
           ),
@@ -745,8 +854,16 @@ class _ExerciseCard extends StatelessWidget {
             padding: const EdgeInsets.symmetric(vertical: 6),
             child: Column(
               children: [
-                for (final s in exercise.sets)
-                  _LoggedSetRow(set: s, onDelete: () => onDeleteSet(s)),
+                // Rest is stored as "rest before this set"; show it as the rest taken *after* a set
+                // (= the next set's stored value) so it reads naturally and the first set isn't mislabelled.
+                for (var i = 0; i < exercise.sets.length; i++)
+                  _LoggedSetRow(
+                    set: exercise.sets[i],
+                    restAfter: i + 1 < exercise.sets.length
+                        ? exercise.sets[i + 1].restSeconds
+                        : null,
+                    onDelete: () => onDeleteSet(exercise.sets[i]),
+                  ),
                 if (isSkipped)
                   Padding(
                     padding: const EdgeInsets.symmetric(
@@ -759,16 +876,18 @@ class _ExerciseCard extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
                     child: _EntryRow(
-                      setNumber: exercise.sets.length + 1,
-                      target: snapshotSets.length >= exercise.sets.length + 1
-                          ? snapshotSets[exercise.sets.length]
+                      setNumber: exercise.leadSetCount + 1,
+                      target: snapshotSets.length >= exercise.leadSetCount + 1
+                          ? snapshotSets[exercise.leadSetCount]
                           : null,
-                      weight: weight,
-                      reps: reps,
+                      profile: profile,
+                      entry: entry,
                       setType: entryType,
                       busy: busy,
-                      onWeight: onWeight,
-                      onReps: onReps,
+                      canLog: canLog,
+                      showMore: showMore,
+                      onToggleMore: onToggleMore,
+                      onMetric: onMetric,
                       onSetType: onSetType,
                       onLog: onLog,
                     ),
@@ -785,8 +904,12 @@ class _ExerciseCard extends StatelessWidget {
 /// A logged (done) set row — design layout: check + type on the left, weight×reps + e1RM right.
 /// Long-press to delete (the design keeps the row clean — no inline trash).
 class _LoggedSetRow extends StatelessWidget {
-  const _LoggedSetRow({required this.set, required this.onDelete});
+  const _LoggedSetRow(
+      {required this.set, this.restAfter, required this.onDelete});
   final PerformedSet set;
+
+  /// Rest taken *after* this set (derived from the next set's stored "rest before"); null for the last set.
+  final int? restAfter;
   final VoidCallback onDelete;
 
   @override
@@ -794,6 +917,13 @@ class _LoggedSetRow extends StatelessWidget {
     final gb = context.gb;
     final e1rm =
         set.estimatedOneRepMaxKg ?? epleyOneRepMax(set.weightKg, set.reps);
+    // Sub-line: e1RM (working strength sets) and/or the rest taken after the set.
+    final subParts = <String>[
+      if (set.setType == PerformedSetType.working && e1rm != null)
+        'e1RM ${e1rm.toStringAsFixed(1)}kg',
+      if ((set.rpe ?? 0) > 0) 'RPE ${set.rpe}',
+      if ((restAfter ?? 0) > 0) 'rest ${formatRestClock(restAfter!)}',
+    ];
     return InkWell(
       onLongPress: onDelete,
       child: Padding(
@@ -810,39 +940,40 @@ class _LoggedSetRow extends StatelessWidget {
             ),
             const SizedBox(width: 12),
             SizedBox(
-              width: 64,
+              width: 56,
               child: Text(set.setType.label,
                   style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                       color: gb.grey500)),
             ),
-            const Spacer(),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text('${_fmtKg(set.weightKg)} × ${set.reps ?? '—'}',
-                    style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: gb.grey700,
-                        fontFeatures: const [FontFeature.tabularFigures()])),
-                if (set.setType == PerformedSetType.working && e1rm != null)
-                  Text('e1RM ${e1rm.toStringAsFixed(1)}kg',
+            // Value column takes ALL remaining space and right-aligns, so every row's value/sub-line is
+            // flush to the same right edge (no Spacer+Flexible splitting the space 50/50).
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(formatLoggedSet(set),
+                      textAlign: TextAlign.end,
                       style: TextStyle(
-                          fontSize: 11,
-                          color: gb.grey500,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: gb.grey700,
                           fontFeatures: const [FontFeature.tabularFigures()])),
-              ],
+                  if (subParts.isNotEmpty)
+                    Text(subParts.join(' · '),
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: gb.grey500,
+                            fontFeatures: const [FontFeature.tabularFigures()])),
+                ],
+              ),
             ),
           ],
         ),
       ),
     );
   }
-
-  static String _fmtKg(double? kg) =>
-      kg == null ? '—' : '${kg % 1 == 0 ? kg.toInt() : kg}kg';
 }
 
 /// The highlighted current-set entry card (design): set chip + set-type selector + target, big
@@ -851,25 +982,107 @@ class _EntryRow extends StatelessWidget {
   const _EntryRow({
     required this.setNumber,
     required this.target,
-    required this.weight,
-    required this.reps,
+    required this.profile,
+    required this.entry,
     required this.setType,
     required this.busy,
-    required this.onWeight,
-    required this.onReps,
+    required this.canLog,
+    required this.showMore,
+    required this.onToggleMore,
+    required this.onMetric,
     required this.onSetType,
     required this.onLog,
   });
   final int setNumber;
   final SessionSnapshotSet? target;
-  final double weight;
-  final int reps;
+  final TrackingProfile profile;
+  final Map<TrackingMetric, num> entry;
   final PerformedSetType setType;
   final bool busy;
-  final ValueChanged<num> onWeight;
-  final ValueChanged<num> onReps;
+  final bool canLog;
+  final bool showMore;
+  final VoidCallback onToggleMore;
+  final void Function(TrackingMetric, num) onMetric;
   final ValueChanged<PerformedSetType> onSetType;
   final VoidCallback onLog;
+
+  num _val(TrackingMetric m) => entry[m] ?? 0;
+
+  /// Essential steppers shown by default; secondary metrics (calories / HR / rest) appear only via "+ More".
+  List<TrackingMetric> get _stepperFields =>
+      [...profile.fields, if (showMore) ...profile.extras];
+
+  static ({String label, String? unit, num step}) _metricSpec(TrackingMetric m) =>
+      switch (m) {
+        TrackingMetric.weight => (label: 'WEIGHT', unit: 'kg', step: 2.5),
+        TrackingMetric.reps => (label: 'REPS', unit: null, step: 1),
+        TrackingMetric.duration => (label: 'DURATION', unit: 'sec', step: 5),
+        TrackingMetric.distance => (label: 'DISTANCE', unit: 'm', step: 50),
+        TrackingMetric.rounds => (label: 'ROUNDS', unit: null, step: 1),
+        TrackingMetric.calories => (label: 'CALORIES', unit: 'kcal', step: 5),
+        TrackingMetric.heartRate => (label: 'AVG HR', unit: 'bpm', step: 1),
+        TrackingMetric.rest => (label: 'REST', unit: 'sec', step: 5),
+        TrackingMetric.rpe => (label: 'RPE', unit: null, step: 1),
+      };
+
+  /// Mode-aware prescribed-target hint shown on the entry header.
+  String? _targetHint() {
+    final t = target;
+    if (t == null) return null;
+    final parts = <String>[];
+    if (t.targetWeightKg != null && t.targetReps != null) {
+      parts.add('${t.targetWeightKg!.toStringAsFixed(0)}kg × ${t.targetReps}');
+    } else if (t.targetReps != null) {
+      parts.add('${t.targetReps} reps');
+    }
+    if (t.targetDurationSeconds != null) parts.add('${t.targetDurationSeconds}s');
+    if (t.targetDistanceM != null) parts.add('${t.targetDistanceM}m');
+    if (t.targetRounds != null) parts.add('${t.targetRounds} rounds');
+    return parts.isEmpty ? null : 'Target ${parts.join(' · ')}';
+  }
+
+  /// Renders the mode's metric steppers in a fixed two-column grid. Each stepper is left-aligned in its
+  /// column so the ± buttons line up vertically across every row (the lone last stepper keeps the left column).
+  Widget _buildSteppers(GbColors gb) {
+    final fields = _stepperFields;
+    final rows = <Widget>[];
+    for (var i = 0; i < fields.length; i += 2) {
+      final pair = fields.skip(i).take(2).toList();
+      rows.add(IntrinsicHeight(
+        child: Row(
+          children: [
+            Expanded(
+                child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: _stepperFor(pair[0]))),
+            const SizedBox(width: 6),
+            Container(width: 1, color: gb.primary500.withValues(alpha: 0.18)),
+            const SizedBox(width: 6),
+            Expanded(
+                child: pair.length > 1
+                    ? Align(
+                        alignment: Alignment.centerLeft,
+                        child: _stepperFor(pair[1]))
+                    : const SizedBox.shrink()),
+          ],
+        ),
+      ));
+      if (i + 2 < fields.length) rows.add(const SizedBox(height: 10));
+    }
+    return Column(children: rows);
+  }
+
+  Widget _stepperFor(TrackingMetric m) {
+    final spec = _metricSpec(m);
+    return GbStepper(
+      label: spec.label,
+      semanticLabel: spec.label,
+      value: _val(m),
+      unit: spec.unit,
+      step: spec.step,
+      onChanged: (v) => onMetric(m, v),
+    );
+  }
 
   static String _setTypeDesc(PerformedSetType t) => switch (t) {
         PerformedSetType.warmup =>
@@ -918,7 +1131,8 @@ class _EntryRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final gb = context.gb;
-    final e1rm = epleyOneRepMax(weight, reps);
+    final e1rm = epleyOneRepMax(
+        _val(TrackingMetric.weight).toDouble(), _val(TrackingMetric.reps).toInt());
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -981,11 +1195,8 @@ class _EntryRow extends StatelessWidget {
                 ),
               ),
               const Spacer(),
-              if (target != null &&
-                  (target!.targetWeightKg != null ||
-                      target!.targetReps != null))
-                Text(
-                    'Target ${target!.targetWeightKg?.toStringAsFixed(0) ?? '—'}kg × ${target!.targetReps ?? '—'}',
+              if (_targetHint() != null)
+                Text(_targetHint()!,
                     style: TextStyle(
                         fontSize: 12,
                         color: gb.grey500,
@@ -993,31 +1204,44 @@ class _EntryRow extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-          IntrinsicHeight(
-            child: Row(
-              children: [
-                Expanded(
-                    child: GbStepper(
-                        label: 'WEIGHT',
-                        semanticLabel: 'Weight',
-                        value: weight,
-                        unit: 'kg',
-                        step: 2.5,
-                        onChanged: onWeight)),
-                const SizedBox(width: 6),
-                Container(
-                    width: 1, color: gb.primary500.withValues(alpha: 0.18)),
-                const SizedBox(width: 6),
-                Expanded(
-                    child: GbStepper(
-                        label: 'REPS',
-                        semanticLabel: 'Reps',
-                        value: reps,
-                        step: 1,
-                        onChanged: onReps)),
-              ],
+          _buildSteppers(gb),
+          if (profile.extras.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Center(
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(999),
+                    onTap: onToggleMore,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 7),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                              showMore
+                                  ? Icons.expand_less
+                                  : Icons.tune,
+                              size: 15,
+                              color: gb.primary600),
+                          const SizedBox(width: 6),
+                          Text(
+                              showMore
+                                  ? 'Hide extra fields'
+                                  : 'More fields (rest, calories…)',
+                              style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: gb.primary600)),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             ),
-          ),
           if (setType == PerformedSetType.working && e1rm != null) ...[
             const SizedBox(height: 12),
             Text.rich(
@@ -1034,13 +1258,15 @@ class _EntryRow extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 12),
-          FilledButton.icon(
-            // A logged set needs at least 1 rep (weight 0 stays valid — bodyweight movements).
-            onPressed: (busy || reps <= 0) ? null : onLog,
-            icon: const Icon(Icons.check),
-            label: Text(reps <= 0 ? 'Enter reps to log' : 'Log set'),
-            style:
-                FilledButton.styleFrom(minimumSize: const Size.fromHeight(50)),
+          // Design CTA: full-width hero-gradient button (GbButton) with a check + "Log set". Disabled
+          // until the mode's required metric is present; the labelled fields above make that obvious.
+          GbButton(
+            label: 'Log set',
+            icon: Icons.check,
+            size: GbButtonSize.lg,
+            full: true,
+            busy: busy,
+            onPressed: (busy || !canLog) ? null : onLog,
           ),
         ],
       ),
@@ -1167,6 +1393,7 @@ class _ActionBar extends StatelessWidget {
               icon: Icons.chevron_left,
               semanticLabel: 'Previous exercise',
               size: AppSizes.buttonHeight,
+              fill: gb.card,
               onTap: onPrev,
             ),
             const SizedBox(width: AppSpacing.xs + 2),
@@ -1183,6 +1410,8 @@ class _ActionBar extends StatelessWidget {
                 : GbButton(
                     label: 'Next exercise',
                     iconRight: Icons.chevron_right,
+                    variant: GbButtonVariant.outlined,
+                    severity: GbButtonSeverity.secondary,
                     full: true,
                     onPressed: onNext,
                   ),
@@ -1223,7 +1452,6 @@ class _CatalogSheetState extends ConsumerState<_CatalogSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final gb = context.gb;
     return DraggableScrollableSheet(
       expand: false,
       initialChildSize: 0.8,
@@ -1257,8 +1485,9 @@ class _CatalogSheetState extends ConsumerState<_CatalogSheet> {
                   alignment: Alignment.centerLeft,
                   child: GbSheetHeader(
                     title: widget.title,
-                    subtitle:
-                        '${widget.title == 'Substitute' ? 'Replace' : 'Add a movement to'} this session.',
+                    subtitle: widget.title == 'Substitute'
+                        ? 'Replace ${widget.title.toLowerCase()} for this session. Tap to preview the guide.'
+                        : 'Tap a movement to preview its guide — then add.',
                   ),
                 ),
               ),
@@ -1301,21 +1530,48 @@ class _CatalogSheetState extends ConsumerState<_CatalogSheet> {
                     final meta = [e.muscleGroup, e.equipment]
                         .where((s) => s.isNotEmpty)
                         .join(' · ');
-                    return GbTappableRow(
-                      onTap: () => widget.onPick(e),
-                      leading: GbIconTile(
-                          background: gb.grey0,
-                          child: Icon(Icons.fitness_center,
-                              size: AppSizes.iconXl, color: gb.grey500)),
-                      title: e.name,
-                      subtitle: meta.isEmpty ? null : meta,
-                      trailing: GbIconTile(
-                        size: 30,
-                        radius: AppRadius.sm - 4,
-                        background: gb.primary0,
-                        child: Icon(Icons.add,
-                            size: AppSizes.iconLg, color: gb.primary600),
+                    return _CatalogRow(
+                      exercise: e,
+                      meta: meta,
+                      onGuide: () => presentGuideSheet(
+                        context,
+                        _GuideSheet(
+                          exerciseId: e.id,
+                          exerciseName: e.name,
+                          catalog: e,
+                          repository: ref.read(exerciseRepositoryProvider),
+                          eyebrow: widget.title == 'Substitute'
+                              ? 'PREVIEW · SUBSTITUTE'
+                              : 'PREVIEW · BEFORE ADDING',
+                          footer: Row(
+                            children: [
+                              GbButton(
+                                label: 'Back',
+                                variant: GbButtonVariant.outlined,
+                                severity: GbButtonSeverity.secondary,
+                                onPressed: () => Navigator.of(context).pop(),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: GbButton(
+                                  label: widget.title == 'Substitute'
+                                      ? 'Use this exercise'
+                                      : 'Add to session',
+                                  icon: widget.title == 'Substitute'
+                                      ? Icons.swap_horiz
+                                      : Icons.add,
+                                  full: true,
+                                  onPressed: () {
+                                    Navigator.of(context).pop();
+                                    widget.onPick(e);
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
+                      onAdd: () => widget.onPick(e),
                     );
                   },
                 ),
@@ -1323,6 +1579,94 @@ class _CatalogSheetState extends ConsumerState<_CatalogSheet> {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+/// Catalog row with a "Guide >" preview pill and a + add button — matches the design
+/// where tapping a row previews the guide before committing the add/substitute.
+class _CatalogRow extends StatelessWidget {
+  const _CatalogRow({
+    required this.exercise,
+    required this.meta,
+    required this.onGuide,
+    required this.onAdd,
+  });
+  final ExerciseSummary exercise;
+  final String meta;
+  final VoidCallback onGuide;
+  final VoidCallback onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    // Tapping the row body opens the guide preview (then Back / Add from there); the trailing
+    // circle still adds straight to the session in one tap.
+    return Material(
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        side: BorderSide(color: gb.borderCard, width: 1.5),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: InkWell(
+        onTap: onGuide,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+          child: Row(
+            children: [
+              // Dumbbell icon tile
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: gb.grey0,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.fitness_center, size: 19, color: gb.grey500),
+              ),
+              const SizedBox(width: 12),
+              // Name + meta
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(exercise.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: gb.grey900)),
+                    if (meta.isNotEmpty)
+                      Text(meta,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 12, color: gb.grey500)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Add circle button — its own tap target so it adds without opening the preview.
+              Material(
+                color: gb.primary500,
+                shape: const CircleBorder(),
+                shadowColor: gb.primary500.withValues(alpha: 0.55),
+                elevation: 3,
+                child: InkWell(
+                  onTap: onAdd,
+                  customBorder: const CircleBorder(),
+                  child: const SizedBox(
+                    width: 34,
+                    height: 34,
+                    child: Icon(Icons.add, size: 18, color: Colors.white),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1382,3 +1726,1092 @@ class _ConfirmSheet extends StatelessWidget {
     );
   }
 }
+
+// ── Form Coach widgets ────────────────────────────────────────────────────────
+
+/// Present a coach/guide sheet. Uses showModalBottomSheet with the theme drag handle OFF (the sheet
+/// draws its own compact handle) so the header stays tight and there's never a double handle —
+/// regardless of which entry point (active card, or the add/substitute preview) opens it.
+Future<void> presentGuideSheet(BuildContext context, Widget sheet) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: false,
+    backgroundColor: context.gb.card,
+    shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg))),
+    builder: (_) => sheet,
+  );
+}
+
+/// Zero-tap coaching line on the exercise card — always visible, one tap opens the guide sheet.
+/// Mirrors the design's form-cue strip: tinted bar, target icon, the single highest-value cue,
+/// and a "Guide ›" pill.
+class _FormCueStrip extends StatelessWidget {
+  const _FormCueStrip({required this.catalog, required this.onTap});
+  final ExerciseSummary? catalog;
+  final VoidCallback onTap;
+
+  String _cueText() {
+    // Prefer the authored coaching cue; otherwise a muscle-aware generic line.
+    final authored = authoredCueFor(catalog?.name);
+    if (authored != null) return authored;
+    final muscle = catalog?.muscleGroup.isNotEmpty == true
+        ? catalog!.muscleGroup.toLowerCase()
+        : 'target muscles';
+    return 'Focus on your $muscle — controlled reps, full range';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    // Rounded, inset tinted bar (full width within the card's 16px padding) — design `--gb-r-sm`.
+    return Material(
+      color: _kPrimaryTint,
+      borderRadius: BorderRadius.circular(AppRadius.sm),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        child: Container(
+          height: 44,
+          padding: const EdgeInsets.fromLTRB(11, 0, 10, 0),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+            border: Border.all(color: gb.primary25),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 26,
+                height: 26,
+                decoration: BoxDecoration(
+                  color: gb.card,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: gb.primary25),
+                ),
+                child: Icon(Icons.gps_fixed, size: 15, color: gb.primary600),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  _cueText(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    color: gb.primary800,
+                    fontWeight: FontWeight.w600,
+                    height: 1.3,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                height: 26,
+                padding: const EdgeInsets.fromLTRB(9, 0, 6, 0),
+                decoration: BoxDecoration(
+                  color: gb.card,
+                  borderRadius: BorderRadius.circular(99),
+                  border: Border.all(color: gb.primary25),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Guide',
+                        style: TextStyle(
+                            color: gb.primary700,
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700)),
+                    const SizedBox(width: 2),
+                    Icon(Icons.chevron_right, size: 13, color: gb.primary500),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Test seam — the inset form-cue strip as it sits inside the exercise card (with the card's white
+/// surface + 16px padding around it), so its margin/rounding can be verified with a golden.
+@visibleForTesting
+Widget buildFormCueStripForTest({required ExerciseSummary catalog}) => Builder(
+      builder: (context) => ColoredBox(
+        color: context.gb.card,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: _FormCueStrip(catalog: catalog, onTap: () {}),
+        ),
+      ),
+    );
+
+/// Renders the Form Coach guide sheet against a pre-resolved [detail] future — a test seam so the
+/// sheet's styling can be verified with golden images without standing up the API.
+@visibleForTesting
+Widget buildGuideSheetForTest({
+  required Future<ExerciseDetail> detail,
+  required String exerciseName,
+  ExerciseSummary? catalog,
+  String eyebrow = 'How to do this',
+  Widget? footer,
+}) =>
+    _GuideSheet(
+      exerciseName: exerciseName,
+      catalog: catalog,
+      detailFuture: detail,
+      eyebrow: eyebrow,
+      footer: footer,
+    );
+
+/// One-tap coach sheet — loads full exercise detail, resolves the [CoachGuide], and presents the
+/// design's progressively-disclosed guide: identity + media, muscle targets, and a tabbed body
+/// (Steps / Setup / Cues / Mistakes).
+class _GuideSheet extends StatefulWidget {
+  const _GuideSheet({
+    this.exerciseId,
+    required this.exerciseName,
+    required this.catalog,
+    this.repository,
+    this.detailFuture,
+    this.eyebrow = 'How to do this',
+    this.footer,
+  }) : assert(detailFuture != null || (repository != null && exerciseId != null),
+            'Provide either a detailFuture or a repository + exerciseId');
+  final String? exerciseId;
+  final String exerciseName;
+  final ExerciseSummary? catalog;
+  final ExerciseRepository? repository;
+
+  /// Pre-resolved detail (tests/previews); when null the [repository] is queried by [exerciseId].
+  final Future<ExerciseDetail>? detailFuture;
+  final String eyebrow;
+  final Widget? footer;
+
+  @override
+  State<_GuideSheet> createState() => _GuideSheetState();
+}
+
+class _GuideSheetState extends State<_GuideSheet> {
+  late final Future<ExerciseDetail> _future;
+  _GuideTab _tab = _GuideTab.steps;
+
+  @override
+  void initState() {
+    super.initState();
+    _future =
+        widget.detailFuture ?? widget.repository!.getById(widget.exerciseId!);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.88,
+      maxChildSize: 0.96,
+      builder: (ctx, scroll) => FutureBuilder<ExerciseDetail>(
+        future: _future,
+        builder: (ctx, snap) {
+          final loading = snap.connectionState != ConnectionState.done;
+          final guide =
+              snap.data != null ? resolveCoachGuide(snap.data!) : null;
+          // Fall back to the catalog summary for the muscle targets while detail loads / on error.
+          final fallbackPrimary = widget.catalog?.muscleGroup.isNotEmpty == true
+              ? [widget.catalog!.muscleGroup]
+              : const <String>[];
+          final equipment = guide?.equipment?.isNotEmpty == true
+              ? guide!.equipment!
+              : (widget.catalog?.equipment ?? '');
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Compact drag handle (theme handle is disabled for this sheet to keep the top tight).
+              Center(
+                child: Container(
+                  margin: const EdgeInsets.only(top: 8, bottom: 10),
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: gb.grey25,
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+              ),
+              // ── Eyebrow + close ──
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 12, 0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(widget.eyebrow.toUpperCase(),
+                          style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.9,
+                              color: gb.primary600)),
+                    ),
+                    _SheetCloseButton(onTap: () => Navigator.of(ctx).pop()),
+                  ],
+                ),
+              ),
+              // ── Title + difficulty ── (more breathing room below the eyebrow/close row)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(widget.exerciseName,
+                          style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -0.4,
+                              height: 1.18,
+                              color: gb.ink)),
+                    ),
+                    if (guide?.difficulty?.isNotEmpty == true) ...[
+                      const SizedBox(width: 10),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: _DifficultyBadge(label: guide!.difficulty!),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              // ── Media slot — ALWAYS shown (photo when available, else a placeholder), with the
+              // equipment + "Demo loop" chips overlaid, exactly as the design specifies.
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                child: _MediaSlot(
+                  imageUrl: guide?.imageUrl,
+                  equipment: equipment,
+                ),
+              ),
+              // ── Targets ──
+              if (!loading)
+                _TargetsRow(
+                  primary: guide?.primary.isNotEmpty == true
+                      ? guide!.primary
+                      : fallbackPrimary,
+                  secondary: guide?.secondary ?? const [],
+                ),
+              const SizedBox(height: 2),
+              // ── Body ──
+              Expanded(
+                child: loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : snap.hasError || guide == null
+                        ? _GuideErrorBody(scroll: scroll)
+                        : guide.hasTabs
+                            ? _TabbedGuide(
+                                guide: guide,
+                                tab: _tab,
+                                onTab: (t) => setState(() => _tab = t),
+                                scroll: scroll,
+                              )
+                            : _ComingSoonBody(
+                                exerciseName: guide.name, scroll: scroll),
+              ),
+              if (widget.footer != null)
+                Container(
+                  padding: EdgeInsets.fromLTRB(16, 12, 16,
+                      12 + MediaQuery.of(ctx).padding.bottom),
+                  decoration: BoxDecoration(
+                    color: gb.card,
+                    border: Border(top: BorderSide(color: gb.borderCard)),
+                  ),
+                  child: widget.footer,
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+enum _GuideTab { steps, setup, cues, mistakes }
+
+extension on _GuideTab {
+  String get label => switch (this) {
+        _GuideTab.steps => 'Steps',
+        _GuideTab.setup => 'Setup',
+        _GuideTab.cues => 'Cues',
+        _GuideTab.mistakes => 'Mistakes',
+      };
+}
+
+class _SheetCloseButton extends StatelessWidget {
+  const _SheetCloseButton({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return Material(
+      color: gb.grey0,
+      borderRadius: BorderRadius.circular(9),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(9),
+        onTap: onTap,
+        child: Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(9),
+            border: Border.all(color: gb.borderCard),
+          ),
+          child: Icon(Icons.close, size: 18, color: gb.grey600),
+        ),
+      ),
+    );
+  }
+}
+
+class _DifficultyBadge extends StatelessWidget {
+  const _DifficultyBadge({required this.label});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return Container(
+      height: 24,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: _kPrimaryTint,
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: gb.primary25),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.bolt, size: 11, color: gb.primary600),
+          const SizedBox(width: 5),
+          Text(label,
+              style: TextStyle(
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: gb.primary700)),
+        ],
+      ),
+    );
+  }
+}
+
+/// 16:9 media slot — exercise photo when available, otherwise a grey placeholder with a centered
+/// dumbbell. Equipment + "Demo loop" chips overlay the bottom corners.
+class _MediaSlot extends StatelessWidget {
+  const _MediaSlot({required this.imageUrl, required this.equipment});
+  final String? imageUrl;
+  final String equipment;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return AspectRatio(
+      aspectRatio: 16 / 9,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (imageUrl != null)
+              Image.network(imageUrl!,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => _placeholder(gb))
+            else
+              _placeholder(gb),
+            // Border overlay (over the image too).
+            DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(AppRadius.md),
+                border: Border.all(color: gb.borderCard),
+              ),
+            ),
+            Positioned(
+              left: 10,
+              right: 10,
+              bottom: 10,
+              child: Row(
+                children: [
+                  if (equipment.isNotEmpty)
+                    Flexible(
+                      child: _MediaChip(
+                          icon: Icons.fitness_center, label: equipment),
+                    ),
+                  const Spacer(),
+                  const _MediaChip(icon: Icons.play_arrow, label: 'Demo loop'),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _placeholder(GbColors gb) => ColoredBox(
+        color: gb.grey0,
+        child: Center(
+          child: Icon(Icons.fitness_center, size: 40, color: gb.grey400),
+        ),
+      );
+}
+
+/// Overlaid translucent chip on the media slot (equipment / demo).
+class _MediaChip extends StatelessWidget {
+  const _MediaChip({required this.icon, required this.label});
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 24,
+      padding: const EdgeInsets.symmetric(horizontal: 9),
+      decoration: BoxDecoration(
+        color: const Color(0x990B1220),
+        borderRadius: BorderRadius.circular(99),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: Colors.white),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "TARGETS" label + muscle pills (primary tinted, secondary neutral, each with a leading dot).
+class _TargetsRow extends StatelessWidget {
+  const _TargetsRow({required this.primary, required this.secondary});
+  final List<String> primary;
+  final List<String> secondary;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    if (primary.isEmpty && secondary.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 5),
+            child: Text('TARGETS',
+                style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.9,
+                    color: gb.grey400)),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final m in primary) _MusclePill(label: m, isPrimary: true),
+                for (final m in secondary)
+                  _MusclePill(label: m, isPrimary: false),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MusclePill extends StatelessWidget {
+  const _MusclePill({required this.label, required this.isPrimary});
+  final String label;
+  final bool isPrimary;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return Container(
+      height: 26,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: isPrimary ? _kPrimaryTint : gb.grey0,
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: isPrimary ? gb.primary25 : gb.borderCard),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 6,
+            height: 6,
+            decoration: BoxDecoration(
+              color: isPrimary ? gb.primary500 : _kGrey300,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(label,
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: isPrimary ? gb.primary700 : gb.grey600)),
+        ],
+      ),
+    );
+  }
+}
+
+/// The tab bar + scrolling tab body.
+class _TabbedGuide extends StatelessWidget {
+  const _TabbedGuide({
+    required this.guide,
+    required this.tab,
+    required this.onTab,
+    required this.scroll,
+  });
+  final CoachGuide guide;
+  final _GuideTab tab;
+  final ValueChanged<_GuideTab> onTab;
+  final ScrollController scroll;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Tab bar — content-width pills (design vocabulary). A Wrap keeps them on one row when they
+        // fit (the common case) and wraps gracefully instead of clipping on narrow screens / wide fonts.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 8,
+            children: [
+              for (final t in _GuideTab.values)
+                _TabPill(
+                  label: t.label,
+                  selected: t == tab,
+                  onTap: () => onTab(t),
+                ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: switch (tab) {
+            _GuideTab.steps => _StepsBody(guide: guide, scroll: scroll),
+            _GuideTab.setup => _SetupBody(guide: guide, scroll: scroll),
+            _GuideTab.cues => _CuesBody(guide: guide, scroll: scroll),
+            _GuideTab.mistakes => _MistakesBody(guide: guide, scroll: scroll),
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _TabPill extends StatelessWidget {
+  const _TabPill(
+      {required this.label, required this.selected, required this.onTap});
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 32,
+        // No `alignment` — inside a Wrap (bounded width) it would expand the pill to full width.
+        // Padding + a min-size Row keep the pill hugging its label.
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: selected ? gb.primary500 : gb.card,
+          borderRadius: BorderRadius.circular(99),
+          border: Border.all(
+              color: selected ? gb.primary500 : gb.borderCard, width: 1.5),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(label,
+                style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: selected ? Colors.white : gb.grey600)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Steps tab — optional Tempo / Breathing info chips, then a connected numbered list.
+class _StepsBody extends StatelessWidget {
+  const _StepsBody({required this.guide, required this.scroll});
+  final CoachGuide guide;
+  final ScrollController scroll;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    final hasMeta = guide.tempo != null || guide.breathing != null;
+    return ListView(
+      controller: scroll,
+      padding: EdgeInsets.fromLTRB(
+          16, 14, 16, 16 + MediaQuery.of(context).padding.bottom),
+      children: [
+        if (hasMeta) ...[
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (guide.tempo != null)
+                  Expanded(
+                      child: _InfoChip(
+                          icon: Icons.timer_outlined,
+                          label: 'TEMPO',
+                          value: guide.tempo!)),
+                if (guide.tempo != null && guide.breathing != null)
+                  const SizedBox(width: 8),
+                if (guide.breathing != null)
+                  Expanded(
+                      child: _InfoChip(
+                          icon: Icons.sync,
+                          label: 'BREATHING',
+                          value: guide.breathing!)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+        ],
+        if (guide.steps.isEmpty)
+          const _EmptyTabNote(text: 'No step-by-step is authored for this exercise yet.')
+        else
+          _NumberedSteps(
+            steps: guide.steps,
+            badgeColor: gb.primary500,
+            badgeTextColor: Colors.white,
+            badgeBorder: null,
+            lineColor: gb.primary25,
+          ),
+      ],
+    );
+  }
+}
+
+/// Setup tab — connected numbered list with soft (tinted) badges.
+class _SetupBody extends StatelessWidget {
+  const _SetupBody({required this.guide, required this.scroll});
+  final CoachGuide guide;
+  final ScrollController scroll;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return ListView(
+      controller: scroll,
+      padding: EdgeInsets.fromLTRB(
+          16, 16, 16, 16 + MediaQuery.of(context).padding.bottom),
+      children: [
+        if (guide.setup.isEmpty)
+          const _EmptyTabNote(text: 'No setup notes for this exercise yet.')
+        else
+          _NumberedSteps(
+            steps: guide.setup,
+            badgeColor: _kPrimaryTint,
+            badgeTextColor: gb.primary700,
+            badgeBorder: gb.primary25,
+            lineColor: gb.grey25,
+          ),
+      ],
+    );
+  }
+}
+
+/// Cues tab — green-check bullet list.
+class _CuesBody extends StatelessWidget {
+  const _CuesBody({required this.guide, required this.scroll});
+  final CoachGuide guide;
+  final ScrollController scroll;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return ListView(
+      controller: scroll,
+      padding: EdgeInsets.fromLTRB(
+          16, 16, 16, 16 + MediaQuery.of(context).padding.bottom),
+      children: [
+        if (guide.cues.isEmpty)
+          const _EmptyTabNote(text: 'No coaching cues for this exercise yet.')
+        else
+          for (final c in guide.cues)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _IconBullet(
+                icon: Icons.check,
+                bg: gb.success0,
+                border: gb.success50,
+                iconColor: gb.success,
+                text: c,
+              ),
+            ),
+      ],
+    );
+  }
+}
+
+/// Mistakes tab — red-✕ bullet list, then a yellow safety callout.
+class _MistakesBody extends StatelessWidget {
+  const _MistakesBody({required this.guide, required this.scroll});
+  final CoachGuide guide;
+  final ScrollController scroll;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    final hasAny = guide.mistakes.isNotEmpty || guide.safety != null;
+    return ListView(
+      controller: scroll,
+      padding: EdgeInsets.fromLTRB(
+          16, 16, 16, 16 + MediaQuery.of(context).padding.bottom),
+      children: [
+        if (!hasAny)
+          const _EmptyTabNote(text: 'No common mistakes flagged for this exercise yet.'),
+        for (final m in guide.mistakes)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: _IconBullet(
+              icon: Icons.close,
+              bg: gb.danger0,
+              border: _kError50,
+              iconColor: _kError200,
+              text: m,
+            ),
+          ),
+        if (guide.safety != null) ...[
+          if (guide.mistakes.isNotEmpty) const SizedBox(height: 2),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: gb.warning0,
+              borderRadius: BorderRadius.circular(AppRadius.sm),
+              border: Border.all(color: _kWarning50),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.bolt, size: 16, color: gb.warning200),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(guide.safety!,
+                      style: TextStyle(
+                          fontSize: 12.5,
+                          height: 1.5,
+                          fontWeight: FontWeight.w600,
+                          color: gb.warning300)),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// Connected numbered step list (white-ring badges over a vertical rail).
+class _NumberedSteps extends StatelessWidget {
+  const _NumberedSteps({
+    required this.steps,
+    required this.badgeColor,
+    required this.badgeTextColor,
+    required this.badgeBorder,
+    required this.lineColor,
+  });
+  final List<String> steps;
+  final Color badgeColor;
+  final Color badgeTextColor;
+  final Color? badgeBorder;
+  final Color lineColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    // Per-row connector: each badge draws the rail segment BELOW it down to the next badge. The last
+    // row draws none, so there's no stray stub past the final step.
+    return Column(
+      children: [
+        for (var i = 0; i < steps.length; i++)
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SizedBox(
+                  width: 28,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: badgeColor,
+                          shape: BoxShape.circle,
+                          border: badgeBorder != null
+                              ? Border.all(color: badgeBorder!)
+                              : null,
+                        ),
+                        alignment: Alignment.center,
+                        child: Text('${i + 1}',
+                            style: TextStyle(
+                                color: badgeTextColor,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800)),
+                      ),
+                      if (i != steps.length - 1)
+                        Expanded(child: Container(width: 2, color: lineColor)),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                        top: 3, bottom: i == steps.length - 1 ? 0 : 16),
+                    child: Text(steps[i],
+                        style: TextStyle(
+                            fontSize: 14.5,
+                            height: 1.55,
+                            fontWeight: FontWeight.w500,
+                            color: gb.grey900)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// A coloured icon-tile bullet (cues = green check, mistakes = red ✕).
+class _IconBullet extends StatelessWidget {
+  const _IconBullet({
+    required this.icon,
+    required this.bg,
+    required this.border,
+    required this.iconColor,
+    required this.text,
+  });
+  final IconData icon;
+  final Color bg;
+  final Color border;
+  final Color iconColor;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 26,
+          height: 26,
+          margin: const EdgeInsets.only(top: 1),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: border),
+          ),
+          child: Icon(icon, size: 15, color: iconColor),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(top: 3),
+            child: Text(text,
+                style: TextStyle(
+                    fontSize: 14.5,
+                    height: 1.55,
+                    fontWeight: FontWeight.w500,
+                    color: gb.grey900)),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Tempo / Breathing info card on the Steps tab.
+class _InfoChip extends StatelessWidget {
+  const _InfoChip(
+      {required this.icon, required this.label, required this.value});
+  final IconData icon;
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(11, 10, 11, 10),
+      decoration: BoxDecoration(
+        color: gb.grey0,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        border: Border.all(color: gb.borderCard),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 16, color: gb.primary600),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label,
+                    style: TextStyle(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.7,
+                        color: gb.grey400)),
+                const SizedBox(height: 2),
+                Text(value,
+                    style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        height: 1.3,
+                        color: gb.grey900)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptyTabNote extends StatelessWidget {
+  const _EmptyTabNote({required this.text});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 28),
+      child: Center(
+        child: Text(text,
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: gb.grey400, height: 1.5)),
+      ),
+    );
+  }
+}
+
+/// Edge case — substituted / ad-hoc movement with no authored guide and no API content.
+class _ComingSoonBody extends StatelessWidget {
+  const _ComingSoonBody({required this.exerciseName, required this.scroll});
+  final String exerciseName;
+  final ScrollController scroll;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return ListView(
+      controller: scroll,
+      padding: EdgeInsets.fromLTRB(
+          16, 18, 16, 16 + MediaQuery.of(context).padding.bottom),
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 24),
+          decoration: BoxDecoration(
+            color: gb.grey0,
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            border: Border.all(color: gb.borderField),
+          ),
+          child: Column(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: gb.card,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: gb.borderCard),
+                ),
+                child: Icon(Icons.edit_outlined, size: 20, color: gb.grey400),
+              ),
+              const SizedBox(height: 12),
+              Text('Full guide coming soon',
+                  style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: gb.grey900)),
+              const SizedBox(height: 4),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Text(
+                  'We don’t have a step-by-step for $exerciseName yet. '
+                  'Here’s what it trains — your form stays your call this session.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 13, color: gb.grey500, height: 1.5),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _GuideErrorBody extends StatelessWidget {
+  const _GuideErrorBody({required this.scroll});
+  final ScrollController scroll;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return ListView(
+      controller: scroll,
+      padding: const EdgeInsets.all(24),
+      children: [
+        const SizedBox(height: 24),
+        Text('Couldn’t load this guide — check your connection and try again.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: gb.grey500, height: 1.5)),
+      ],
+    );
+  }
+}
+
+// Design tokens with no direct GbColors slot (exact hex from the design's tokens.css).
+const Color _kPrimaryTint = Color(0xFFE6F0FF); // --gb-primary-tint
+const Color _kGrey300 = Color(0xFF98A1B0); // --inv-grey-300
+const Color _kError50 = Color(0xFFF28E8E); // --inv-error-50
+const Color _kError200 = Color(0xFFA32020); // --inv-error-200
+const Color _kWarning50 = Color(0xFFFBD582); // --inv-warning-50

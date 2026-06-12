@@ -8,22 +8,18 @@ import '../log/log_screen.dart' show showStartWorkoutSheet;
 import '../tenant/tenant_controller.dart';
 
 /// Role-adaptive bottom-tab shell (design / strategy-doc navigation):
-///  - Trainee (Client): Log · Plan · Progress · Profile
-///  - Coach (Owner): Plans · Log · Clients · Profile  (Log lets an Owner self-train — they have
-///    WorkoutLogCreate; "Train this myself" on Plans self-assigns at Full visibility.)
-/// Same StatefulShellRoute; the visible destinations map to the role's branches. "Start Workout" is
-/// the centre nav item — a filled rounded-rectangle button (in-row, not a raised FAB).
+///  - Trainee (Client): Log · Plan · [Start] · Progress · Profile
+///  - Coach (Owner):    Coach · Log · [Start] · Progress · Profile
+/// The Coach tab is a single hub folding the client roster and plan library together; an Owner self-
+/// trains via Log (they have WorkoutLogCreate) and tracks their own trends via Progress. Same
+/// StatefulShellRoute; the visible destinations map to the role's branches. "Start Workout" is the
+/// centre nav item — a filled rounded-rectangle button (in-row, not a raised FAB).
 class HomeShell extends ConsumerWidget {
   const HomeShell({required this.shell, super.key});
   final StatefulNavigationShell shell;
 
   // Fixed branch order in the router.
-  static const _log = 0,
-      _plan = 1,
-      _progress = 2,
-      _clients = 3,
-      _coachPlans = 4,
-      _profile = 5;
+  static const _log = 0, _plan = 1, _progress = 2, _coach = 3, _profile = 4;
 
   static const _traineeDestinations = [
     (_log, Icons.history_outlined, Icons.history, 'Log'),
@@ -32,9 +28,9 @@ class HomeShell extends ConsumerWidget {
     (_profile, Icons.person_outline, Icons.person, 'Profile'),
   ];
   static const _coachDestinations = [
-    (_coachPlans, Icons.description_outlined, Icons.description, 'Plans'),
+    (_coach, Icons.group_outlined, Icons.group, 'Coach'),
     (_log, Icons.history_outlined, Icons.history, 'Log'),
-    (_clients, Icons.group_outlined, Icons.group, 'Clients'),
+    (_progress, Icons.bar_chart_outlined, Icons.bar_chart, 'Progress'),
     (_profile, Icons.person_outline, Icons.person, 'Profile'),
   ];
 

@@ -302,7 +302,8 @@ class _ExerciseBreakdown extends StatelessWidget {
 
     final metaParts = <String>[
       '${exercise.sets.length} set${exercise.sets.length == 1 ? '' : 's'}',
-      '${_fmtVolume(vol)} kg',
+      // Volume / e1RM only mean something for weighted sets — hide them for cardio/timed/etc.
+      if (vol > 0) '${_fmtVolume(vol)} kg',
       if (best > 0) 'e1RM ${best.toStringAsFixed(0)}kg',
     ];
 
@@ -335,7 +336,7 @@ class _ExerciseBreakdown extends StatelessWidget {
               children: [
                 for (final s in exercise.sets)
                   GbSetPill(
-                    label: '${s.weightKg?.toStringAsFixed(0) ?? '—'}kg × ${s.reps ?? '—'}',
+                    label: formatLoggedSet(s),
                     isPr: s.isPr,
                   ),
               ],

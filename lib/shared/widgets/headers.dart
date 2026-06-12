@@ -69,8 +69,12 @@ class GbScreenHeader extends StatelessWidget {
 /// brand mark (matching the login screen), the page title, and optional trailing actions (streak
 /// chip, notification bell). No greeting.
 class GbAppHeader extends StatelessWidget {
-  const GbAppHeader({required this.title, this.actions = const [], super.key});
+  const GbAppHeader(
+      {required this.title, this.subtitle, this.actions = const [], super.key});
   final String title;
+
+  /// Optional muted line under the title (e.g. the coach workspace name on the Coach hub).
+  final String? subtitle;
   final List<Widget> actions;
 
   @override
@@ -85,14 +89,25 @@ class GbAppHeader extends StatelessWidget {
             const BrandMark(size: 40, radius: 13, glyph: true),
             const SizedBox(width: AppSpacing.sm),
             Expanded(
-              child: Text(title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.4,
-                      color: gb.ink)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.4,
+                          color: gb.ink)),
+                  if (subtitle != null)
+                    Text(subtitle!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 13, color: gb.grey500)),
+                ],
+              ),
             ),
             for (final a in actions) ...[
               const SizedBox(width: AppSpacing.xs),

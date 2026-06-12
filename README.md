@@ -180,7 +180,7 @@ gymbroapp/
 ├── config/                  # dev.json · prod.json (Dart-define env files)
 ├── lib/                     # application code (see above)
 ├── test/                    # unit + wire-parsing + a11y tests
-├── docs/                    # ARCHITECTURE · MOBILE_MVP_STATUS · DESIGN_COMPLIANCE · design-reference · screenshots
+├── docs/                    # ARCHITECTURE · MOBILE_MVP_STATUS · DESIGN_COMPLIANCE · INSTALL_ON_IPHONE · design-reference · screenshots
 ├── analysis_options.yaml    # lints (flutter_lints + strict casts/raw-types)
 └── pubspec.yaml
 ```
@@ -281,6 +281,10 @@ flutter build web
 > [!NOTE]
 > Release Android signing is **not** configured in-repo (debug signing only). Add a
 > `key.properties` + keystore — both are already covered by `.gitignore` — before publishing.
+
+> [!TIP]
+> Side-loading onto a personal iPhone (cabled + wireless install, the 7-day re-sign,
+> Developer Mode and cert-trust steps): see [`docs/INSTALL_ON_IPHONE.md`](docs/INSTALL_ON_IPHONE.md).
 
 ---
 

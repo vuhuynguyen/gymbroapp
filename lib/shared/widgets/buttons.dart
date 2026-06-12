@@ -167,12 +167,17 @@ class GbIconButton extends StatelessWidget {
     required this.onTap,
     required this.semanticLabel,
     this.size = 36,
+    this.fill,
     super.key,
   });
   final IconData icon;
   final VoidCallback onTap;
   final String semanticLabel;
   final double size;
+
+  /// Background fill. Defaults to the card-on-card [grey0] tint; pass [card] to sit flush on a white
+  /// surface (e.g. next to an outlined-secondary button so the two read as a matched pair).
+  final Color? fill;
 
   @override
   Widget build(BuildContext context) {
@@ -181,7 +186,7 @@ class GbIconButton extends StatelessWidget {
       button: true,
       label: semanticLabel,
       child: Material(
-        color: gb.grey0,
+        color: fill ?? gb.grey0,
         shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(9),
             side: BorderSide(color: gb.borderCard)),

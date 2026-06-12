@@ -8,12 +8,16 @@ class PerformedSet {
   const PerformedSet({
     required this.id,
     this.planSetId,
+    this.parentSetId,
     required this.setNumber,
     required this.setType,
     this.reps,
     this.weightKg,
     this.durationSeconds,
     this.distanceM,
+    this.calories,
+    this.avgHeartRate,
+    this.rounds,
     this.rpe,
     this.restSeconds,
     required this.isCompleted,
@@ -24,12 +28,17 @@ class PerformedSet {
 
   final String id;
   final String? planSetId;
+  /// Set when this row is a drop/rest-pause stage of the lead set [parentSetId] (counts as one logical set).
+  final String? parentSetId;
   final int setNumber;
   final PerformedSetType setType;
   final int? reps;
   final double? weightKg;
   final int? durationSeconds;
   final int? distanceM;
+  final int? calories;
+  final int? avgHeartRate;
+  final int? rounds;
   final int? rpe;
   final int? restSeconds;
   final bool isCompleted;
@@ -40,12 +49,16 @@ class PerformedSet {
   factory PerformedSet.fromJson(Map<String, dynamic> j) => PerformedSet(
         id: j['id'].toString(),
         planSetId: asString(j['planSetId']),
+        parentSetId: asString(j['parentSetId']),
         setNumber: asInt(j['setNumber']) ?? 0,
         setType: PerformedSetType.parse(j['setType']),
         reps: asInt(j['reps']),
         weightKg: asDouble(j['weightKg']),
         durationSeconds: asInt(j['durationSeconds']),
         distanceM: asInt(j['distanceM']),
+        calories: asInt(j['calories']),
+        avgHeartRate: asInt(j['avgHeartRate']),
+        rounds: asInt(j['rounds']),
         rpe: asInt(j['rpe']),
         restSeconds: asInt(j['restSeconds']),
         isCompleted: asBool(j['isCompleted'], fallback: true),
@@ -67,6 +80,8 @@ class PerformedExercise {
     required this.status,
     this.notes,
     required this.sets,
+    this.trackingType = ExerciseTrackingType.strength,
+    this.supersetGroupId,
   });
 
   final String id;
@@ -80,6 +95,15 @@ class PerformedExercise {
   final String? notes;
   final List<PerformedSet> sets;
 
+  /// Logging mode (denormalized at add/substitute time) — drives which metric inputs the logger shows.
+  final ExerciseTrackingType trackingType;
+
+  /// Exercises sharing a non-null group id are performed as a superset (rotated, rest after the round).
+  final String? supersetGroupId;
+
+  /// Logged lead/standalone sets only — drop stages roll up into their lead, so a cluster counts as one set.
+  int get leadSetCount => sets.where((s) => s.parentSetId == null).length;
+
   factory PerformedExercise.fromJson(Map<String, dynamic> j) =>
       PerformedExercise(
         id: j['id'].toString(),
@@ -92,6 +116,8 @@ class PerformedExercise {
         status: ExercisePerformStatus.parse(j['status']),
         notes: asString(j['notes']),
         sets: asList(j['sets'], PerformedSet.fromJson),
+        trackingType: ExerciseTrackingType.parse(j['trackingType']),
+        supersetGroupId: asString(j['supersetGroupId']),
       );
 
   PerformedExercise copyWith(
@@ -107,6 +133,8 @@ class PerformedExercise {
         status: status ?? this.status,
         notes: notes,
         sets: sets ?? this.sets,
+        trackingType: trackingType,
+        supersetGroupId: supersetGroupId,
       );
 }
 
@@ -121,6 +149,8 @@ class SessionSnapshotSet {
     this.targetWeightKg,
     this.targetRpe,
     this.targetDurationSeconds,
+    this.targetDistanceM,
+    this.targetRounds,
     required this.restSeconds,
   });
 
@@ -131,6 +161,8 @@ class SessionSnapshotSet {
   final double? targetWeightKg;
   final int? targetRpe;
   final int? targetDurationSeconds;
+  final int? targetDistanceM;
+  final int? targetRounds;
   final int restSeconds;
 
   factory SessionSnapshotSet.fromJson(Map<String, dynamic> j) =>
@@ -142,6 +174,8 @@ class SessionSnapshotSet {
         targetWeightKg: asDouble(j['targetWeightKg']),
         targetRpe: asInt(j['targetRpe']),
         targetDurationSeconds: asInt(j['targetDurationSeconds']),
+        targetDistanceM: asInt(j['targetDistanceM']),
+        targetRounds: asInt(j['targetRounds']),
         restSeconds: asInt(j['restSeconds']) ?? 0,
       );
 }
@@ -153,6 +187,7 @@ class SessionSnapshotExercise {
     required this.exerciseName,
     required this.order,
     required this.sets,
+    this.supersetGroupId,
   });
 
   final String planWorkoutExerciseId;
@@ -160,6 +195,7 @@ class SessionSnapshotExercise {
   final String exerciseName;
   final int order;
   final List<SessionSnapshotSet> sets;
+  final String? supersetGroupId;
 
   factory SessionSnapshotExercise.fromJson(Map<String, dynamic> j) =>
       SessionSnapshotExercise(
@@ -168,6 +204,7 @@ class SessionSnapshotExercise {
         exerciseName: asString(j['exerciseName']) ?? '',
         order: asInt(j['order']) ?? 0,
         sets: asList(j['sets'], SessionSnapshotSet.fromJson),
+        supersetGroupId: asString(j['supersetGroupId']),
       );
 }
 
@@ -519,24 +556,33 @@ class UpdateExerciseRequest {
 class LogSetRequest {
   const LogSetRequest({
     this.planSetId,
+    this.parentSetId,
     required this.setNumber,
     this.setType = PerformedSetType.working,
     this.reps,
     this.weightKg,
     this.durationSeconds,
     this.distanceM,
+    this.calories,
+    this.avgHeartRate,
+    this.rounds,
     this.rpe,
     this.restSeconds,
     this.isCompleted = true,
   });
 
   final String? planSetId;
+  /// Set when logging a drop/rest-pause stage of an existing lead set.
+  final String? parentSetId;
   final int setNumber;
   final PerformedSetType setType;
   final int? reps;
   final double? weightKg;
   final int? durationSeconds;
   final int? distanceM;
+  final int? calories;
+  final int? avgHeartRate;
+  final int? rounds;
   final int? rpe;
   final int? restSeconds;
   final bool isCompleted;
@@ -546,6 +592,7 @@ class LogSetRequest {
   // non-positive/null numeric field; only the always-required keys are sent unconditionally.
   Map<String, dynamic> toJson() => {
         if (planSetId != null) 'planSetId': planSetId,
+        if (parentSetId != null) 'parentSetId': parentSetId,
         'setNumber': setNumber,
         'setType': setType.wire,
         if (reps != null && reps! >= 1) 'reps': reps,
@@ -553,8 +600,11 @@ class LogSetRequest {
         if (durationSeconds != null && durationSeconds! > 0)
           'durationSeconds': durationSeconds,
         if (distanceM != null && distanceM! > 0) 'distanceM': distanceM,
-        if (rpe != null) 'rpe': rpe,
-        if (restSeconds != null) 'restSeconds': restSeconds,
+        if (calories != null && calories! > 0) 'calories': calories,
+        if (avgHeartRate != null && avgHeartRate! > 0) 'avgHeartRate': avgHeartRate,
+        if (rounds != null && rounds! >= 1) 'rounds': rounds,
+        if (rpe != null && rpe! > 0) 'rpe': rpe,
+        if (restSeconds != null && restSeconds! > 0) 'restSeconds': restSeconds,
         'isCompleted': isCompleted,
       };
 }

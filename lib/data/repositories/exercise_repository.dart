@@ -11,6 +11,11 @@ class ExerciseRepository {
   ExerciseRepository(this._dio);
   final Dio _dio;
 
+  Future<ExerciseDetail> getById(String id) => apiCall(() async {
+        final res = await _dio.get<Map<String, dynamic>>('/api/exercises/$id');
+        return ExerciseDetail.fromJson(res.data!);
+      });
+
   Future<List<ExerciseSummary>> search({String? query, int pageSize = 200}) => apiCall(() async {
         final res = await _dio.get<List<dynamic>>(
           '/api/exercises',
