@@ -184,6 +184,60 @@ enum PlanSetType implements WireEnum {
       parseWire(values, raw) ?? fallback;
 }
 
+/// A nutrition `LoggedItem.status`. Mirrors the as-built API
+/// (`gymbro/docs/nutrition/API_AND_PERMISSIONS.md` §2): camelCase strings out, case/int-tolerant in.
+/// `missed` is server-set only (a still-`planned` item on a closed day) — the client never sends it.
+enum NutritionItemStatus implements WireEnum {
+  planned('planned', 1),
+  completed('completed', 2),
+  skipped('skipped', 3),
+  substituted('substituted', 4),
+  missed('missed', 5);
+
+  const NutritionItemStatus(this.wire, this.value);
+  @override
+  final String wire;
+  @override
+  final int value;
+
+  static NutritionItemStatus parse(Object? raw,
+          {NutritionItemStatus fallback = NutritionItemStatus.planned}) =>
+      parseWire(values, raw) ?? fallback;
+
+  /// Counts toward the adherence numerator (ate it as planned, or swapped for something).
+  bool get isAdherent =>
+      this == NutritionItemStatus.completed ||
+      this == NutritionItemStatus.substituted;
+
+  /// Has the trainee acted on this item yet (vs still planned / passively missed)?
+  bool get isLogged =>
+      this == NutritionItemStatus.completed ||
+      this == NutritionItemStatus.skipped ||
+      this == NutritionItemStatus.substituted;
+}
+
+/// A catalog `Food.kind` (`GET /api/foods`). camelCase strings out, case/int-tolerant in.
+enum FoodKind implements WireEnum {
+  food('food', 1),
+  supplement('supplement', 2),
+  beverage('beverage', 3);
+
+  const FoodKind(this.wire, this.value);
+  @override
+  final String wire;
+  @override
+  final int value;
+
+  static FoodKind parse(Object? raw, {FoodKind fallback = FoodKind.food}) =>
+      parseWire(values, raw) ?? fallback;
+
+  String get label => switch (this) {
+        FoodKind.food => 'Food',
+        FoodKind.supplement => 'Supplement',
+        FoodKind.beverage => 'Beverage',
+      };
+}
+
 enum TenantRole implements WireEnum {
   owner('owner', 1),
   client('client', 2);

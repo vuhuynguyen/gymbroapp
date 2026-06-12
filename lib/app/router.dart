@@ -8,10 +8,12 @@ import '../features/auth/forgot_password_screen.dart';
 import '../features/auth/login_screen.dart';
 import '../features/coach/assign_screen.dart';
 import '../features/coach/client_monitor_screen.dart';
-import '../features/coach/clients_screen.dart';
-import '../features/coach/coach_plans_screen.dart';
+import '../features/coach/coach_hub_screen.dart';
 import '../features/coach/plan_view_screen.dart';
 import '../features/log/log_screen.dart';
+import '../features/nutrition/my_foods_screen.dart';
+import '../features/nutrition/nutrition_day_detail_screen.dart';
+import '../features/nutrition/nutrition_history_screen.dart';
 import '../features/plan/plan_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/progress/progress_screen.dart';
@@ -24,25 +26,29 @@ import '../features/tenant/workspace_picker_screen.dart';
 
 final _rootKey = GlobalKey<NavigatorState>();
 
-// Trainee-only shell roots an Owner is bounced off. `/log` is shared (an Owner self-trains there),
-// so it is intentionally NOT here.
-const _ownerForbidden = {'/plan', '/progress'};
-const _coachRoots = {'/clients', '/coach-plans'};
+// Trainee-only shell roots an Owner is bounced off. `/log` is shared (an Owner self-trains there)
+// and `/progress` is now shared too (an Owner tracks their own trends), so neither is here.
+const _ownerForbidden = {'/plan'};
+const _coachRoots = {'/coach'};
 // Coach-only full-screen routes — a resolved Client is bounced off these (the server also 403s).
 const _coachOnlyPrefixes = ['/client/', '/assign/', '/plan-view/'];
 
-/// go_router with a role-adaptive `StatefulShellRoute`. Branches (fixed order): log, plan, progress
-/// (trainee), clients, coach-plans (coach), profile (shared). The redirect awaits the bootstrap
-/// silent refresh (token gate) and routes a coach (Owner) to the coach shell, a trainee to the
-/// trainee shell — re-running when the active role resolves/changes (refreshListenable).
+/// go_router with a role-adaptive `StatefulShellRoute`. Branches (fixed order): log, plan, progress,
+/// coach (the coach hub), profile. The redirect awaits the bootstrap silent refresh (token gate) and
+/// lands a coach (Owner) on the Coach hub, a trainee on Log — re-running when the active role
+/// resolves/changes (refreshListenable).
 final routerProvider = Provider<GoRouter>((ref) {
   final tokenStore = ref.read(tokenStoreProvider);
   final tenantStore = ref.read(tenantStoreProvider);
 
+  // One-shot role landing: the first authed frame is sent to the role's home (Owner → /coach,
+  // trainee → /log). After that, both roles navigate freely — an Owner can still open Log to self-
+  // train and Progress for their own trends. Reset on sign-out so the next sign-in re-lands.
+  var landed = false;
+
   return GoRouter(
     navigatorKey: _rootKey,
-    // Universal landing: everyone starts on /log (the workout log is the shared home tab). The role
-    // guards below still bounce each role off the other's routes — also to /log.
+    // Universal initial location; the redirect re-homes an Owner to /coach on the first authed frame.
     initialLocation: '/log',
     refreshListenable: Listenable.merge([tokenStore, tenantStore]),
     redirect: (context, state) {
@@ -50,14 +56,24 @@ final routerProvider = Provider<GoRouter>((ref) {
       final loc = state.matchedLocation;
       final onAuthRoute = loc == '/login' || loc == '/forgot-password';
 
-      if (!authed) return onAuthRoute ? null : '/login';
-      if (onAuthRoute) return '/log';
+      if (!authed) {
+        landed = false;
+        return onAuthRoute ? null : '/login';
+      }
 
-      // Role-adaptive: keep each role on routes valid for it, bouncing to the shared /log home. /log +
-      // /profile are shared (an Owner self-trains via Log) and /log is the default landing for both
-      // roles. `main()` pre-resolves the role before the first frame; Owners still reach /clients,
-      // /coach-plans etc. via the nav — they just start on Log.
       final role = tenantStore.activeRole;
+      final home = role == TenantRole.owner ? '/coach' : '/log';
+      if (onAuthRoute) return home;
+
+      // First authed frame: re-home an Owner sitting on the universal /log landing to their hub.
+      // Guarded so an Owner who later taps Log isn't yanked back — landing fires exactly once.
+      if (!landed && role != null) {
+        landed = true;
+        if (loc == '/log' && loc != home) return home;
+      }
+
+      // Role guards: keep each role off the other's routes, bouncing to the shared /log home. /log,
+      // /progress and /profile are shared (an Owner self-trains and tracks their own trends).
       if (role == TenantRole.owner) {
         if (_ownerForbidden.contains(loc)) return '/log';
       } else if (role == TenantRole.client) {
@@ -92,6 +108,26 @@ final routerProvider = Provider<GoRouter>((ref) {
           path: '/start',
           parentNavigatorKey: _rootKey,
           builder: (_, __) => const StartSessionScreen()),
+
+      // Nutrition full-screen routes (above the shell). Self-scoped for a trainee; the coach reaches a
+      // client's day detail with a `clientId` query param (tenant-scoped read).
+      GoRoute(
+          path: '/nutrition-history',
+          parentNavigatorKey: _rootKey,
+          builder: (_, __) => const NutritionHistoryScreen()),
+      GoRoute(
+          path: '/my-foods',
+          parentNavigatorKey: _rootKey,
+          builder: (_, __) => const MyFoodsScreen()),
+      GoRoute(
+        path: '/nutrition-day/:date',
+        parentNavigatorKey: _rootKey,
+        builder: (_, s) => NutritionDayDetailScreen(
+          date: s.pathParameters['date']!,
+          clientId: s.uri.queryParameters['clientId'],
+          clientName: s.uri.queryParameters['name'],
+        ),
+      ),
       GoRoute(
           path: '/join',
           parentNavigatorKey: _rootKey,
@@ -138,15 +174,10 @@ final routerProvider = Provider<GoRouter>((ref) {
             GoRoute(
                 path: '/progress', builder: (_, __) => const ProgressScreen())
           ]),
+          // The coach hub folds the client roster (/clients) and plan library (/coach-plans) into one
+          // tab — those screens are now the hub's inner segments, not standalone shell branches.
           StatefulShellBranch(routes: [
-            GoRoute(
-                path: '/clients',
-                builder: (_, __) => const CoachClientsScreen())
-          ]),
-          StatefulShellBranch(routes: [
-            GoRoute(
-                path: '/coach-plans',
-                builder: (_, __) => const CoachPlansScreen())
+            GoRoute(path: '/coach', builder: (_, __) => const CoachHubScreen())
           ]),
           StatefulShellBranch(routes: [
             GoRoute(path: '/profile', builder: (_, __) => const ProfileScreen())

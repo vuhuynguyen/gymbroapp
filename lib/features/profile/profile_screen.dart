@@ -41,6 +41,13 @@ class ProfileScreen extends ConsumerWidget {
                 _ProfileCard(me: me, roleLabel: _roleLabel(active)),
                 const SizedBox(height: AppSpacing.md),
                 _MenuCard(items: [
+                  // Personal saved foods (device-local) — reachable by anyone who logs nutrition.
+                  (
+                    Icons.restaurant_menu,
+                    'My foods',
+                    'Your saved custom foods',
+                    () => context.push('/my-foods')
+                  ),
                   // A coach (Owner) owns their workspace — no joining a coach, no tenant switching.
                   // A client can join a coach, and switch only when they belong to more than one gym.
                   if (active?.role != TenantRole.owner)

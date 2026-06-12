@@ -12,12 +12,61 @@ import 'coach_providers.dart';
 
 /// Coach plan library — VIEW ONLY on mobile. Plan authoring (the immutable-versioned builder) stays
 /// portal-first per the mobile strategy; here a coach reviews plans and assigns them to clients.
+///
+/// When [embedded] (the Coach hub's Plans segment), the screen drops its own Scaffold/header and
+/// returns just the library body — the hub owns the shared header and segment control.
 class CoachPlansScreen extends ConsumerWidget {
-  const CoachPlansScreen({super.key});
+  const CoachPlansScreen({this.embedded = false, super.key});
+
+  final bool embedded;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final plans = ref.watch(coachPlansProvider);
+
+    final body = AsyncValueView(
+      value: plans,
+      onRetry: () async => ref.invalidate(coachPlansProvider),
+      loading: const GbSkeletonList(count: 4, itemHeight: 110),
+      data: (list) {
+        if (list.items.isEmpty) {
+          return const EmptyState(
+            icon: Icons.description_outlined,
+            title: 'No plans yet',
+            subtitle:
+                'Create plans in the GymBro portal, then assign them here.',
+          );
+        }
+        return RefreshIndicator(
+          onRefresh: () async {
+            ref.invalidate(coachPlansProvider);
+            await ref.read(coachPlansProvider.future);
+          },
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(
+                AppSpacing.screenH, AppSpacing.gap, AppSpacing.screenH, 90),
+            children: [
+              for (final p in list.items)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.sm - 2),
+                  child: _PlanCard(plan: p),
+                ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                'Editing a plan saves an immutable new version. Build and edit plans in the '
+                'GymBro portal; existing assignments stay pinned to their version until you '
+                'apply the latest.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    fontSize: 12, height: 1.5, color: context.gb.grey400),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (embedded) return body;
 
     return Scaffold(
       backgroundColor: context
@@ -31,52 +80,7 @@ class CoachPlansScreen extends ConsumerWidget {
                   onTap: () => showInfoSnack(context, 'No notifications yet'))
             ],
           ),
-          Expanded(
-            child: AsyncValueView(
-              value: plans,
-              onRetry: () async => ref.invalidate(coachPlansProvider),
-              loading: const GbSkeletonList(count: 4, itemHeight: 110),
-              data: (list) {
-                if (list.items.isEmpty) {
-                  return const EmptyState(
-                    icon: Icons.description_outlined,
-                    title: 'No plans yet',
-                    subtitle:
-                        'Create plans in the GymBro portal, then assign them here.',
-                  );
-                }
-                return RefreshIndicator(
-                  onRefresh: () async {
-                    ref.invalidate(coachPlansProvider);
-                    await ref.read(coachPlansProvider.future);
-                  },
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(AppSpacing.screenH,
-                        AppSpacing.gap, AppSpacing.screenH, 90),
-                    children: [
-                      for (final p in list.items)
-                        Padding(
-                          padding:
-                              const EdgeInsets.only(bottom: AppSpacing.sm - 2),
-                          child: _PlanCard(plan: p),
-                        ),
-                      const SizedBox(height: AppSpacing.xs),
-                      Text(
-                        'Editing a plan saves an immutable new version. Build and edit plans in the '
-                        'GymBro portal; existing assignments stay pinned to their version until you '
-                        'apply the latest.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                            fontSize: 12,
-                            height: 1.5,
-                            color: context.gb.grey400),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ),
+          Expanded(child: body),
         ],
       ),
     );

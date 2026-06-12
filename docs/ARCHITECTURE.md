@@ -60,8 +60,8 @@ lib/
 ├── domain/                   # PURE Dart (no Flutter): enums (tolerant wire), metrics, week grouping
 ├── data/
 │   ├── models/               # hand-mirrored DTOs (camelCase JSON, tolerant enums)
-│   └── repositories/         # one per API area: auth · tenant · session · plan · exercise
-├── features/                 # auth · tenant · shell · log · plan · progress · profile · session · coach
+│   └── repositories/         # one per API area: auth · tenant · session · plan · exercise · nutrition
+├── features/                 # auth · tenant · shell · log · plan · progress · profile · session · coach · nutrition
 │                             #   each: Riverpod controller/providers + thin screens
 └── shared/widgets/           # ~40 reusable widgets + design-system barrel; import widgets.dart
 ```
@@ -117,13 +117,17 @@ coach-plans** (coach), **profile** (shared). `/log` is the universal landing for
   These guards are **UX-only** — the server 403s regardless.
 - **Full-screen routes above the shell**: `/session/:id` (live session), `/session-detail/:id` (carries `?me=1`
   to pick self- vs tenant-scoped detail), `/start`, `/join`, `/workspaces`, and the coach screens.
+- **Nutrition** has no tab of its own: the Today checklist (`NutritionTodaySection`, with the daily check-in
+  card) is embedded on the **Log** tab, and the full-screen routes above the shell are `/nutrition-history`,
+  `/nutrition-day/:date`, and `/my-foods` (the device-local "My foods" library). The coach reaches a client's
+  nutrition through the client-monitor screen (`client_nutrition_panel.dart`), not a route of its own.
 
 ## 8. The two API surfaces (critical)
 
 | Surface | Header | Scope | Used by |
 |---|---|---|---|
-| `/api/me/*`, `/api/sessions/active` | **no** `X-Tenant-Id` | self, **cross-gym** | trainee Log / history / progress / own detail / resume |
-| `/api/sessions/*` (and plans/assignments) | `X-Tenant-Id` **required** | one gym | coach client-monitor (`WorkoutLogViewAll`), session mutations |
+| `/api/me/*` (incl. `/api/me/nutrition/*` reads + metrics), `/api/sessions/active` | **no** `X-Tenant-Id` | self, **cross-gym** | trainee Log / history / progress / own detail / resume / nutrition reads + check-in |
+| `/api/sessions/*`, `/api/nutrition/log/*` (and plans/assignments) | `X-Tenant-Id` **required** | one gym | coach client-monitor (`WorkoutLogViewAll`), session mutations, **trainee nutrition item writes** |
 
 `SessionRepository.myHistory`/`myDetail` fall back to the tenant-scoped `list`/`detail` on a `404` — a
 graceful-degradation shim for live servers that predate `MeController` (see [MOBILE_MVP_STATUS](MOBILE_MVP_STATUS.md)).
@@ -157,6 +161,26 @@ were **deliberately not adopted** — recorded here so they aren't mistaken for 
 | `drift`/`isar` **offline mutation queue** | Online-only (Riverpod caching + `ref.invalidate`) | Out of MVP scope; metrics are server-computed |
 | `fl_chart` for progress charts | Lightweight custom painters / bars | Avoid a dependency for simple visuals |
 | "Member-only; coaches keep the portal" | **Coach-lite shipped** (view + bounded mutations) | Later product decision |
+
+**Nutrition (as built).** The trainee nutrition logging surface shipped: Today checklist on the Log tab, day
+detail/history, ad-hoc logging via the food picker + custom-food form, device-local "My foods"
+(`my_foods_store.dart`, secure storage — never sent to the API), and the coach client-nutrition panel. **Reads
+and the body check-in stay self-scoped** on `/api/me/nutrition/*` (cross-gym, no `X-Tenant-Id`): `today`, day
+detail/history, and `GET/POST .../metrics`, all with 404 graceful degradation for servers without the feature.
+**Trainee item logging is tenant-scoped** on `/api/nutrition/log/*` (`X-Tenant-Id` attached by `AuthInterceptor`
+from the active gym, mirroring workout sessions) — the four mutating daily-log calls (`setItemStatus`,
+`substitute`, `addItem`, `removeItem`). The app resolves an active gym for every authenticated member, so
+`X-Tenant-Id` is present at the Log surface; as defence in depth `TodayNutritionController` (`nutrition_providers.dart`)
+guards each write and surfaces a clear "Select a gym to log" message instead of firing an optimistic row that
+would 400. **Off-plan logging persists for self-train users without an active assignment** —
+the backend provisions a plan-less self-logged day attributed to the user's own gym, so `addOffPlan`
+(`nutrition_providers.dart`) refetches `today()` after a successful POST (`_optimistic(... reconcile: true)`)
+to adopt the server-assigned item id and roll-up counts rather than discarding the write. The daily check-in
+(weight/sleep) is backed by
+`GET/POST /api/me/nutrition/metrics` (built 2026-06-11; GET returns `{items:[…]}` newest-first) — the 404
+fallback remains only for older deployments. The designed pure-Dart
+`nutrition_adherence.dart`/`nutrition_schedule.dart` domain helpers, offline queue, reminders, and push were not
+built (see `gymbro/docs/nutrition/`).
 
 ## 12. Testing
 

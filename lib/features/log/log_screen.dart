@@ -9,6 +9,8 @@ import '../../domain/enums.dart';
 import '../../domain/session_grouping.dart';
 import '../../domain/session_metrics.dart';
 import '../../shared/widgets/widgets.dart';
+import '../nutrition/nutrition_providers.dart';
+import '../nutrition/nutrition_today.dart';
 import '../plan/plan_providers.dart';
 import '../session/start_actions.dart';
 import 'log_providers.dart';
@@ -23,16 +25,29 @@ class LogScreen extends ConsumerStatefulWidget {
   ConsumerState<LogScreen> createState() => _LogScreenState();
 }
 
+/// Log's two surfaces: Today (the daily-return checklist) and History (the session timeline).
+enum _LogTab { today, history }
+
 class _LogScreenState extends ConsumerState<LogScreen> {
+  _LogTab _tab = _LogTab.today;
   SessionStatus? _filter; // null = All
 
   Future<void> _refresh() async {
     ref.invalidate(activeSessionProvider);
     ref.invalidate(sessionHistoryProvider);
+    ref.read(todayNutritionProvider.notifier).reload();
     await ref.read(sessionHistoryProvider.future);
   }
 
   bool _matches(SessionSummary s) => _filter == null || s.status == _filter;
+
+  void _open(SessionSummary s) {
+    if (s.status == SessionStatus.inProgress) {
+      context.push('/session/${s.id}');
+    } else {
+      context.push('/session-detail/${s.id}?me=1');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -43,60 +58,177 @@ class _LogScreenState extends ConsumerState<LogScreen> {
       body: Column(
         children: [
           _LogHeader(history: history.valueOrNull?.items),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+                AppSpacing.screenH, AppSpacing.sm, AppSpacing.screenH, AppSpacing.xs),
+            child: GbSegmented<_LogTab>(
+              value: _tab,
+              options: const [(_LogTab.today, 'Today'), (_LogTab.history, 'History')],
+              onChanged: (t) => setState(() => _tab = t),
+            ),
+          ),
           Expanded(
             child: RefreshIndicator(
               onRefresh: _refresh,
-              child: history.when(
-                loading: () => ListView(children: [
-                  if (active != null)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(AppSpacing.screenH,
-                          AppSpacing.gap, AppSpacing.screenH, 0),
-                      child: _Hero(session: active),
-                    ),
-                  const GbSkeletonList(count: 5),
-                ]),
-                error: (e, _) => ListView(children: [
-                  Padding(
-                    padding: const EdgeInsets.only(top: 80),
-                    child: ErrorRetry(
-                      message:
-                          "We couldn't load your workout history. Pull to refresh or try again.",
-                      onRetry: () async =>
-                          ref.invalidate(sessionHistoryProvider),
-                    ),
-                  ),
-                ]),
-                data: (list) => ListView(
-                  padding: const EdgeInsets.fromLTRB(AppSpacing.screenH,
-                      AppSpacing.gap, AppSpacing.screenH, 100),
-                  children: [
-                    if (active != null) ...[
-                      _Hero(session: active),
-                      const SizedBox(height: AppSpacing.gap)
-                    ],
-                    _History(
-                      list: list,
+              child: _tab == _LogTab.today
+                  ? _TodayPane(active: active)
+                  : _HistoryPane(
+                      history: history,
+                      active: active,
                       filter: _filter,
                       onFilter: (f) => setState(() => _filter = f),
                       matches: _matches,
-                      onOpen: (s) {
-                        if (s.status == SessionStatus.inProgress) {
-                          context.push('/session/${s.id}');
-                        } else {
-                          context.push('/session-detail/${s.id}?me=1');
-                        }
-                      },
+                      onOpen: _open,
                     ),
-                  ],
-                ),
-              ),
             ),
           ),
         ],
       ),
     );
   }
+}
+
+/// Today — the active/next workout hero + the nutrition checklist + the daily check-in. With no
+/// active session, today's already-logged sessions still show above the "start" prompt.
+class _TodayPane extends ConsumerWidget {
+  const _TodayPane({required this.active});
+  final ActiveSession? active;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final todays = active != null
+        ? const <SessionSummary>[]
+        : (ref.watch(sessionHistoryProvider).valueOrNull?.items ?? [])
+            .where((s) => _isToday(s.startedAt))
+            .toList();
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.screenH, AppSpacing.gap, AppSpacing.screenH, 100),
+      children: [
+        const TodaySectionHeader(icon: Icons.fitness_center, title: 'Workout'),
+        const SizedBox(height: AppSpacing.xs),
+        if (active != null)
+          _Hero(session: active!)
+        else ...[
+          for (final s in todays)
+            GbSessionRow(
+              day: _weekdayAbbr(s.startedAt),
+              status: s.status,
+              title: s.workoutName ?? s.programName ?? 'Session',
+              source: s.source,
+              relativeTime: _relativeTime(s.startedAt),
+              durationLabel: s.durationSeconds != null
+                  ? formatDurationCompact(s.durationSeconds!)
+                  : null,
+              volumeLabel: s.totalVolumeKg > 0 ? '${_fmtVolume(s.totalVolumeKg)} kg' : null,
+              prCount: s.prCount,
+              rpe: s.rpeOverall,
+              onTap: () => context.push('/session-detail/${s.id}?me=1'),
+            ),
+          _NextWorkoutPrompt(onStart: () => showStartWorkoutSheet(context, ref)),
+        ],
+        const SizedBox(height: AppSpacing.gap + 2),
+        const NutritionTodaySection(),
+      ],
+    );
+  }
+}
+
+/// True when [d] (any timezone) falls on today's local calendar day.
+bool _isToday(DateTime? d) {
+  if (d == null) return false;
+  final n = DateTime.now();
+  final l = d.toLocal();
+  return l.year == n.year && l.month == n.month && l.day == n.day;
+}
+
+/// "No active workout" Today prompt — a dashed card that opens the Start sheet.
+class _NextWorkoutPrompt extends StatelessWidget {
+  const _NextWorkoutPrompt({required this.onStart});
+  final VoidCallback onStart;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return GbTappableRow(
+      dashed: true,
+      onTap: onStart,
+      leading: GbIconTile(
+          background: gb.primary0, child: Icon(Icons.bolt, size: 21, color: gb.primary600)),
+      title: 'Start today’s workout',
+      subtitle: 'Tap to pick a plan or log an ad-hoc session',
+      trailing: Icon(Icons.add, color: gb.grey400),
+    );
+  }
+}
+
+/// History — the session timeline (active hero, week ring, a nutrition-history link, filter chips,
+/// Monday-anchored week groups).
+class _HistoryPane extends StatelessWidget {
+  const _HistoryPane({
+    required this.history,
+    required this.active,
+    required this.filter,
+    required this.onFilter,
+    required this.matches,
+    required this.onOpen,
+  });
+
+  final AsyncValue<SessionList> history;
+  final ActiveSession? active;
+  final SessionStatus? filter;
+  final ValueChanged<SessionStatus?> onFilter;
+  final bool Function(SessionSummary) matches;
+  final ValueChanged<SessionSummary> onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    return history.when(
+      loading: () => ListView(children: [
+        if (active != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+                AppSpacing.screenH, AppSpacing.gap, AppSpacing.screenH, 0),
+            child: _Hero(session: active!),
+          ),
+        const GbSkeletonList(count: 5),
+      ]),
+      error: (e, _) => ListView(children: [
+        const Padding(
+          padding: EdgeInsets.only(top: 80),
+          child: _HistoryError(),
+        ),
+      ]),
+      data: (list) => ListView(
+        padding: const EdgeInsets.fromLTRB(
+            AppSpacing.screenH, AppSpacing.gap, AppSpacing.screenH, 100),
+        children: [
+          if (active != null) ...[
+            _Hero(session: active!),
+            const SizedBox(height: AppSpacing.gap)
+          ],
+          _History(
+            list: list,
+            filter: filter,
+            onFilter: onFilter,
+            matches: matches,
+            onOpen: onOpen,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HistoryError extends ConsumerWidget {
+  const _HistoryError();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => ErrorRetry(
+        message:
+            "We couldn't load your workout history. Pull to refresh or try again.",
+        onRetry: () async => ref.invalidate(sessionHistoryProvider),
+      );
 }
 
 String _weekdayAbbr(DateTime? d) {
@@ -501,6 +633,8 @@ class _History extends StatelessWidget {
       children: [
         if (thisWeek.isNotEmpty) _WeekSummaryCard(week: thisWeek.first),
         const SizedBox(height: AppSpacing.gap),
+        const _NutritionHistoryLink(),
+        const SizedBox(height: AppSpacing.gap),
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: Row(
@@ -751,6 +885,24 @@ class _WeekGroupState extends State<_WeekGroup> {
   }
 }
 
+/// Emerald link card into the day-by-day nutrition adherence history.
+class _NutritionHistoryLink extends StatelessWidget {
+  const _NutritionHistoryLink();
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return GbTappableRow(
+      onTap: () => context.push('/nutrition-history'),
+      leading: GbIconTile(
+          background: gb.emeraldSoft,
+          child: Icon(Icons.restaurant_menu, size: AppSizes.iconXl, color: gb.emeraldInk)),
+      title: 'Nutrition history',
+      subtitle: 'Day-by-day plan adherence',
+    );
+  }
+}
+
 /// Log header — ring avatar + time-aware greeting + name + streak chip + notification bell.
 class _LogHeader extends StatelessWidget {
   const _LogHeader({this.history});
@@ -760,7 +912,7 @@ class _LogHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final streak = _dayStreak(history);
     return GbAppHeader(
-      title: 'Workout Log',
+      title: 'Log',
       actions: [
         if (streak > 0) GbStreakChip(count: streak),
         GbBellButton(
