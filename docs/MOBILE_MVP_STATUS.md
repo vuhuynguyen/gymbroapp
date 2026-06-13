@@ -3,7 +3,7 @@
 > A snapshot of what's built, what's intentionally out of scope, and what remains. Pairs with
 > [`ARCHITECTURE.md`](ARCHITECTURE.md) (the *how*). Keep this current; don't append a changelog here — git is the log.
 
-_Last reviewed: 2026-06-09 · Flutter 3.44 / Dart 3.12 · `analyze` clean · **31 tests pass** · `build web` OK._
+_Last reviewed: 2026-06-13 · Flutter 3.44 / Dart 3.12 · `analyze` clean · **78 tests pass** · `build web` OK._
 
 ## Implemented
 
@@ -14,11 +14,16 @@ _Last reviewed: 2026-06-09 · Flutter 3.44 / Dart 3.12 · `analyze` clean · **3
 - Session lifecycle: resume · start-from-plan · ad-hoc · single-active rule · log/edit/delete sets · skip ·
   substitute · add exercise · remove exercise · rest timer · complete · abandon.
 - History + progress: volume, PRs, Monday-anchored week grouping — all client-derived from the API.
+- Nutrition: **Today** food log on the Log home (completion-first — set status / substitute / add ad-hoc, with
+  running macro totals), history (`/nutrition-history`), per-date day detail (`/nutrition-day/:date`), a food
+  picker over the global catalog, a custom-food form, and a **device-local** "My foods" library (`/my-foods`,
+  secure storage). Trainee reads/writes are self-scoped on `/api/me/nutrition/*`.
 
 **Coach (Owner) — "coach-lite"** (role-adapted from the active workspace)
 - Clients roster + invite generate/list/revoke.
 - Client monitor: assignments + sessions (`WorkoutLogViewAll`), pause/resume + apply-latest.
 - Coach plans **view** + **assign** (pins current version; visibility + hide flags).
+- Client **nutrition panel** — read-only view of an assigned client's nutrition day/adherence (tenant-scoped read).
 - Self-train (assign a plan to self at Full visibility, then log from the Log tab).
 
 ## Intentionally out of scope (not gaps)

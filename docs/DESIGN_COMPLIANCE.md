@@ -8,42 +8,28 @@
 
 ---
 
-## 1. Design rules (authoritative)
+## 1. Design rules — see `design-reference/`
 
-### Navigation
-1. **Bottom-tab `StatefulShellRoute`**, per-tab navigator stacks preserved. Trainee tabs: **Log · Plan · Progress
-   · Profile**; the **Workout Log is home**. Coach tabs (same shell, role-adapted): **Plans · Log · Clients ·
-   Profile**. `/log` is the universal landing.
-2. **Live Active Session is full-screen** (`/session/:id`, above the shell — focus mode, no tab bar).
-3. **Session Detail is full-screen** (back chevron normally; `X` + "Workout complete" banner when opened straight
-   from finishing).
-4. Auth is a **pre-shell phase**: splash → silent refresh → target or Log; one refresh-and-replay before logout on 401.
-5. **Start Workout** is the centre item of the bottom nav (in-row filled button, shared across both shells).
+The authoritative design rules (navigation, screen responsibilities, interaction standards, the token system) are
+the **Claude Design bundle vendored to [`design-reference/`](design-reference/)** — that is the source of truth;
+this doc does **not** restate it. The conformance table (§2) and the deliberate divergences (§3) below are what's
+unique here.
 
-### Screen responsibilities
-- **Log (home):** active-session hero (resume) · week goal ring · filter chips · collapsible Monday-anchored week
-  groups (per-week ring + PR chip) · session rows · "Start Workout" → bottom sheet (today's plan vs ad-hoc).
-- **Plan:** current-program hero (week x/total, days/wk, visibility) · day chips · **read-only** exercise list
-  (render server-redacted data as-is).
-- **Progress:** stat tiles (Sessions / Total kg / PRs) · weekly-volume bars · recent PRs — all client-derived.
-- **Profile:** profile card · menu (my profile, join a coach, change password, workspace switch) · sign out.
-- **Live session:** gradient header (leave · name·day·week · progress) · exercise pager chips (+ Add) ·
-  current-exercise card with ⋯ = Substitute / Skip · set rows (done/skipped/current/pending) · WEIGHT (±2.5) +
-  REPS (±1) steppers + Log set · rest-timer bar after each log · action bar (prev / Next / Finish). Bottom sheets
-  for more / substitute / add-exercise / abandon / set-type.
-- **Auth:** one screen, segmented Log in / Sign up, forgot-password link, join-with-invite-code.
+A few load-bearing **as-built** anchors the conformance table checks against (where the shipped app deviates from,
+or pins down, the bundle):
 
-### Interaction & UX standards
-- **Dialogs are bottom sheets** on mobile (start, substitute, add, abandon, set-type, confirms).
-- **Steppers** for weight/reps; **rest timer** auto-starts after a logged set (UI-only stopwatch — not persisted).
-- **Weights display in kg**; **RPE is an integer 1–10**.
-- **Loading (skeleton), empty, and error states for every async list/detail.**
-- A11y: icon-only buttons carry a `Semantics` label; steppers announce value + unit; respect reduced motion.
-
-### Design system
-- `inv-*` / `gb-*` tokens → a typed `GbColors` `ThemeExtension`. **Blue primary, no purple** (`#3b82f6` /
-  `#2563eb` / `#1d4ed8`); radii 8/12/16/20; "Inter Tight". **No hex literals in feature code** — use `context.gb.*`
-  + the `App*` token classes.
+- **Shell:** bottom-tab `StatefulShellRoute`; trainee tabs **Log · Plan · Progress · Profile** (Workout Log is
+  home); coach tabs **as built** are **Coach · Log · Progress · Profile** (`features/shell/home_shell.dart`; the
+  bundle's "Plans · Log · Clients · Profile" names are superseded by the as-built order). `/log` is the universal
+  landing.
+- **Full-screen routes above the shell:** `/session/:id` (live session, focus mode), `/session-detail/:id`, and
+  the nutrition routes `/nutrition-history`, `/nutrition-day/:date`, `/my-foods`. The daily food log itself is a
+  section on the Log home (no dedicated Nutrition tab).
+- **Interaction:** dialogs are bottom sheets; weight/reps steppers; rest timer auto-starts after a logged set
+  (UI-only, not persisted); weights in **kg**; **RPE integer 1–10**; loading/empty/error on every async surface;
+  a11y (Semantics labels, stepper value+unit announce, reduced-motion safe).
+- **Tokens:** `inv-*`/`gb-*` → typed `GbColors` `ThemeExtension`; **blue primary, no purple**; "Inter Tight";
+  **zero hex literals** in feature code (`context.gb.*` + `App*` token classes).
 
 ---
 

@@ -1,10 +1,9 @@
 # GymBro Mobile — Architecture (as built)
 
 > The **shipped** architecture of the GymBro Flutter client. This describes what the code actually does today,
-> so a future session can work without re-scanning the tree. For the *original* pre-build design rationale and
-> the roads not taken (codegen, native refresh transport, offline queue), see the deploy-root
-> `MOBILE_STACK_RECOMMENDATION.md` — note that several of its proposals were intentionally **not** adopted (see
-> [§11 Deviations](#11-deviations-from-the-original-plan)).
+> so a future session can work without re-scanning the tree. The original RN-vs-Flutter analysis is retired;
+> [§11 Deviations](#11-deviations-from-the-original-plan) records what shipped and why (including the roads not
+> taken — codegen, native refresh transport, offline queue).
 
 **Source of truth — do not duplicate here.** API contracts, permissions, and business rules live in
 [`../../gymbro/docs/`](../../gymbro/docs/) (`AUTHENTICATION.md`, `PERMISSIONS.md`, `BUSINESS_RULES.md`,
@@ -151,8 +150,9 @@ visibility is redacted server-side (render as-is; `Blind` start seeds no snapsho
 
 ## 11. Deviations from the original plan
 
-The pre-build design (`MOBILE_STACK_RECOMMENDATION.md` and earlier drafts of this doc) proposed several things that
-were **deliberately not adopted** — recorded here so they aren't mistaken for missing work:
+The original RN-vs-Flutter analysis is retired; this section records what shipped and why. The pre-build design
+proposed several things that were **deliberately not adopted** — recorded here so they aren't mistaken for
+missing work:
 
 | Proposed | Shipped instead | Why |
 |---|---|---|
@@ -180,11 +180,12 @@ to adopt the server-assigned item id and roll-up counts rather than discarding t
 `GET/POST /api/me/nutrition/metrics` (built 2026-06-11; GET returns `{items:[…]}` newest-first) — the 404
 fallback remains only for older deployments. The designed pure-Dart
 `nutrition_adherence.dart`/`nutrition_schedule.dart` domain helpers, offline queue, reminders, and push were not
-built (see `gymbro/docs/nutrition/`).
+built (their future design is in `gymbro/docs/ROADMAP.md`).
 
 ## 12. Testing
 
-`test/` covers the business-critical pure logic + wire parsing, no device needed: `domain/enums_test.dart`,
-`domain/session_metrics_test.dart`, `domain/session_grouping_test.dart`, `data/session_models_test.dart`,
-`data/session_repository_fallback_test.dart`, `core/api_exception_test.dart`, `widgets/a11y_motion_test.dart`.
-Run `flutter analyze && flutter test`. (31 tests at time of writing.)
+`test/` covers the business-critical pure logic + wire parsing, no device needed: tolerant enum parsing, session
+metrics (volume / e1RM / PRs) incl. drop-set rollup, week grouping, DTO parsing (session + nutrition), the
+`/api/me` fallback shim, `ApiException` mapping, nutrition/session repository fallbacks, and a11y/reduced-motion
+behavior (plus a few widget/golden tests for the log and nutrition surfaces). Run `flutter analyze && flutter
+test`. (78 tests at time of writing.)

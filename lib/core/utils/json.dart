@@ -1,9 +1,9 @@
 // Small, defensive JSON readers. The API returns `decimal` as JSON number, dates as
 // ISO-8601 / `yyyy-MM-dd` strings, and is occasionally loose about int-vs-number, so we
 // coerce rather than hard-cast (a hard cast would throw on a perfectly valid payload).
-double? asDouble(Object? v) => v == null ? null : (v as num).toDouble();
+double? asDouble(Object? v) => v is num ? v.toDouble() : (v is String ? double.tryParse(v) : null);
 
-int? asInt(Object? v) => v == null ? null : (v as num).toInt();
+int? asInt(Object? v) => v is num ? v.toInt() : (v is String ? int.tryParse(v) : null);
 
 bool asBool(Object? v, {bool fallback = false}) => v is bool ? v : fallback;
 

@@ -8,7 +8,7 @@
 [![Dart](https://img.shields.io/badge/Dart-%E2%89%A53.6-0175C2?logo=dart&logoColor=white)](https://dart.dev)
 [![Platforms](https://img.shields.io/badge/platforms-iOS%20%7C%20Android%20%7C%20Web-555)](#-getting-started)
 [![State](https://img.shields.io/badge/state-Riverpod-7C4DFF)](https://riverpod.dev)
-[![Tests](https://img.shields.io/badge/tests-31%20passing-3FB950)](#-testing)
+[![Tests](https://img.shields.io/badge/tests-78%20passing-3FB950)](#-testing)
 [![Style](https://img.shields.io/badge/style-flutter__lints-40C4FF)](analysis_options.yaml)
 
 </div>
@@ -31,7 +31,9 @@ It adapts to the signed-in user's active workspace and serves **two roles**:
 
 **Key capabilities:** secure auth with silent session restore · multi-gym workspaces with join-by-code · assigned
 plan consumption with server-side visibility redaction · the complete workout-session lifecycle (start, log,
-edit, skip, substitute, rest timer, complete/abandon) · client-derived progress, PRs, and history.
+edit, skip, substitute, rest timer, complete/abandon) · client-derived progress, PRs, and history ·
+**nutrition tracking** (completion-first daily food log, history, day detail, a food picker over the global
+catalog, custom foods, and a device-local "My foods" library).
 
 ---
 
@@ -83,10 +85,18 @@ edit, skip, substitute, rest timer, complete/abandon) · client-derived progress
 - **Volume**, **personal records (PRs)**, and weekly goal tracking — all **client-derived** from the API
 - Detailed per-session breakdown (KPIs, per-exercise sets, PR highlights)
 
+### 🥗 Nutrition
+- **Today** food log on the Log home — completion-first (set Planned/Completed/Skipped, substitute, add ad-hoc) against the assigned nutrition plan, with running macro totals
+- **History** (`/nutrition-history`) and a per-date **day detail** (`/nutrition-day/:date`)
+- **Food picker** over the global food/supplement catalog, plus a **custom-food** form
+- **My foods** (`/my-foods`) — a **device-local** library (secure storage, no API) of frequently-logged foods
+- Trainee reads/writes are self-scoped on `/api/me/nutrition/*`; the coach views a client's day via a tenant-scoped read
+
 ### 🧑‍🏫 Coach (coach-lite)
 - **Clients roster** + invite **generate / list / revoke**
 - **Plan view** + **assign** (pins the plan version, sets visibility & hide flags)
 - **Client monitor** — assignments + sessions, **pause/resume**, **apply-latest**
+- **Client nutrition panel** — a read-only view of an assigned client's nutrition day/adherence
 - **Self-train** your own assigned plans
 
 > [!NOTE]
@@ -166,8 +176,9 @@ lib/
 ├── data/
 │   ├── models/          # hand-mirrored DTOs (camelCase JSON, tolerant enums)
 │   └── repositories/    # auth · tenant · session · plan · exercise
-├── features/            # auth · tenant · shell · log · plan · session · progress · profile · coach
+├── features/            # auth · tenant · shell · log · plan · session · progress · profile · coach · nutrition
 │                        #   each: Riverpod controller/providers + thin screens
+│                        #   nutrition: today · history · day-detail · food-picker · custom-food · my-foods · coach panel
 └── shared/widgets/      # ~40 reusable widgets + design-system barrel (import widgets.dart)
 ```
 
@@ -296,9 +307,10 @@ flutter test --coverage         # writes coverage/lcov.info
 genhtml coverage/lcov.info -o coverage/html   # optional HTML report (lcov)
 ```
 
-The suite (31 tests) targets the business-critical pure logic and wire parsing — no device required:
-tolerant enum parsing, session metrics (volume / e1RM / PRs), week grouping, DTO parsing, the `/api/me`
-fallback shim, `ApiException` mapping, and accessibility/reduced-motion behavior.
+The suite (78 tests) targets the business-critical pure logic and wire parsing — no device required:
+tolerant enum parsing, session metrics (volume / e1RM / PRs), week grouping, DTO parsing (session + nutrition),
+the `/api/me` fallback shim, `ApiException` mapping, nutrition/session repository fallbacks, drop-set rollup,
+and accessibility/reduced-motion behavior (plus a few widget/golden tests for the log and nutrition surfaces).
 
 ---
 

@@ -914,7 +914,6 @@ class _ExerciseCard extends StatelessWidget {
             ),
           ),
           Divider(height: 1, color: gb.borderCard),
-          // Sets
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 6),
             child: Column(
@@ -1014,16 +1013,15 @@ class _LoggedSetRow extends StatelessWidget {
   final VoidCallback? onMoveUp;
   final VoidCallback? onMoveDown;
 
-  // A roomy ~36×30 tap target so the stacked up/down arrows are easy to hit (the bare icons were too
-  // small to press reliably).
+  // A wide ~38×24 tap target — easy to hit without the tall stack inflating the row height.
   Widget _arrow(BuildContext c, IconData icon, VoidCallback? onTap) => InkWell(
         onTap: onTap,
         customBorder: const CircleBorder(),
         child: SizedBox(
-          width: 36,
-          height: 30,
+          width: 38,
+          height: 24,
           child: Icon(icon,
-              size: 22, color: onTap == null ? c.gb.grey25 : c.gb.grey500),
+              size: 21, color: onTap == null ? c.gb.grey25 : c.gb.grey500),
         ),
       );
 
@@ -1067,7 +1065,7 @@ class _LoggedSetRow extends StatelessWidget {
         onTap: onEdit,
         onLongPress: () => onDelete(),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           child: Row(
             children: [
               Container(
@@ -2044,7 +2042,6 @@ class _CatalogRow extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
           child: Row(
             children: [
-              // Dumbbell icon tile
               Container(
                 width: 36,
                 height: 36,
@@ -2055,7 +2052,6 @@ class _CatalogRow extends StatelessWidget {
                 child: Icon(Icons.fitness_center, size: 19, color: gb.grey500),
               ),
               const SizedBox(width: 12),
-              // Name + meta
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -2606,7 +2602,7 @@ class _MediaChip extends StatelessWidget {
       height: 24,
       padding: const EdgeInsets.symmetric(horizontal: 9),
       decoration: BoxDecoration(
-        color: const Color(0x990B1220),
+        color: AppPalette.grey900.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(99),
       ),
       child: Row(
@@ -3242,9 +3238,10 @@ class _GuideErrorBody extends StatelessWidget {
   }
 }
 
-// Design tokens with no direct GbColors slot (exact hex from the design's tokens.css).
-const Color _kPrimaryTint = Color(0xFFE6F0FF); // --gb-primary-tint
-const Color _kGrey300 = Color(0xFF98A1B0); // --inv-grey-300
-const Color _kError50 = Color(0xFFF28E8E); // --inv-error-50
-const Color _kError200 = Color(0xFFA32020); // --inv-error-200
-const Color _kWarning50 = Color(0xFFFBD582); // --inv-warning-50
+// Design tokens sourced from the [AppPalette] primitives (single source of truth for the
+// design's tokens.css hex). Aliased here for the call-sites below; not surfaced on GbColors.
+const Color _kPrimaryTint = AppPalette.primaryTint; // --gb-primary-tint (0xFFE6F0FF)
+const Color _kGrey300 = AppPalette.grey300; // --inv-grey-300 (0xFF98A1B0)
+const Color _kError50 = AppPalette.error50; // --inv-error-50 (0xFFF28E8E)
+const Color _kError200 = AppPalette.error200; // --inv-error-200 (0xFFA32020)
+const Color _kWarning50 = AppPalette.warning50; // --inv-warning-50 (0xFFFBD582)
