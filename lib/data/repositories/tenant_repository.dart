@@ -18,7 +18,8 @@ class TenantRepository {
       });
 
   Future<List<Member>> members(String tenantId) => apiCall(() async {
-        final res = await _dio.get<List<dynamic>>('/api/tenants/$tenantId/members');
+        final res =
+            await _dio.get<List<dynamic>>('/api/tenants/$tenantId/members');
         return (res.data ?? [])
             .whereType<Map<String, dynamic>>()
             .map(Member.fromJson)
@@ -41,7 +42,8 @@ class TenantRepository {
 
   // ── Owner-only invite management (coach-lite) ──────────────────────────
   Future<String> generateInvite() => apiCall(() async {
-        final res = await _dio.post<Map<String, dynamic>>('/api/invites/generate');
+        final res =
+            await _dio.post<Map<String, dynamic>>('/api/invites/generate');
         return res.data!['code'].toString();
       });
 
@@ -58,5 +60,5 @@ class TenantRepository {
       });
 }
 
-final tenantRepositoryProvider =
-    Provider<TenantRepository>((ref) => TenantRepository(ref.read(apiDioProvider)));
+final tenantRepositoryProvider = Provider<TenantRepository>(
+    (ref) => TenantRepository(ref.read(apiDioProvider)));

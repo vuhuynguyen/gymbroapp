@@ -127,6 +127,26 @@ class GbStatusBadge extends StatelessWidget {
   }
 }
 
+/// A small numbered circle for an exercise's order/position within a workout (1-based).
+class GbOrderBadge extends StatelessWidget {
+  const GbOrderBadge(this.order, {super.key});
+  final int order;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return Container(
+      width: 24,
+      height: 24,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(color: gb.grey25, shape: BoxShape.circle),
+      child: Text('$order',
+          style: TextStyle(
+              fontSize: 12, fontWeight: FontWeight.w800, color: gb.grey600)),
+    );
+  }
+}
+
 /// Small outlined metadata pill (design `metaPill`) — e.g. muscle / equipment / "3 × 10 @ 22kg".
 class GbMetaPill extends StatelessWidget {
   const GbMetaPill(this.label, {super.key});

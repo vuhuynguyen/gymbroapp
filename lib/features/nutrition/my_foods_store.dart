@@ -39,8 +39,8 @@ class MyFoodsRepository {
     }
   }
 
-  Future<void> _write(List<Food> all) =>
-      _store.write(_key, jsonEncode(all.take(_cap).map((f) => f.toLocalJson()).toList()));
+  Future<void> _write(List<Food> all) => _store.write(
+      _key, jsonEncode(all.take(_cap).map((f) => f.toLocalJson()).toList()));
 
   /// Insert or update a saved food, deduped by id and by case-insensitive name, newest first.
   Future<List<Food>> save(List<Food> current, Food food) async {
@@ -117,7 +117,8 @@ class MyFoodsController extends AsyncNotifier<List<Food>> {
   List<Food> get _current => state.valueOrNull ?? const [];
 
   /// Generate a stable local id for a newly-saved food (no catalog id).
-  static String newId() => 'mf${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}';
+  static String newId() =>
+      'mf${DateTime.now().microsecondsSinceEpoch.toRadixString(36)}';
 
   Future<void> save(Food food) async {
     final next = await _repo.save(_current, food);

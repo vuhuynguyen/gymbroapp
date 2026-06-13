@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/session_models.dart';
 import '../../data/repositories/session_repository.dart';
+import '../../shared/paging/paged.dart';
 import '../tenant/tenant_controller.dart';
 
 /// The single resumable in-progress session (null when none) — drives the Log hero.
@@ -11,11 +12,25 @@ final activeSessionProvider = FutureProvider.autoDispose<ActiveSession?>(
   (ref) => ref.read(sessionRepositoryProvider).active(),
 );
 
-/// The trainee's Workout Log history — the **unified personal** timeline across every gym they
-/// belong to (`GET /api/me/sessions`, self-scoped). The Log screen groups these by week client-side.
-final sessionHistoryProvider = FutureProvider.autoDispose<SessionList>(
-  (ref) => ref.read(sessionRepositoryProvider).myHistory(pageSize: 50),
-);
+/// The trainee's Workout Log history — the **unified personal** timeline across every gym they belong to
+/// (`GET /api/me/sessions`, self-scoped), paged with infinite scroll. The Log screen accumulates pages and
+/// groups them by week client-side.
+class SessionHistoryNotifier extends PagedNotifier<SessionSummary> {
+  @override
+  int get pageSize => 20;
+
+  @override
+  Future<PageResult<SessionSummary>> fetch(int page, int pageSize) async {
+    final r = await ref
+        .read(sessionRepositoryProvider)
+        .myHistory(page: page, pageSize: pageSize);
+    return PageResult(r.items, r.totalCount);
+  }
+}
+
+final sessionHistoryProvider = AutoDisposeNotifierProvider<
+    SessionHistoryNotifier,
+    AsyncValue<PagedData<SessionSummary>>>(SessionHistoryNotifier.new);
 
 /// The trainee's own session detail (cross-gym, `GET /api/me/sessions/{id}`). Used by the Log and
 /// the just-finished screen.

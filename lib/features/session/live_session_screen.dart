@@ -170,6 +170,26 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
     return false;
   }
 
+  /// Opens the edit sheet for an already-logged set and applies the change via the controller.
+  Future<void> _editSet(
+      String exerciseId, PerformedSet set, ExerciseTrackingType type) async {
+    await showGbSheet<void>(
+      context,
+      builder: (ctx) => _EditSetSheet(
+        set: set,
+        trackingType: type,
+        onSave: (req) async {
+          await _ctrl.editSet(exerciseId, set.id, req);
+          if (ctx.mounted) Navigator.pop(ctx);
+        },
+        onDelete: () async {
+          await _ctrl.deleteSet(exerciseId, set.id);
+          if (ctx.mounted) Navigator.pop(ctx);
+        },
+      ),
+    );
+  }
+
   Future<void> _confirmAbandon() async {
     final st = ref.read(liveSessionControllerProvider);
     final logged = countLoggedSets(st.exercises);
@@ -410,6 +430,9 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
                         onLog: () => _logSet(ex.id, ex.trackingType),
                         onDeleteSet: (s) => _confirmDeleteSet(ex.id, s),
                         // returns Future<bool>: true when the set was deleted
+                        onEditSet: (s) => _editSet(ex.id, s, ex.trackingType),
+                        onMoveSet: (s, up) =>
+                            _ctrl.moveSet(ex.id, s.id, up: up),
                         onMenu: () => _openExerciseMenu(ex),
                         onGuide: () =>
                             _openGuideSheet(ex, catalog[ex.exerciseId]),
@@ -417,7 +440,8 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
                       const SizedBox(height: AppSpacing.gap),
                       Center(
                         child: Text(
-                            'Logged values save to your session automatically.',
+                            'Tap a set to edit · arrows reorder · swipe to delete',
+                            textAlign: TextAlign.center,
                             style: AppText.meta
                                 .copyWith(color: context.gb.grey400)),
                       ),
@@ -482,7 +506,9 @@ class _Header extends StatelessWidget {
     final pct = hasTarget && total > 0 ? (logged / total).clamp(0.0, 1.0) : 0.0;
     return Container(
       decoration: const BoxDecoration(gradient: GbColors.heroGradient),
-      padding: EdgeInsets.fromLTRB(8, topInset + 6, 8, 14),
+      // Tight padding so the blue header matches a standard detail header's height (the progress bar
+      // below is the only extra, slimmed to a thin accent).
+      padding: EdgeInsets.fromLTRB(8, topInset + 2, 8, AppSpacing.xs),
       child: Column(
         children: [
           // Top row: back · centred title · abandon. Symmetric glass buttons keep the title centred.
@@ -522,11 +548,11 @@ class _Header extends StatelessWidget {
           // Plan-only progress bar (full width). The elapsed timer moved to the exercise-pager row to
           // save vertical space, so ad-hoc sessions now get a compact single-row header.
           if (hasTarget) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             ClipRRect(
               borderRadius: BorderRadius.circular(AppRadius.pill),
               child: SizedBox(
-                height: 8,
+                height: 5,
                 width: double.infinity,
                 child: Stack(
                   children: [
@@ -741,6 +767,8 @@ class _ExerciseCard extends StatelessWidget {
     required this.onSetType,
     required this.onLog,
     required this.onDeleteSet,
+    required this.onEditSet,
+    required this.onMoveSet,
     required this.onMenu,
     required this.onGuide,
   });
@@ -759,8 +787,23 @@ class _ExerciseCard extends StatelessWidget {
   final ValueChanged<PerformedSetType> onSetType;
   final VoidCallback onLog;
   final Future<bool> Function(PerformedSet) onDeleteSet;
+
+  /// Opens the edit sheet for a logged set.
+  final void Function(PerformedSet) onEditSet;
+
+  /// Reorders a logged lead set one slot up ([up] = true) or down.
+  final void Function(PerformedSet set, bool up) onMoveSet;
   final VoidCallback onMenu;
   final VoidCallback onGuide;
+
+  /// Lead (parentless) sets — the rows that carry a reorder position; drop stages ride with their lead.
+  List<PerformedSet> get _leads =>
+      exercise.sets.where((s) => s.parentSetId == null).toList();
+  int get _leadCount => _leads.length;
+
+  /// Position of [s] among the lead sets, or -1 if it's a drop stage (not independently movable).
+  int _leadIndex(PerformedSet s) =>
+      s.parentSetId != null ? -1 : _leads.indexWhere((l) => l.id == s.id);
 
   /// "Last time" pill: the trainee's most recent PRIOR performance of this lift (from a previous completed
   /// session — never the set just logged), with how long ago. Falls back to the plan's first prescribed
@@ -878,6 +921,8 @@ class _ExerciseCard extends StatelessWidget {
               children: [
                 // Rest is stored as "rest before this set"; show it as the rest taken *after* a set
                 // (= the next set's stored value) so it reads naturally and the first set isn't mislabelled.
+                // Reorder arrows act on lead sets only (a drop cluster moves as a unit); `_leads` gives
+                // each lead's position so the up/down affordances disable at the ends.
                 for (var i = 0; i < exercise.sets.length; i++)
                   _LoggedSetRow(
                     key: ValueKey('set-${exercise.sets[i].id}'),
@@ -886,6 +931,16 @@ class _ExerciseCard extends StatelessWidget {
                         ? exercise.sets[i + 1].restSeconds
                         : null,
                     onDelete: () => onDeleteSet(exercise.sets[i]),
+                    onEdit: () => onEditSet(exercise.sets[i]),
+                    onMoveUp: _leadIndex(exercise.sets[i]) > 0
+                        ? () => onMoveSet(exercise.sets[i], true)
+                        : null,
+                    onMoveDown: () {
+                      final li = _leadIndex(exercise.sets[i]);
+                      return (li >= 0 && li < _leadCount - 1)
+                          ? () => onMoveSet(exercise.sets[i], false)
+                          : null;
+                    }(),
                   ),
                 if (isSkipped)
                   Padding(
@@ -933,10 +988,17 @@ class _ExerciseCard extends StatelessWidget {
 }
 
 /// A logged (done) set row — design layout: check + type on the left, weight×reps + e1RM right.
-/// Swipe left (or long-press) to delete; the row itself stays clean — no inline trash.
+/// Tap to edit, up/down arrows to reorder, swipe-left (or long-press) to delete — the row stays clean.
 class _LoggedSetRow extends StatelessWidget {
-  const _LoggedSetRow(
-      {super.key, required this.set, this.restAfter, required this.onDelete});
+  const _LoggedSetRow({
+    super.key,
+    required this.set,
+    this.restAfter,
+    required this.onDelete,
+    this.onEdit,
+    this.onMoveUp,
+    this.onMoveDown,
+  });
   final PerformedSet set;
 
   /// Rest taken *after* this set (derived from the next set's stored "rest before"); null for the last set.
@@ -944,6 +1006,26 @@ class _LoggedSetRow extends StatelessWidget {
 
   /// Confirms + deletes the set; resolves to true when the set was removed.
   final Future<bool> Function() onDelete;
+
+  /// Tap opens the edit sheet (null = not editable).
+  final VoidCallback? onEdit;
+
+  /// Reorder this lead set one slot up/down; null disables that direction (a boundary, or a drop stage).
+  final VoidCallback? onMoveUp;
+  final VoidCallback? onMoveDown;
+
+  // A roomy ~36×30 tap target so the stacked up/down arrows are easy to hit (the bare icons were too
+  // small to press reliably).
+  Widget _arrow(BuildContext c, IconData icon, VoidCallback? onTap) => InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: SizedBox(
+          width: 36,
+          height: 30,
+          child: Icon(icon,
+              size: 22, color: onTap == null ? c.gb.grey25 : c.gb.grey500),
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -982,6 +1064,7 @@ class _LoggedSetRow extends StatelessWidget {
         ),
       ),
       child: InkWell(
+        onTap: onEdit,
         onLongPress: () => onDelete(),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -1030,9 +1113,204 @@ class _LoggedSetRow extends StatelessWidget {
                   ],
                 ),
               ),
+              // Reorder arrows for a lead set (hidden when this row can't move either way — a drop
+              // stage, or the only lead). The whole row taps to edit; these win their own taps.
+              if (onMoveUp != null || onMoveDown != null) ...[
+                const SizedBox(width: 6),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _arrow(context, Icons.keyboard_arrow_up, onMoveUp),
+                    _arrow(context, Icons.keyboard_arrow_down, onMoveDown),
+                  ],
+                ),
+              ],
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Bottom sheet to edit an already-logged set: a set-type selector + mode-aware steppers (prefilled with
+/// what was logged) for the fields the edit endpoint accepts (weight/reps/duration/distance + RPE + rest).
+class _EditSetSheet extends StatefulWidget {
+  const _EditSetSheet({
+    required this.set,
+    required this.trackingType,
+    required this.onSave,
+    required this.onDelete,
+  });
+  final PerformedSet set;
+  final ExerciseTrackingType trackingType;
+  final Future<void> Function(EditSetRequest) onSave;
+  final Future<void> Function() onDelete;
+
+  @override
+  State<_EditSetSheet> createState() => _EditSetSheetState();
+}
+
+class _EditSetSheetState extends State<_EditSetSheet> {
+  late PerformedSetType _type = widget.set.setType;
+  bool _busy = false;
+  late final Map<TrackingMetric, num> _v = {
+    TrackingMetric.weight: widget.set.weightKg ?? 0,
+    TrackingMetric.reps: widget.set.reps ?? 0,
+    TrackingMetric.duration: widget.set.durationSeconds ?? 0,
+    TrackingMetric.distance: widget.set.distanceM ?? 0,
+    TrackingMetric.rounds: widget.set.rounds ?? 0,
+    TrackingMetric.calories: widget.set.calories ?? 0,
+    TrackingMetric.heartRate: widget.set.avgHeartRate ?? 0,
+    TrackingMetric.rest: widget.set.restSeconds ?? 0,
+    TrackingMetric.rpe: widget.set.rpe ?? 0,
+  };
+
+  static ({String label, String? unit, num step}) _spec(TrackingMetric m) =>
+      switch (m) {
+        TrackingMetric.weight => (label: 'WEIGHT', unit: 'kg', step: 2.5),
+        TrackingMetric.reps => (label: 'REPS', unit: null, step: 1),
+        TrackingMetric.duration => (label: 'DURATION', unit: 'sec', step: 5),
+        TrackingMetric.distance => (label: 'DISTANCE', unit: 'm', step: 50),
+        TrackingMetric.rounds => (label: 'ROUNDS', unit: null, step: 1),
+        TrackingMetric.calories => (label: 'CALORIES', unit: 'kcal', step: 5),
+        TrackingMetric.heartRate => (label: 'AVG HR', unit: 'bpm', step: 1),
+        TrackingMetric.rest => (label: 'REST', unit: 'sec', step: 5),
+        TrackingMetric.rpe => (label: 'RPE', unit: null, step: 1),
+      };
+
+  num _val(TrackingMetric m) => _v[m] ?? 0;
+
+  Future<void> _save() async {
+    setState(() => _busy = true);
+    // Mirror the logger: only the metrics this exercise's mode uses (primary + secondary), plus RPE.
+    final profile = trackingProfileFor(widget.trackingType);
+    final keep = {...profile.fields, ...profile.extras};
+    int? gi(TrackingMetric m) =>
+        keep.contains(m) && _val(m) > 0 ? _val(m).toInt() : null;
+    final req = EditSetRequest(
+      setType: _type,
+      reps: gi(TrackingMetric.reps),
+      weightKg: keep.contains(TrackingMetric.weight) &&
+              _val(TrackingMetric.weight) > 0
+          ? _val(TrackingMetric.weight).toDouble()
+          : null,
+      durationSeconds: gi(TrackingMetric.duration),
+      distanceM: gi(TrackingMetric.distance),
+      rounds: gi(TrackingMetric.rounds),
+      calories: gi(TrackingMetric.calories),
+      avgHeartRate: gi(TrackingMetric.heartRate),
+      rpe: _val(TrackingMetric.rpe) > 0
+          ? _val(TrackingMetric.rpe).toInt()
+          : null,
+      restSeconds:
+          keep.contains(TrackingMetric.rest) && _val(TrackingMetric.rest) > 0
+              ? _val(TrackingMetric.rest).toInt()
+              : null,
+    );
+    try {
+      await widget.onSave(req);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Widget _stepper(TrackingMetric m) {
+    final spec = _spec(m);
+    return GbStepper(
+      label: spec.label,
+      semanticLabel: spec.label,
+      value: _val(m),
+      unit: spec.unit,
+      step: spec.step,
+      max: m == TrackingMetric.rpe ? 10 : 100000,
+      onChanged: (v) => setState(() => _v[m] = v),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    final profile = trackingProfileFor(widget.trackingType);
+    // Mode-aware + deduped: the mode's primary + secondary metrics, then RPE — the logger's exact fields.
+    final metrics = <TrackingMetric>[];
+    for (final m in [
+      ...profile.fields,
+      ...profile.extras,
+      TrackingMetric.rpe
+    ]) {
+      if (!metrics.contains(m)) metrics.add(m);
+    }
+    return Padding(
+      padding: EdgeInsets.fromLTRB(AppSpacing.md, AppSpacing.xs, AppSpacing.md,
+          AppSpacing.md + MediaQuery.viewInsetsOf(context).bottom),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const GbSheetHeader(
+              title: 'Edit set', subtitle: 'Update what you logged.'),
+          const SizedBox(height: AppSpacing.sm),
+          Wrap(
+            spacing: AppSpacing.xs,
+            runSpacing: AppSpacing.xs,
+            children: [
+              for (final t in const [
+                PerformedSetType.warmup,
+                PerformedSetType.working,
+                PerformedSetType.drop,
+                PerformedSetType.amrap,
+                PerformedSetType.failure,
+              ])
+                GestureDetector(
+                  onTap: () => setState(() => _type = t),
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: _type == t ? gb.primary0 : gb.grey0,
+                      borderRadius: BorderRadius.circular(AppRadius.pill),
+                      border: Border.all(
+                          color: _type == t ? gb.primary500 : gb.borderCard),
+                    ),
+                    child: Text(t.label,
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: _type == t ? gb.primary700 : gb.grey600)),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          for (var i = 0; i < metrics.length; i += 2)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+              child: Row(
+                children: [
+                  Expanded(child: _stepper(metrics[i])),
+                  const SizedBox(width: AppSpacing.xs),
+                  if (i + 1 < metrics.length)
+                    Expanded(child: _stepper(metrics[i + 1]))
+                  else
+                    const Spacer(),
+                ],
+              ),
+            ),
+          const SizedBox(height: AppSpacing.sm),
+          GbButton(
+            label: 'Save changes',
+            icon: Icons.check,
+            full: true,
+            onPressed: _busy ? null : _save,
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          TextButton.icon(
+            onPressed: _busy ? null : () => widget.onDelete(),
+            icon: Icon(Icons.delete_outline, size: 18, color: gb.danger),
+            label: Text('Delete set', style: TextStyle(color: gb.danger)),
+          ),
+        ],
       ),
     );
   }

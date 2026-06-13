@@ -161,6 +161,17 @@ class SessionRepository {
             '$_base/$sessionId/exercises/$exerciseId/sets/$setId');
       });
 
+  /// Reorders the exercise's sets to match [orderedSetIds] (full list, in the desired order); the server
+  /// renumbers `setNumber` accordingly.
+  Future<void> reorderSets(
+          String sessionId, String exerciseId, List<String> orderedSetIds) =>
+      apiCall(() async {
+        await _dio.put<dynamic>(
+          '$_base/$sessionId/exercises/$exerciseId/sets/order',
+          data: {'setIds': orderedSetIds},
+        );
+      });
+
   /// Fully removes an exercise from the session; the server cascade-deletes its logged sets.
   Future<void> deleteExercise(String sessionId, String exerciseId) =>
       apiCall(() async {

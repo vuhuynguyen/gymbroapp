@@ -13,7 +13,11 @@ import 'nutrition_widgets.dart';
 /// trailing action link (the Nutrition section's "History →").
 class TodaySectionHeader extends StatelessWidget {
   const TodaySectionHeader(
-      {required this.icon, required this.title, this.actionLabel, this.onAction, super.key});
+      {required this.icon,
+      required this.title,
+      this.actionLabel,
+      this.onAction,
+      super.key});
   final IconData icon;
   final String title;
   final String? actionLabel;
@@ -28,7 +32,9 @@ class TodaySectionHeader extends StatelessWidget {
         children: [
           Icon(icon, size: AppSizes.iconMd, color: gb.grey400),
           const SizedBox(width: 6),
-          Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+          Text(title,
+              style:
+                  const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
           const Spacer(),
           if (actionLabel != null && onAction != null)
             GestureDetector(
@@ -37,8 +43,12 @@ class TodaySectionHeader extends StatelessWidget {
               child: Row(
                 children: [
                   Text(actionLabel!,
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: gb.primary600)),
-                  Icon(Icons.chevron_right, size: AppSizes.iconMd, color: gb.primary600),
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: gb.primary600)),
+                  Icon(Icons.chevron_right,
+                      size: AppSizes.iconMd, color: gb.primary600),
                 ],
               ),
             ),
@@ -81,7 +91,8 @@ class NutritionTodaySection extends ConsumerWidget {
     );
   }
 
-  Widget _content(BuildContext context, WidgetRef ref, DailyNutritionLog log, GbColors gb) {
+  Widget _content(
+      BuildContext context, WidgetRef ref, DailyNutritionLog log, GbColors gb) {
     final controller = ref.read(todayNutritionProvider.notifier);
     final hasMeals = log.meals.isNotEmpty;
     return Column(
@@ -98,6 +109,21 @@ class NutritionTodaySection extends ConsumerWidget {
         ],
         const DailyCheckinCard(),
         const SizedBox(height: AppSpacing.gap),
+        // Off-plan logging leads the food section (an "add" affordance belongs at the top, not buried
+        // under the meal list) — always available on an open day, even with no assigned plan.
+        if (!log.isClosed) ...[
+          GbTappableRow(
+            dashed: true,
+            leading: GbIconTile(
+                background: gb.grey25,
+                child: Icon(Icons.add, size: 21, color: gb.grey600)),
+            title: 'Log off-plan food',
+            subtitle: 'Anything you ate outside the plan',
+            onTap: () =>
+                _addOffPlan(context, controller, meals: _mealOptions(log)),
+          ),
+          const SizedBox(height: AppSpacing.gap),
+        ],
         if (log.hasPlan || hasMeals)
           for (final meal in log.meals) ...[
             NutriMealHeader(meal: meal),
@@ -107,7 +133,8 @@ class NutritionTodaySection extends ConsumerWidget {
                 child: NutriItemRow(
                   item: item,
                   readOnly: log.isClosed,
-                  onControlTap: () => _run(context, () => controller.toggleComplete(item)),
+                  onControlTap: () =>
+                      _run(context, () => controller.toggleComplete(item)),
                   onMore: () => showNutriItemSheet(context, ref, item),
                 ),
               ),
@@ -115,20 +142,6 @@ class NutritionTodaySection extends ConsumerWidget {
           ]
         else
           _NoPlanBlock(),
-        // Off-plan logging is always available on an open day — a trainee can log what they ate even
-        // with no assigned plan (it lands in an "Off-plan" bucket).
-        if (!log.isClosed) ...[
-          if (!log.hasPlan && !hasMeals) const SizedBox(height: AppSpacing.gap),
-          GbTappableRow(
-            dashed: true,
-            leading: GbIconTile(
-                background: gb.grey25, child: Icon(Icons.add, size: 21, color: gb.grey600)),
-            title: 'Log off-plan food',
-            subtitle: 'Anything you ate outside the plan',
-            onTap: () => _addOffPlan(context, controller,
-                meals: _mealOptions(log)),
-          ),
-        ],
       ],
     );
   }
@@ -147,7 +160,8 @@ class NutritionTodaySection extends ConsumerWidget {
     ];
   }
 
-  Future<void> _addOffPlan(BuildContext context, TodayNutritionController controller,
+  Future<void> _addOffPlan(
+      BuildContext context, TodayNutritionController controller,
       {required List<String> meals}) async {
     final pick = await showFoodPicker(context, swap: false, meals: meals);
     if (pick == null) return;
@@ -159,7 +173,8 @@ class NutritionTodaySection extends ConsumerWidget {
     }
   }
 
-  Future<void> _run(BuildContext context, Future<void> Function() action) async {
+  Future<void> _run(
+      BuildContext context, Future<void> Function() action) async {
     try {
       await action();
     } catch (e) {
@@ -178,11 +193,14 @@ class _NoPlanBlock extends StatelessWidget {
       padding: const EdgeInsets.all(AppSpacing.heroPad),
       child: Column(
         children: [
-          Icon(Icons.restaurant_menu, size: AppSizes.iconXxl + 4, color: gb.grey400),
+          Icon(Icons.restaurant_menu,
+              size: AppSizes.iconXxl + 4, color: gb.grey400),
           const SizedBox(height: AppSpacing.xs),
-          Text('No nutrition plan yet', style: AppText.rowTitle.copyWith(color: gb.grey700)),
+          Text('No nutrition plan yet',
+              style: AppText.rowTitle.copyWith(color: gb.grey700)),
           const SizedBox(height: AppSpacing.xxs),
-          Text('Your coach assigns your meal plan — it’ll appear here, ready to log.',
+          Text(
+              'Your coach assigns your meal plan — it’ll appear here, ready to log.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 12, height: 1.4, color: gb.grey400)),
         ],
@@ -197,14 +215,16 @@ class _ClosedBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final gb = context.gb;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: AppSpacing.xs + 2),
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm, vertical: AppSpacing.xs + 2),
       decoration: BoxDecoration(color: gb.grey25, borderRadius: AppRadius.brSm),
       child: Row(
         children: [
           Icon(Icons.lock_outline, size: AppSizes.iconMd, color: gb.grey500),
           const SizedBox(width: AppSpacing.xs),
           Expanded(
-            child: Text('Day closed — logging is locked. Unlogged items show as missed.',
+            child: Text(
+                'Day closed — logging is locked. Unlogged items show as missed.',
                 style: TextStyle(fontSize: 12, height: 1.4, color: gb.grey600)),
           ),
         ],

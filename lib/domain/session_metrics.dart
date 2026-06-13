@@ -20,13 +20,19 @@ String formatLoggedSet(PerformedSet set) {
   } else if (w > 0) {
     parts.add(_fmtKg(w));
   }
-  if ((set.durationSeconds ?? 0) > 0) parts.add(formatDuration(set.durationSeconds!));
+  if ((set.durationSeconds ?? 0) > 0)
+    parts.add(formatDuration(set.durationSeconds!));
   if ((set.distanceM ?? 0) > 0) parts.add('${set.distanceM}m');
   if ((set.rounds ?? 0) > 0) parts.add('${set.rounds} rounds');
   if ((set.calories ?? 0) > 0) parts.add('${set.calories}kcal');
   if ((set.avgHeartRate ?? 0) > 0) parts.add('${set.avgHeartRate}bpm');
   return parts.isEmpty ? '—' : parts.join(' · ');
 }
+
+/// A logged set as a chip label that leads with its position and type, e.g. "1 · Warmup · 30kg × 12".
+/// Used everywhere sets are shown as chips so the number/type are always visible, not just the result.
+String performedSetChip(PerformedSet set, int number) =>
+    '$number · ${set.setType.label} · ${formatLoggedSet(set)}';
 
 /// Format elapsed seconds as `H:MM:SS`, or `MM:SS` when under an hour.
 String formatDuration(int seconds) {
@@ -90,7 +96,8 @@ double? averageCompletedRpe(List<PerformedExercise> exercises) {
 }
 
 /// Effective set count: the highest of planned, logged (+ the in-progress row when active), and 1.
-int resolveTargetSetCount(int loggedCount, int plannedCount, bool includeActiveRow) {
+int resolveTargetSetCount(
+    int loggedCount, int plannedCount, bool includeActiveRow) {
   if (includeActiveRow) {
     return [plannedCount, loggedCount + 1, 1].reduce((a, b) => a > b ? a : b);
   }
@@ -115,6 +122,7 @@ int computeProgressPercent(int logged, int total) {
 /// Epley estimated 1RM for display parity (`weight × (1 + reps/30)`, 1 dp). The server stores its
 /// own value on each set; prefer that. Returns null unless reps and weight are both positive.
 double? epleyOneRepMax(double? weightKg, int? reps) {
-  if (weightKg == null || reps == null || weightKg <= 0 || reps <= 0) return null;
+  if (weightKg == null || reps == null || weightKg <= 0 || reps <= 0)
+    return null;
   return ((weightKg * (1 + reps / 30)) * 10).round() / 10;
 }

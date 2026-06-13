@@ -68,6 +68,76 @@ class GbCard extends StatelessWidget {
   }
 }
 
+/// A [GbCard] whose body collapses behind a tappable header with a rotating chevron. The [header]
+/// stays visible (build it to read well collapsed — e.g. title + a count summary); tapping toggles
+/// [child]. Defaults to collapsed ([initiallyExpanded] = false), which keeps long exercise/set lists
+/// scannable. Pass [trailing] for widgets that sit before the chevron (PR chip, status badge).
+class GbCollapsibleCard extends StatefulWidget {
+  const GbCollapsibleCard({
+    required this.header,
+    required this.child,
+    this.trailing,
+    this.initiallyExpanded = false,
+    super.key,
+  });
+
+  final Widget header;
+  final Widget child;
+  final List<Widget>? trailing;
+  final bool initiallyExpanded;
+
+  @override
+  State<GbCollapsibleCard> createState() => _GbCollapsibleCardState();
+}
+
+class _GbCollapsibleCardState extends State<GbCollapsibleCard> {
+  late bool _open = widget.initiallyExpanded;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return GbCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: () => setState(() => _open = !_open),
+            child: Row(
+              children: [
+                Expanded(child: widget.header),
+                if (widget.trailing != null) ...[
+                  for (final t in widget.trailing!) ...[
+                    const SizedBox(width: AppSpacing.xs - 1),
+                    t,
+                  ],
+                ],
+                const SizedBox(width: AppSpacing.xs),
+                AnimatedRotation(
+                  turns: _open ? 0.25 : 0,
+                  duration: AppDurations.base,
+                  child: Icon(Icons.chevron_right,
+                      size: AppSizes.iconMd, color: gb.grey400),
+                ),
+              ],
+            ),
+          ),
+          AnimatedSize(
+            duration: AppDurations.base,
+            alignment: Alignment.topCenter,
+            curve: Curves.easeOut,
+            child: _open
+                ? Padding(
+                    padding: const EdgeInsets.only(top: AppSpacing.sm - 2),
+                    child: SizedBox(width: double.infinity, child: widget.child),
+                  )
+                : const SizedBox(width: double.infinity),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Blue gradient hero container (design hero cards on Log / Plan, live header surface).
 class GbHeroCard extends StatelessWidget {
   const GbHeroCard({required this.child, this.padding = const EdgeInsets.all(AppSpacing.heroPad), this.radius = AppRadius.lg, super.key});

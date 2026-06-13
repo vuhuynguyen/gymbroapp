@@ -10,7 +10,8 @@ import 'nutrition_widgets.dart';
 /// missed-vs-skipped signal so a coach spots ghosting (missed) vs deliberate deviation (skipped).
 /// Tapping a day opens its read-only detail (client custom/edited foods tagged unverified there).
 class ClientNutritionPanel extends ConsumerWidget {
-  const ClientNutritionPanel({required this.clientId, required this.clientName, super.key});
+  const ClientNutritionPanel(
+      {required this.clientId, required this.clientName, super.key});
   final String clientId;
   final String clientName;
 
@@ -37,12 +38,14 @@ class ClientNutritionPanel extends ConsumerWidget {
           );
         }
 
-        final days = [...list.items]
-          ..sort((a, b) => (b.date ?? DateTime(0)).compareTo(a.date ?? DateTime(0)));
+        final days = [...list.items]..sort(
+            (a, b) => (b.date ?? DateTime(0)).compareTo(a.date ?? DateTime(0)));
         final logged = days.where((d) => d.plannedCount > 0).toList();
         final avg = logged.isEmpty
             ? 0
-            : (logged.fold<int>(0, (a, d) => a + d.adherencePct) / logged.length).round();
+            : (logged.fold<int>(0, (a, d) => a + d.adherencePct) /
+                    logged.length)
+                .round();
         final missed = days.fold<int>(0, (a, d) => a + d.missedCount);
 
         return Column(
@@ -50,12 +53,22 @@ class ClientNutritionPanel extends ConsumerWidget {
           children: [
             Row(
               children: [
-                Expanded(child: GbStatTile(value: '$avg', unit: '%', label: 'Adherence', accent: gb.primary500)),
-                const SizedBox(width: AppSpacing.xs + 2),
-                Expanded(child: GbStatTile(value: '${logged.length}', label: 'Days logged')),
+                Expanded(
+                    child: GbStatTile(
+                        value: '$avg',
+                        unit: '%',
+                        label: 'Adherence',
+                        accent: gb.primary500)),
                 const SizedBox(width: AppSpacing.xs + 2),
                 Expanded(
-                    child: GbStatTile(value: '$missed', label: 'Missed', accent: missed > 0 ? gb.danger : null)),
+                    child: GbStatTile(
+                        value: '${logged.length}', label: 'Days logged')),
+                const SizedBox(width: AppSpacing.xs + 2),
+                Expanded(
+                    child: GbStatTile(
+                        value: '$missed',
+                        label: 'Missed',
+                        accent: missed > 0 ? gb.danger : null)),
               ],
             ),
             const SizedBox(height: AppSpacing.md),
@@ -72,7 +85,8 @@ class ClientNutritionPanel extends ConsumerWidget {
               ),
             const SizedBox(height: AppSpacing.xs),
             Text('Missed = never logged (a gap) · skipped = a deliberate pass.',
-                style: TextStyle(fontSize: 11.5, height: 1.4, color: gb.grey400)),
+                style:
+                    TextStyle(fontSize: 11.5, height: 1.4, color: gb.grey400)),
           ],
         );
       },

@@ -360,20 +360,11 @@ class _ExerciseRow extends StatelessWidget {
     final hidden = exercise.exerciseHidden;
     final name =
         hidden ? 'Hidden exercise' : (exercise.exerciseName ?? 'Exercise');
-    return GbCard(
-      padding: const EdgeInsets.all(AppSpacing.gap),
-      child: Row(
+    // Collapsed by default: number · name · set summary up top; expand for the per-set targets.
+    return GbCollapsibleCard(
+      header: Row(
         children: [
-          GbIconTile(
-            background: gb.primary0,
-            radius: 11,
-            child: Text('$index',
-                style: TextStyle(
-                        fontSize: AppSizes.iconSm,
-                        fontWeight: FontWeight.w800,
-                        color: gb.primary700)
-                    .tabular),
-          ),
+          GbOrderBadge(index),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
             child: Column(
@@ -396,12 +387,32 @@ class _ExerciseRow extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(width: AppSpacing.xs),
-          const Icon(Icons.chevron_right,
-              size: AppSizes.iconMd, color: AppPalette.grey300),
         ],
       ),
+      child: exercise.sets.isEmpty
+          ? const SizedBox.shrink()
+          : Wrap(
+              spacing: AppSpacing.xs - 2,
+              runSpacing: AppSpacing.xs - 2,
+              children: [
+                for (final (i, s) in exercise.sets.indexed)
+                  GbMetaPill(_setLabel(i + 1, s)),
+              ],
+            ),
     );
+  }
+
+  /// One prescribed set as a compact pill, leading with its number + type and honoring Guided
+  /// redaction (targets hidden), e.g. "1 · Warmup · 30kg × 12 @7".
+  static String _setLabel(int number, PlanSetDetail s) {
+    final type = PerformedSetType.parse(s.setType.wire).label;
+    if (s.targetsHidden) return '$number · $type · logged live';
+    final kg = s.targetWeightKg != null
+        ? '${s.targetWeightKg!.toStringAsFixed(0)}kg × '
+        : '';
+    final reps = s.targetReps?.toString() ?? '—';
+    final rpe = s.targetRpe != null ? ' @${s.targetRpe}' : '';
+    return '$number · $type · $kg$reps$rpe';
   }
 
   static String _setSummary(List<PlanSetDetail> sets) {

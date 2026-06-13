@@ -16,13 +16,15 @@ class ExerciseRepository {
         return ExerciseDetail.fromJson(res.data!);
       });
 
-  Future<List<ExerciseSummary>> search({String? query, int pageSize = 200}) => apiCall(() async {
+  Future<List<ExerciseSummary>> search({String? query, int pageSize = 200}) =>
+      apiCall(() async {
         final res = await _dio.get<List<dynamic>>(
           '/api/exercises',
           queryParameters: {
             'page': 1,
             'pageSize': pageSize,
-            if (query != null && query.trim().isNotEmpty) 'search': query.trim(),
+            if (query != null && query.trim().isNotEmpty)
+              'search': query.trim(),
           },
         );
         return (res.data ?? [])
@@ -32,12 +34,13 @@ class ExerciseRepository {
       });
 }
 
-final exerciseRepositoryProvider =
-    Provider<ExerciseRepository>((ref) => ExerciseRepository(ref.read(apiDioProvider)));
+final exerciseRepositoryProvider = Provider<ExerciseRepository>(
+    (ref) => ExerciseRepository(ref.read(apiDioProvider)));
 
 /// Global exercise catalog keyed by id (cached across the session) — used to resolve muscle group /
 /// equipment for the live-session meta pills. Best-effort: returns {} if the catalog can't load.
-final exerciseCatalogProvider = FutureProvider<Map<String, ExerciseSummary>>((ref) async {
+final exerciseCatalogProvider =
+    FutureProvider<Map<String, ExerciseSummary>>((ref) async {
   try {
     final list = await ref.read(exerciseRepositoryProvider).search();
     return {for (final e in list) e.id: e};

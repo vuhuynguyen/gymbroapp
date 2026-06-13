@@ -5,12 +5,25 @@ import '../../shared/widgets/widgets.dart';
 
 /// Visual style for a food kind — the tinted tile background, foreground, and glyph.
 /// Matches the design's FOOD_KIND_STYLE: food → blue, supplement → amber, beverage → cyan.
-({Color bg, Color fg, IconData icon}) foodKindStyle(BuildContext context, FoodKind kind) {
+({Color bg, Color fg, IconData icon}) foodKindStyle(
+    BuildContext context, FoodKind kind) {
   final gb = context.gb;
   return switch (kind) {
-    FoodKind.food => (bg: gb.primary0, fg: gb.primary600, icon: Icons.restaurant),
-    FoodKind.supplement => (bg: gb.amberSoft, fg: gb.amberInk, icon: Icons.medication_outlined),
-    FoodKind.beverage => (bg: gb.secondary0, fg: gb.secondary300, icon: Icons.local_drink_outlined),
+    FoodKind.food => (
+        bg: gb.primary0,
+        fg: gb.primary600,
+        icon: Icons.restaurant
+      ),
+    FoodKind.supplement => (
+        bg: gb.amberSoft,
+        fg: gb.amberInk,
+        icon: Icons.medication_outlined
+      ),
+    FoodKind.beverage => (
+        bg: gb.secondary0,
+        fg: gb.secondary300,
+        icon: Icons.local_drink_outlined
+      ),
   };
 }
 
@@ -46,9 +59,11 @@ class FoodKindChip extends StatelessWidget {
     final s = foodKindStyle(context, kind);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-      decoration: BoxDecoration(color: s.bg, borderRadius: BorderRadius.circular(4)),
+      decoration:
+          BoxDecoration(color: s.bg, borderRadius: BorderRadius.circular(4)),
       child: Text(kind.label,
-          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: s.fg)),
+          style: TextStyle(
+              fontSize: 10, fontWeight: FontWeight.w700, color: s.fg)),
     );
   }
 }
@@ -63,9 +78,11 @@ class FoodMineTag extends StatelessWidget {
     final gb = context.gb;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-      decoration: BoxDecoration(color: gb.grey25, borderRadius: BorderRadius.circular(4)),
+      decoration: BoxDecoration(
+          color: gb.grey25, borderRadius: BorderRadius.circular(4)),
       child: Text(label,
-          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: gb.grey600)),
+          style: TextStyle(
+              fontSize: 10, fontWeight: FontWeight.w700, color: gb.grey600)),
     );
   }
 }

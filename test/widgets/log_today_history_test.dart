@@ -6,6 +6,7 @@ import 'package:gymbroapp/data/models/session_models.dart';
 import 'package:gymbroapp/features/log/log_providers.dart';
 import 'package:gymbroapp/features/log/log_screen.dart';
 import 'package:gymbroapp/features/nutrition/nutrition_providers.dart';
+import 'package:gymbroapp/shared/paging/paged.dart';
 import 'package:gymbroapp/shared/widgets/widgets.dart';
 
 /// Log is now a Today | History segmented surface: Today is the daily-return checklist (workout hero
@@ -15,12 +16,22 @@ class _NoPlanToday extends TodayNutritionController {
   Future<DailyNutritionLog> build() async => DailyNutritionLog.noPlan('2026-06-10');
 }
 
+/// Empty paged history that resolves immediately (no repo call).
+class _EmptyHistory extends SessionHistoryNotifier {
+  @override
+  AsyncValue<PagedData<SessionSummary>> build() =>
+      const AsyncData(PagedData<SessionSummary>(items: [], total: 0, page: 1));
+
+  @override
+  Future<PageResult<SessionSummary>> fetch(int page, int pageSize) async =>
+      const PageResult([], 0);
+}
+
 void main() {
   Widget host() => ProviderScope(
         overrides: [
           activeSessionProvider.overrideWith((ref) async => null),
-          sessionHistoryProvider.overrideWith(
-              (ref) async => const SessionList(items: [], page: 1, pageSize: 50, totalCount: 0)),
+          sessionHistoryProvider.overrideWith(_EmptyHistory.new),
           todayNutritionProvider.overrideWith(_NoPlanToday.new),
         ],
         child: MaterialApp(

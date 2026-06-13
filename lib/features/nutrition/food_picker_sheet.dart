@@ -28,16 +28,19 @@ Future<FoodPickResult?> showFoodPicker(
     isScrollControlled: true,
     backgroundColor: context.gb.card,
     shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg))),
-    builder: (_) =>
-        _FoodPickerSheet(swap: swap, meals: meals, swapTargetName: swapTargetName),
+        borderRadius:
+            BorderRadius.vertical(top: Radius.circular(AppRadius.lg))),
+    builder: (_) => _FoodPickerSheet(
+        swap: swap, meals: meals, swapTargetName: swapTargetName),
   );
 }
 
 /// Test seam — renders the picker sheet directly so its styling can be verified with goldens.
 @visibleForTesting
 Widget buildFoodPickerForTest(
-        {required bool swap, List<String> meals = const [], String? swapTargetName}) =>
+        {required bool swap,
+        List<String> meals = const [],
+        String? swapTargetName}) =>
     _FoodPickerSheet(swap: swap, meals: meals, swapTargetName: swapTargetName);
 
 class _FoodPickerSheet extends ConsumerStatefulWidget {
@@ -66,7 +69,8 @@ class _FoodPickerSheetState extends ConsumerState<_FoodPickerSheet> {
 
   /// In add mode the user must pick a meal (no auto-selection); swaps don't use a meal.
   bool get _needsMeal => !widget.swap && widget.meals.isNotEmpty;
-  String get _chosenMeal => _meal ?? (widget.meals.isNotEmpty ? widget.meals.last : 'Snack');
+  String get _chosenMeal =>
+      _meal ?? (widget.meals.isNotEmpty ? widget.meals.last : 'Snack');
 
   void _choose(Food f) {
     setState(() {
@@ -156,7 +160,9 @@ class _FoodPickerSheetState extends ConsumerState<_FoodPickerSheet> {
             children: [
               Text(title,
                   style: TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.w800, color: gb.grey900)),
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: gb.grey900)),
               if (subtitle != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 1),
@@ -208,7 +214,9 @@ class _FoodPickerSheetState extends ConsumerState<_FoodPickerSheet> {
         Expanded(
           child: _mine
               ? _resultList(gb, scroll, mineFiltered, includeCustomEntry: true)
-              : ref.watch(foodSearchProvider((search: _query, kind: _kind))).when(
+              : ref
+                  .watch(foodSearchProvider((search: _query, kind: _kind)))
+                  .when(
                     loading: () => const GbSkeletonList(
                         count: 6, itemHeight: 64, padding: EdgeInsets.zero),
                     error: (e, _) => ErrorRetry(
@@ -223,7 +231,8 @@ class _FoodPickerSheetState extends ConsumerState<_FoodPickerSheet> {
                         ...mineFiltered,
                         ...list.items.where((f) => !mineIds.contains(f.id)),
                       ];
-                      return _resultList(gb, scroll, merged, includeCustomEntry: true);
+                      return _resultList(gb, scroll, merged,
+                          includeCustomEntry: true);
                     },
                   ),
         ),
@@ -278,18 +287,22 @@ class _FoodPickerSheetState extends ConsumerState<_FoodPickerSheet> {
       scrollDirection: Axis.horizontal,
       child: Row(
         children: [
-          _chip(gb, 'All', selected: !_mine && _kind == null,
+          _chip(gb, 'All',
+              selected: !_mine && _kind == null,
               onTap: () => setState(() {
                     _mine = false;
                     _kind = null;
                   })),
           for (final k in FoodKind.values)
-            _chip(gb, k.label, selected: !_mine && _kind == k,
+            _chip(gb, k.label,
+                selected: !_mine && _kind == k,
                 onTap: () => setState(() {
                       _mine = false;
                       _kind = k;
                     })),
-          _chip(gb, 'My foods', icon: Icons.star, selected: _mine,
+          _chip(gb, 'My foods',
+              icon: Icons.star,
+              selected: _mine,
               onTap: () => setState(() => _mine = true)),
         ],
       ),
@@ -308,14 +321,16 @@ class _FoodPickerSheetState extends ConsumerState<_FoodPickerSheet> {
           decoration: BoxDecoration(
             color: selected ? gb.ink : gb.card,
             borderRadius: BorderRadius.circular(999),
-            border:
-                Border.all(color: selected ? Colors.transparent : gb.borderCard, width: 1.5),
+            border: Border.all(
+                color: selected ? Colors.transparent : gb.borderCard,
+                width: 1.5),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               if (icon != null) ...[
-                Icon(icon, size: 14, color: selected ? Colors.white : gb.grey600),
+                Icon(icon,
+                    size: 14, color: selected ? Colors.white : gb.grey600),
                 const SizedBox(width: 6),
               ],
               Text(label,
@@ -357,15 +372,16 @@ class _FoodPickerSheetState extends ConsumerState<_FoodPickerSheet> {
         padding: const EdgeInsets.all(11),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.all(color: gb.borderField, width: 1.5, style: BorderStyle.solid),
+          border: Border.all(
+              color: gb.borderField, width: 1.5, style: BorderStyle.solid),
         ),
         child: Row(
           children: [
             Container(
               width: 40,
               height: 40,
-              decoration:
-                  BoxDecoration(color: gb.grey25, borderRadius: BorderRadius.circular(11)),
+              decoration: BoxDecoration(
+                  color: gb.grey25, borderRadius: BorderRadius.circular(11)),
               child: Icon(Icons.add, size: 18, color: gb.grey600),
             ),
             const SizedBox(width: 12),
@@ -402,9 +418,10 @@ class _FoodPickerSheetState extends ConsumerState<_FoodPickerSheet> {
           child: Container(
             width: 56,
             height: 56,
-            decoration:
-                BoxDecoration(color: gb.grey25, borderRadius: BorderRadius.circular(16)),
-            child: Icon(_mine ? Icons.star_border : Icons.search, size: 24, color: gb.grey400),
+            decoration: BoxDecoration(
+                color: gb.grey25, borderRadius: BorderRadius.circular(16)),
+            child: Icon(_mine ? Icons.star_border : Icons.search,
+                size: 24, color: gb.grey400),
           ),
         ),
         const SizedBox(height: 12),
@@ -415,7 +432,8 @@ class _FoodPickerSheetState extends ConsumerState<_FoodPickerSheet> {
                     ? 'Search the food catalog'
                     : 'No foods match “$q”',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: gb.ink)),
+            style: TextStyle(
+                fontSize: 15, fontWeight: FontWeight.w800, color: gb.ink)),
         const SizedBox(height: 5),
         Center(
           child: ConstrainedBox(
@@ -425,7 +443,8 @@ class _FoodPickerSheetState extends ConsumerState<_FoodPickerSheet> {
                     ? 'Save foods you eat often and reuse them in one tap when you log.'
                     : "You can still log it — describe it yourself and we'll track it like any other item.",
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 12.5, height: 1.55, color: gb.grey500)),
+                style:
+                    TextStyle(fontSize: 12.5, height: 1.55, color: gb.grey500)),
           ),
         ),
         const SizedBox(height: 16),
@@ -455,14 +474,15 @@ class _FoodPickerSheetState extends ConsumerState<_FoodPickerSheet> {
           Container(
             margin: const EdgeInsets.only(bottom: 12),
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration:
-                BoxDecoration(color: gb.primary0, borderRadius: BorderRadius.circular(11)),
+            decoration: BoxDecoration(
+                color: gb.primary0, borderRadius: BorderRadius.circular(11)),
             child: Row(
               children: [
                 Icon(Icons.swap_horiz, size: 16, color: gb.primary600),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text('Replaces ${widget.swapTargetName ?? 'the planned item'}',
+                  child: Text(
+                      'Replaces ${widget.swapTargetName ?? 'the planned item'}',
                       style: TextStyle(
                           fontSize: 12.5,
                           fontWeight: FontWeight.w600,
@@ -509,8 +529,10 @@ class _FoodPickerSheetState extends ConsumerState<_FoodPickerSheet> {
                       Padding(
                         padding: const EdgeInsets.only(top: 2),
                         child: Text(
-                            [if (food.brand != null) food.brand!, if (food.servingLabel != null) food.servingLabel!]
-                                .join(' · '),
+                            [
+                              if (food.brand != null) food.brand!,
+                              if (food.servingLabel != null) food.servingLabel!
+                            ].join(' · '),
                             style: TextStyle(fontSize: 12, color: gb.grey500)),
                       ),
                   ],
@@ -568,7 +590,9 @@ class _FoodPickerSheetState extends ConsumerState<_FoodPickerSheet> {
         if (!widget.swap && widget.meals.isNotEmpty) ...[
           Text('Log under',
               style: TextStyle(
-                  fontSize: 12, fontWeight: FontWeight.w700, color: gb.grey500)),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: gb.grey500)),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -605,8 +629,10 @@ class _FoodPickerSheetState extends ConsumerState<_FoodPickerSheet> {
                               color: gb.grey900)),
                       Padding(
                         padding: const EdgeInsets.only(top: 1),
-                        child: Text('Reuse it next time — find it under “My foods”',
-                            style: TextStyle(fontSize: 11.5, color: gb.grey500)),
+                        child: Text(
+                            'Reuse it next time — find it under “My foods”',
+                            style:
+                                TextStyle(fontSize: 11.5, color: gb.grey500)),
                       ),
                     ],
                   ),
@@ -660,7 +686,9 @@ class _FoodPickerSheetState extends ConsumerState<_FoodPickerSheet> {
           children: [
             Text(value,
                 style: TextStyle(
-                    fontSize: 17, fontWeight: FontWeight.w800, color: gb.grey900)),
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: gb.grey900)),
             const SizedBox(height: 2),
             Text(label.toUpperCase(),
                 style: TextStyle(
@@ -686,7 +714,8 @@ class _FoodPickerSheetState extends ConsumerState<_FoodPickerSheet> {
         decoration: BoxDecoration(
           color: on ? gb.primary500 : gb.card,
           borderRadius: BorderRadius.circular(999),
-          border: Border.all(color: on ? gb.primary500 : gb.borderCard, width: 1.5),
+          border:
+              Border.all(color: on ? gb.primary500 : gb.borderCard, width: 1.5),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -711,7 +740,9 @@ class _FoodPickerSheetState extends ConsumerState<_FoodPickerSheet> {
         customBorder: const CircleBorder(),
         onTap: onTap,
         child: SizedBox(
-            width: 36, height: 36, child: Icon(icon, size: 18, color: gb.grey700)),
+            width: 36,
+            height: 36,
+            child: Icon(icon, size: 18, color: gb.grey700)),
       ),
     );
   }
@@ -726,8 +757,11 @@ class _FoodResultRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final gb = context.gb;
-    String n(num? v) => v == null ? '0' : (v == v.roundToDouble() ? v.round().toString() : '$v');
-    final meta = '${food.servingLabel ?? '1 serving'} · ${n(food.energyKcal)} kcal · ${n(food.proteinG)}P';
+    String n(num? v) => v == null
+        ? '0'
+        : (v == v.roundToDouble() ? v.round().toString() : '$v');
+    final meta =
+        '${food.servingLabel ?? '1 serving'} · ${n(food.energyKcal)} kcal · ${n(food.proteinG)}P';
     return GestureDetector(
       onTap: onTap,
       child: Container(

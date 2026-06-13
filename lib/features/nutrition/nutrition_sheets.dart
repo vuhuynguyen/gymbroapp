@@ -10,7 +10,8 @@ import 'nutrition_widgets.dart';
 
 /// The per-item action sheet (design §D) — Complete / Skip / Swap for a planned item, Remove for an
 /// ad-hoc one. All actions are optimistic via [TodayNutritionController]; errors surface a snackbar.
-void showNutriItemSheet(BuildContext context, WidgetRef ref, NutritionItem item) {
+void showNutriItemSheet(
+    BuildContext context, WidgetRef ref, NutritionItem item) {
   final controller = ref.read(todayNutritionProvider.notifier);
 
   Future<void> run(Future<void> Function() action) async {
@@ -24,7 +25,8 @@ void showNutriItemSheet(BuildContext context, WidgetRef ref, NutritionItem item)
 
   Future<void> swap() async {
     Navigator.of(context).pop();
-    final pick = await showFoodPicker(context, swap: true, swapTargetName: item.foodName);
+    final pick = await showFoodPicker(context,
+        swap: true, swapTargetName: item.foodName);
     if (pick == null) return;
     try {
       await controller.swap(item, pick.food, quantity: pick.quantity);
@@ -56,20 +58,23 @@ void showNutriItemSheet(BuildContext context, WidgetRef ref, NutritionItem item)
                 onTap: () => run(() => controller.removeItem(item)),
               )
             else ...[
-              if (s != NutritionItemStatus.completed && s != NutritionItemStatus.substituted)
+              if (s != NutritionItemStatus.completed &&
+                  s != NutritionItemStatus.substituted)
                 GbSheetActionTile(
                   icon: Icons.check_circle_outline,
                   iconColor: gb.emerald,
                   label: 'Complete',
                   sub: 'Ate it as planned',
-                  onTap: () => run(() => controller.setStatus(item, NutritionItemStatus.completed)),
+                  onTap: () => run(() => controller.setStatus(
+                      item, NutritionItemStatus.completed)),
                 ),
               if (s != NutritionItemStatus.skipped)
                 GbSheetActionTile(
                   icon: Icons.remove_circle_outline,
                   label: 'Skip',
                   sub: 'Deliberately passing on this one',
-                  onTap: () => run(() => controller.setStatus(item, NutritionItemStatus.skipped)),
+                  onTap: () => run(() =>
+                      controller.setStatus(item, NutritionItemStatus.skipped)),
                 ),
               GbSheetActionTile(
                 icon: Icons.swap_horiz,
@@ -83,7 +88,8 @@ void showNutriItemSheet(BuildContext context, WidgetRef ref, NutritionItem item)
                   icon: Icons.undo,
                   label: 'Reset to planned',
                   sub: 'Clear today’s status',
-                  onTap: () => run(() => controller.setStatus(item, NutritionItemStatus.planned)),
+                  onTap: () => run(() =>
+                      controller.setStatus(item, NutritionItemStatus.planned)),
                 ),
             ],
           ],
@@ -113,7 +119,8 @@ class DailyCheckinCard extends ConsumerWidget {
             : ref.watch(checkinProvider).valueOrNull ?? DailyCheckin.empty);
 
     return GbCard(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.sm, horizontal: 4),
+      padding:
+          const EdgeInsets.symmetric(vertical: AppSpacing.sm, horizontal: 4),
       child: IntrinsicHeight(
         child: Row(
           children: [
@@ -123,10 +130,13 @@ class DailyCheckinCard extends ConsumerWidget {
                 tint: gb.primary0,
                 iconColor: gb.primary600,
                 label: 'WEIGHT',
-                value: checkin.weightKg == null ? null : '${fmtQty(checkin.weightKg!)} kg',
+                value: checkin.weightKg == null
+                    ? null
+                    : '${fmtQty(checkin.weightKg!)} kg',
                 onTap: readOnly
                     ? null
-                    : () => _openSheet(context, ref, weight: true, current: checkin.weightKg),
+                    : () => _openSheet(context, ref,
+                        weight: true, current: checkin.weightKg),
               ),
             ),
             VerticalDivider(width: 1, color: gb.borderCard),
@@ -136,10 +146,13 @@ class DailyCheckinCard extends ConsumerWidget {
                 tint: gb.secondary0,
                 iconColor: gb.secondary300,
                 label: 'SLEEP',
-                value: checkin.sleepHours == null ? null : fmtSleep(checkin.sleepHours!),
+                value: checkin.sleepHours == null
+                    ? null
+                    : fmtSleep(checkin.sleepHours!),
                 onTap: readOnly
                     ? null
-                    : () => _openSheet(context, ref, weight: false, current: checkin.sleepHours),
+                    : () => _openSheet(context, ref,
+                        weight: false, current: checkin.sleepHours),
               ),
             ),
           ],
@@ -180,10 +193,14 @@ class _CheckinCell extends StatelessWidget {
       onTap: onTap,
       borderRadius: AppRadius.brSm,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 6),
+        padding:
+            const EdgeInsets.symmetric(horizontal: AppSpacing.sm, vertical: 6),
         child: Row(
           children: [
-            GbIconTile(size: 38, background: tint, child: Icon(icon, size: AppSizes.iconLg, color: iconColor)),
+            GbIconTile(
+                size: 38,
+                background: tint,
+                child: Icon(icon, size: AppSizes.iconLg, color: iconColor)),
             const SizedBox(width: AppSpacing.sm),
             Expanded(
               child: Column(
@@ -198,7 +215,10 @@ class _CheckinCell extends StatelessWidget {
                         Flexible(
                           child: Text(value!,
                               overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: gb.ink)
+                              style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w800,
+                                      color: gb.ink)
                                   .tabular),
                         ),
                         if (onTap != null) ...[
@@ -209,9 +229,16 @@ class _CheckinCell extends StatelessWidget {
                     )
                   else if (onTap != null)
                     Text('+ Log',
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: gb.primary600))
+                        style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: gb.primary600))
                   else
-                    Text('—', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: gb.grey400)),
+                    Text('—',
+                        style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: gb.grey400)),
                 ],
               ),
             ),
@@ -275,7 +302,11 @@ class _CheckinSheetState extends ConsumerState<_CheckinSheet> {
             ),
           ),
           const SizedBox(height: AppSpacing.lg),
-          GbButton(label: 'Save', full: true, busy: _busy, onPressed: _busy ? null : _save),
+          GbButton(
+              label: 'Save',
+              full: true,
+              busy: _busy,
+              onPressed: _busy ? null : _save),
         ],
       ),
     );
