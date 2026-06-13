@@ -82,4 +82,5 @@ Additional proposed extractions with **no gallery card yet**: `app-side-panel`,
 3. Layout wrappers (`page-container`, `form-grid`, `form-inline`) may stay
    implicit — optionally add one combined "layout primitives" card.
 4. Keep this file as the **single source of truth for kit ↔ gallery mapping**;
-   the per-component API reference remains `GymBroPortal/docs/component-inventory.md`.
+   the per-component API reference is the kit barrel itself,
+   `GymBroPortal/src/app/shared/ui/index.ts`.

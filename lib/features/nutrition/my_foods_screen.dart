@@ -98,7 +98,6 @@ class MyFoodsScreen extends ConsumerWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(18, 14, 18, 24),
       children: [
-        // Info bar
         Padding(
           padding: const EdgeInsets.fromLTRB(2, 4, 2, 12),
           child: Row(

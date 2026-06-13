@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:gymbroapp/core/theme/theme.dart';
+
 import 'router.dart';
-import 'theme.dart';
 
 class GymBroApp extends ConsumerWidget {
   const GymBroApp({super.key});
