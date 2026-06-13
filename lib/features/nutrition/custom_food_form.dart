@@ -45,7 +45,8 @@ class _CustomFoodFormState extends State<CustomFoodForm> {
   void initState() {
     super.initState();
     final f = widget.initial;
-    String n(num? v) => v == null ? '' : (v == v.roundToDouble() ? v.round().toString() : '$v');
+    String n(num? v) =>
+        v == null ? '' : (v == v.roundToDouble() ? v.round().toString() : '$v');
     _name = TextEditingController(text: f?.name ?? widget.initialName ?? '');
     _serving = TextEditingController(text: f?.servingLabel ?? '');
     _kcal = TextEditingController(text: n(f?.energyKcal));
@@ -106,7 +107,8 @@ class _CustomFoodFormState extends State<CustomFoodForm> {
               _textField(_name, "e.g. Mum's lasagna"),
               const SizedBox(height: 14),
               _label('Type'),
-              _TypeSelector(value: _kind, onChanged: (k) => setState(() => _kind = k)),
+              _TypeSelector(
+                  value: _kind, onChanged: (k) => setState(() => _kind = k)),
               const SizedBox(height: 14),
               _label('Serving size'),
               _textField(_serving, 'e.g. 1 plate · 350 g'),
@@ -117,16 +119,23 @@ class _CustomFoodFormState extends State<CustomFoodForm> {
                 children: [
                   Expanded(child: _MacroCell(label: 'kcal', controller: _kcal)),
                   const SizedBox(width: 8),
-                  Expanded(child: _MacroCell(label: 'Protein', unit: 'g', controller: _protein)),
+                  Expanded(
+                      child: _MacroCell(
+                          label: 'Protein', unit: 'g', controller: _protein)),
                   const SizedBox(width: 8),
-                  Expanded(child: _MacroCell(label: 'Carbs', unit: 'g', controller: _carbs)),
+                  Expanded(
+                      child: _MacroCell(
+                          label: 'Carbs', unit: 'g', controller: _carbs)),
                   const SizedBox(width: 8),
-                  Expanded(child: _MacroCell(label: 'Fat', unit: 'g', controller: _fat)),
+                  Expanded(
+                      child: _MacroCell(
+                          label: 'Fat', unit: 'g', controller: _fat)),
                 ],
               ),
               const SizedBox(height: 14),
               Text(widget.note,
-                  style: TextStyle(fontSize: 12, height: 1.5, color: gb.grey500)),
+                  style:
+                      TextStyle(fontSize: 12, height: 1.5, color: gb.grey500)),
             ],
           ),
         ),
@@ -149,7 +158,9 @@ class _CustomFoodFormState extends State<CustomFoodForm> {
         padding: const EdgeInsets.only(bottom: 6),
         child: Text(text,
             style: TextStyle(
-                fontSize: 12, fontWeight: FontWeight.w700, color: context.gb.grey500)),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: context.gb.grey500)),
       );
 
   Widget _textField(TextEditingController c, String hint) {
@@ -162,7 +173,8 @@ class _CustomFoodFormState extends State<CustomFoodForm> {
       decoration: InputDecoration(
         hintText: hint,
         isDense: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 13, vertical: 14),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 13, vertical: 14),
         filled: true,
         fillColor: gb.card,
         enabledBorder: OutlineInputBorder(
@@ -206,7 +218,8 @@ class _TypeSelector extends StatelessWidget {
                   color: value == k ? gb.ink : gb.card,
                   borderRadius: BorderRadius.circular(999),
                   border: Border.all(
-                      color: value == k ? Colors.transparent : gb.borderCard, width: 1.5),
+                      color: value == k ? Colors.transparent : gb.borderCard,
+                      width: 1.5),
                 ),
                 alignment: Alignment.center,
                 padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -215,7 +228,9 @@ class _TypeSelector extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(_icons[k], size: 14, color: value == k ? Colors.white : gb.grey600),
+                      Icon(_icons[k],
+                          size: 14,
+                          color: value == k ? Colors.white : gb.grey600),
                       const SizedBox(width: 6),
                       Text(k.label,
                           style: TextStyle(
@@ -257,8 +272,7 @@ class _MacroCellState extends State<_MacroCell> {
     _focus.addListener(() {
       if (_focus.hasFocus) {
         final c = widget.controller;
-        c.selection =
-            TextSelection(baseOffset: 0, extentOffset: c.text.length);
+        c.selection = TextSelection(baseOffset: 0, extentOffset: c.text.length);
       }
     });
   }
@@ -296,10 +310,15 @@ class _MacroCellState extends State<_MacroCell> {
                   focusNode: _focus,
                   textAlign: TextAlign.center,
                   scrollPadding: const EdgeInsets.only(bottom: 160),
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))
+                  ],
                   style: TextStyle(
-                      fontSize: 17, fontWeight: FontWeight.w800, color: gb.grey900),
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                      color: gb.grey900),
                   decoration: const InputDecoration(
                     isDense: true,
                     contentPadding: EdgeInsets.zero,
@@ -316,7 +335,9 @@ class _MacroCellState extends State<_MacroCell> {
                 const SizedBox(width: 2),
                 Text(widget.unit!,
                     style: TextStyle(
-                        fontSize: 12, fontWeight: FontWeight.w600, color: gb.grey400)),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: gb.grey400)),
               ],
             ],
           ),

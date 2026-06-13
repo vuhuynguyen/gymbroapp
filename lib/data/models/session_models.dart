@@ -643,6 +643,9 @@ class EditSetRequest {
     this.weightKg,
     this.durationSeconds,
     this.distanceM,
+    this.rounds,
+    this.calories,
+    this.avgHeartRate,
     this.rpe,
     this.restSeconds,
     this.isCompleted,
@@ -653,6 +656,9 @@ class EditSetRequest {
   final double? weightKg;
   final int? durationSeconds;
   final int? distanceM;
+  final int? rounds;
+  final int? calories;
+  final int? avgHeartRate;
   final int? rpe;
   final int? restSeconds;
   final bool? isCompleted;
@@ -665,6 +671,10 @@ class EditSetRequest {
         if (durationSeconds != null && durationSeconds! > 0)
           'durationSeconds': durationSeconds,
         if (distanceM != null && distanceM! > 0) 'distanceM': distanceM,
+        if (rounds != null && rounds! > 0) 'rounds': rounds,
+        if (calories != null && calories! > 0) 'calories': calories,
+        if (avgHeartRate != null && avgHeartRate! > 0)
+          'avgHeartRate': avgHeartRate,
         if (rpe != null) 'rpe': rpe,
         if (restSeconds != null) 'restSeconds': restSeconds,
         if (isCompleted != null) 'isCompleted': isCompleted,

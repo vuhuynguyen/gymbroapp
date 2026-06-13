@@ -75,6 +75,7 @@ class LiveSessionState {
 /// single-active rule; this controller mirrors the Portal's optimistic in-place updates.
 class LiveSessionController extends AutoDisposeNotifier<LiveSessionState> {
   Timer? _ticker;
+
   /// Wall-clock moment the current rest began; used to auto-capture the actual rest taken on the next set.
   DateTime? _restStartedAt;
   SessionRepository get _repo => ref.read(sessionRepositoryProvider);
@@ -196,9 +197,10 @@ class LiveSessionController extends AutoDisposeNotifier<LiveSessionState> {
     final isDropStage = linkParent != null;
 
     // A drop stage continues the lead set, so it doesn't pull from the plan's next prescribed set.
-    final snapSet = (!isDropStage && snap != null && snap.sets.length >= setNumber)
-        ? snap.sets[setNumber - 1]
-        : null;
+    final snapSet =
+        (!isDropStage && snap != null && snap.sets.length >= setNumber)
+            ? snap.sets[setNumber - 1]
+            : null;
 
     // Rest is logged only on a lead set; a passed value overrides the auto-captured actual rest taken.
     final effectiveRest = isDropStage
@@ -230,7 +232,8 @@ class LiveSessionController extends AutoDisposeNotifier<LiveSessionState> {
       );
       _replaceExercise(ex.id, ex.copyWith(sets: [...ex.sets, logged]));
       _restStartedAt = null;
-      if (isDropStage) return; // drop stage: no rest timer, no superset rotation
+      if (isDropStage)
+        return; // drop stage: no rest timer, no superset rotation
       _advanceAfterSet(ex, snapSet?.restSeconds ?? 0);
     });
   }
@@ -274,6 +277,36 @@ class LiveSessionController extends AutoDisposeNotifier<LiveSessionState> {
     await _mutate(() async {
       await _repo.editSet(session.sessionId, exerciseId, setId, body);
       await _reload(session.sessionId);
+    });
+  }
+
+  /// Reorders a logged lead set one slot up ([up] = true) or down, carrying its drop-stage cluster with
+  /// it. Sends the full new set-id order to the server (which renumbers), and reorders state optimistically.
+  Future<void> moveSet(String exerciseId, String setId,
+      {required bool up}) async {
+    final session = state.session;
+    final ex = _findExercise(exerciseId);
+    if (session == null || ex == null) return;
+    final sets = ex.sets;
+    final leads = sets.where((s) => s.parentSetId == null).toList();
+    final idx = leads.indexWhere((s) => s.id == setId);
+    final target = up ? idx - 1 : idx + 1;
+    if (idx < 0 || target < 0 || target >= leads.length) return;
+    final moved = leads[idx];
+    final newLeads = [...leads]
+      ..removeAt(idx)
+      ..insert(target, moved);
+    // Flatten each lead with its drop stages so a cluster moves as one unit.
+    final ordered = <PerformedSet>[
+      for (final lead in newLeads) ...[
+        lead,
+        ...sets.where((s) => s.parentSetId == lead.id),
+      ],
+    ];
+    await _mutate(() async {
+      await _repo.reorderSets(
+          session.sessionId, exerciseId, ordered.map((s) => s.id).toList());
+      _replaceExercise(ex.id, ex.copyWith(sets: ordered));
     });
   }
 

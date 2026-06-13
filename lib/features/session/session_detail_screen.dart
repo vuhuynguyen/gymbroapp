@@ -28,7 +28,9 @@ class SessionDetailScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final provider = mine ? mySessionDetailProvider(sessionId) : sessionDetailProvider(sessionId);
+    final provider = mine
+        ? mySessionDetailProvider(sessionId)
+        : sessionDetailProvider(sessionId);
     final detail = ref.watch(provider);
     return Scaffold(
       body: Column(
@@ -84,12 +86,19 @@ class _RepeatBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final gb = context.gb;
     return Container(
-      decoration: BoxDecoration(color: gb.card, border: Border(top: BorderSide(color: gb.borderCard))),
+      decoration: BoxDecoration(
+          color: gb.card,
+          border: Border(top: BorderSide(color: gb.borderCard))),
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(AppSpacing.screenH, AppSpacing.sm, AppSpacing.screenH, AppSpacing.sm),
-          child: GbButton(label: 'Repeat workout', icon: Icons.play_arrow, full: true, onPressed: onRepeat),
+          padding: const EdgeInsets.fromLTRB(AppSpacing.screenH, AppSpacing.sm,
+              AppSpacing.screenH, AppSpacing.sm),
+          child: GbButton(
+              label: 'Repeat workout',
+              icon: Icons.play_arrow,
+              full: true,
+              onPressed: onRepeat),
         ),
       ),
     );
@@ -117,7 +126,8 @@ class _Body extends StatelessWidget {
     ];
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(AppSpacing.md + 2, AppSpacing.md, AppSpacing.md + 2, AppSpacing.md),
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.md + 2, AppSpacing.md, AppSpacing.md + 2, AppSpacing.md),
       children: [
         if (fromFinish) ...[
           const _SuccessBanner(),
@@ -140,7 +150,8 @@ class _Body extends StatelessWidget {
         ),
         if (metaParts.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.xxs),
-          Text(metaParts.join(' · '), style: AppText.meta.copyWith(fontSize: 13, color: gb.grey500)),
+          Text(metaParts.join(' · '),
+              style: AppText.meta.copyWith(fontSize: 13, color: gb.grey500)),
         ],
         const SizedBox(height: AppSpacing.md),
 
@@ -151,7 +162,9 @@ class _Body extends StatelessWidget {
               child: GbStatTile(
                 icon: Icons.timer_outlined,
                 label: 'Duration',
-                value: d.durationSeconds != null ? formatDurationCompact(d.durationSeconds!) : '—',
+                value: d.durationSeconds != null
+                    ? formatDurationCompact(d.durationSeconds!)
+                    : '—',
               ),
             ),
             const SizedBox(width: AppSpacing.xs + 2),
@@ -204,10 +217,13 @@ class _Body extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.sticky_note_2_outlined, size: AppSizes.iconLg, color: gb.grey400),
+                Icon(Icons.sticky_note_2_outlined,
+                    size: AppSizes.iconLg, color: gb.grey400),
                 const SizedBox(width: AppSpacing.xs + 2),
                 Expanded(
-                  child: Text(d.notes!, style: TextStyle(fontSize: 14, height: 1.45, color: gb.grey700)),
+                  child: Text(d.notes!,
+                      style: TextStyle(
+                          fontSize: 14, height: 1.45, color: gb.grey700)),
                 ),
               ],
             ),
@@ -218,8 +234,11 @@ class _Body extends StatelessWidget {
         GbSectionTitle('Exercises', count: d.exercises.length),
         const SizedBox(height: AppSpacing.sm - 2),
 
-        for (final e in d.exercises) ...[
-          _ExerciseBreakdown(exercise: e, isPr: prExerciseIds.contains(e.exerciseId)),
+        for (final (i, e) in d.exercises.indexed) ...[
+          _ExerciseBreakdown(
+              exercise: e,
+              isPr: prExerciseIds.contains(e.exerciseId),
+              order: i + 1),
           const SizedBox(height: AppSpacing.sm - 2),
         ],
       ],
@@ -258,7 +277,8 @@ class _SuccessBanner extends StatelessWidget {
                 ),
               ],
             ),
-            child: const Icon(Icons.check, size: AppSizes.iconXxl, color: Colors.white),
+            child: const Icon(Icons.check,
+                size: AppSizes.iconXxl, color: Colors.white),
           ),
           const SizedBox(width: AppSpacing.sm),
           Column(
@@ -267,12 +287,17 @@ class _SuccessBanner extends StatelessWidget {
             children: [
               Text(
                 'Nice work!',
-                style: TextStyle(fontSize: 15.5, fontWeight: FontWeight.w800, letterSpacing: -0.1, color: gb.emeraldInk),
+                style: TextStyle(
+                    fontSize: 15.5,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.1,
+                    color: gb.emeraldInk),
               ),
               const SizedBox(height: 1),
               Text(
                 'Session saved to your log.',
-                style: TextStyle(fontSize: 13, color: gb.emeraldInk.withValues(alpha: 0.8)),
+                style: TextStyle(
+                    fontSize: 13, color: gb.emeraldInk.withValues(alpha: 0.8)),
               ),
             ],
           ),
@@ -283,15 +308,18 @@ class _SuccessBanner extends StatelessWidget {
 }
 
 class _ExerciseBreakdown extends StatelessWidget {
-  const _ExerciseBreakdown({required this.exercise, required this.isPr});
+  const _ExerciseBreakdown(
+      {required this.exercise, required this.isPr, required this.order});
   final PerformedExercise exercise;
   final bool isPr;
+  final int order;
 
   @override
   Widget build(BuildContext context) {
     final gb = context.gb;
     final skipped = exercise.status == ExercisePerformStatus.skipped;
-    final vol = exercise.sets.fold<double>(0, (a, s) => a + (s.weightKg ?? 0) * (s.reps ?? 0));
+    final vol = exercise.sets
+        .fold<double>(0, (a, s) => a + (s.weightKg ?? 0) * (s.reps ?? 0));
 
     // Best estimated 1RM across the exercise's sets — prefer the server value, fall back to Epley.
     var best = 0.0;
@@ -307,51 +335,66 @@ class _ExerciseBreakdown extends StatelessWidget {
       if (best > 0) 'e1RM ${best.toStringAsFixed(0)}kg',
     ];
 
-    return GbCard(
-      child: Column(
+    // Collapsed by default: the header alone (number · name · set/volume summary) tells the story, so a
+    // long session stays scannable; tap to reveal the per-set pills.
+    return GbCollapsibleCard(
+      trailing: [
+        if (isPr) const PrChip(small: true),
+        if (skipped)
+          GbStatusBadge(
+              label: 'Skipped', background: gb.grey25, foreground: gb.grey600),
+      ],
+      header: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Flexible(
-                child: Text(
-                  exercise.exerciseName ?? 'Exercise',
-                  style: AppText.rowTitle.copyWith(color: gb.grey900),
-                ),
-              ),
-              if (isPr) ...[const SizedBox(width: AppSpacing.xs - 1), const PrChip(small: true)],
-              if (skipped) ...[
-                const SizedBox(width: AppSpacing.xs - 1),
-                GbStatusBadge(label: 'Skipped', background: gb.grey25, foreground: gb.grey600),
+          GbOrderBadge(order),
+          const SizedBox(width: AppSpacing.sm - 2),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(exercise.exerciseName ?? 'Exercise',
+                    style: AppText.rowTitle.copyWith(color: gb.grey900)),
+                const SizedBox(height: 1),
+                Text(metaParts.join(' · '),
+                    style: AppText.meta.copyWith(color: gb.grey500)),
               ],
-            ],
+            ),
           ),
-          const SizedBox(height: 1),
-          Text(metaParts.join(' · '), style: AppText.meta.copyWith(color: gb.grey500)),
-          if (exercise.sets.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.sm - 2),
-            Wrap(
+        ],
+      ),
+      child: exercise.sets.isEmpty
+          ? const SizedBox.shrink()
+          : Wrap(
               spacing: 7,
               runSpacing: 7,
               children: [
-                for (final s in exercise.sets)
-                  GbSetPill(
-                    label: formatLoggedSet(s),
-                    isPr: s.isPr,
-                  ),
+                for (final (i, s) in exercise.sets.indexed)
+                  GbSetPill(label: performedSetChip(s, i + 1), isPr: s.isPr),
               ],
             ),
-          ],
-        ],
-      ),
     );
   }
 }
 
 /// kg with a `1.2k` shorthand past a thousand — mirrors the prototype's `fmtVolume`.
-String _fmtVolume(double kg) => kg >= 1000 ? '${(kg / 1000).toStringAsFixed(1)}k' : kg.toStringAsFixed(0);
+String _fmtVolume(double kg) =>
+    kg >= 1000 ? '${(kg / 1000).toStringAsFixed(1)}k' : kg.toStringAsFixed(0);
 
-const _months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const _months = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec'
+];
 
 /// `Monday, Jun 1` style date (local).
 String _dateLabel(DateTime d) {

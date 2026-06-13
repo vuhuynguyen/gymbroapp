@@ -61,14 +61,17 @@ class NutritionRepository {
   }
 
   /// The trainee's nutrition timeline (history). 404 ⇒ empty list (surface not deployed).
-  Future<NutritionDayList> myHistory({DateTime? from, DateTime? to}) async {
+  Future<NutritionDayList> myHistory(
+      {DateTime? from, DateTime? to, int page = 1, int pageSize = 30}) async {
     try {
       return await apiCall(() async {
-        final res = await _dio.get<Map<String, dynamic>>('$_me/days',
-            queryParameters: {
-              if (from != null) 'from': _date(from),
-              if (to != null) 'to': _date(to),
-            });
+        final res =
+            await _dio.get<Map<String, dynamic>>('$_me/days', queryParameters: {
+          if (from != null) 'from': _date(from),
+          if (to != null) 'to': _date(to),
+          'page': page,
+          'pageSize': pageSize,
+        });
         return NutritionDayList.fromJson(res.data!);
       });
     } on ApiException catch (e) {
@@ -175,8 +178,8 @@ class NutritionRepository {
   Future<FoodList> searchFoods({String? search, FoodKind? kind}) async {
     try {
       return await apiCall(() async {
-        final res =
-            await _dio.get<Map<String, dynamic>>('/api/foods', queryParameters: {
+        final res = await _dio
+            .get<Map<String, dynamic>>('/api/foods', queryParameters: {
           if (search != null && search.isNotEmpty) 'search': search,
           if (kind != null) 'kind': kind.wire,
         });

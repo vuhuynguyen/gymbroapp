@@ -4,6 +4,7 @@ import '../../core/network/api_exception.dart';
 import '../../data/models/nutrition_models.dart';
 import '../../data/repositories/nutrition_repository.dart';
 import '../../domain/enums.dart';
+import '../../shared/paging/paged.dart';
 import '../tenant/tenant_controller.dart';
 
 /// Today's nutrition log + the completion-first mutations. State is held locally so a tap updates the
@@ -49,7 +50,8 @@ class TodayNutritionController extends AsyncNotifier<DailyNutritionLog> {
     try {
       await write();
     } on ApiException catch (e) {
-      if (e.isNotFound) return; // surface not deployed — keep the optimistic state
+      if (e.isNotFound)
+        return; // surface not deployed — keep the optimistic state
       state = AsyncData(current); // roll back, then surface to the caller
       rethrow;
     } catch (_) {
@@ -152,7 +154,8 @@ class TodayNutritionController extends AsyncNotifier<DailyNutritionLog> {
     );
     return _optimistic(
       (log) {
-        final target = mealName ?? (log.meals.isNotEmpty ? log.meals.last.name : 'Off-plan');
+        final target = mealName ??
+            (log.meals.isNotEmpty ? log.meals.last.name : 'Off-plan');
         final has = log.meals.any((m) => m.name == target);
         final meals = [
           for (final m in log.meals)
@@ -180,7 +183,10 @@ class TodayNutritionController extends AsyncNotifier<DailyNutritionLog> {
     return _optimistic(
       (log) => log.copyWithMeals([
         for (final m in log.meals)
-          m.copyWithItems([for (final i in m.items) if (i.id != item.id) i]),
+          m.copyWithItems([
+            for (final i in m.items)
+              if (i.id != item.id) i
+          ]),
       ]),
       () => _repo.removeItem(date: date, itemId: item.id),
     );
@@ -192,13 +198,23 @@ final todayNutritionProvider =
     AsyncNotifierProvider<TodayNutritionController, DailyNutritionLog>(
         TodayNutritionController.new);
 
-/// The trainee's nutrition timeline (self, cross-gym) — the History link surface.
-final nutritionHistoryProvider =
-    FutureProvider.autoDispose<NutritionDayList>((ref) {
-  return ref
-      .read(nutritionRepositoryProvider)
-      .myHistory(from: DateTime.now().subtract(const Duration(days: 56)));
-});
+/// The trainee's nutrition timeline (self, cross-gym) — the History surface, paged with infinite scroll.
+class NutritionHistoryNotifier extends PagedNotifier<NutritionDaySummary> {
+  @override
+  int get pageSize => 30;
+
+  @override
+  Future<PageResult<NutritionDaySummary>> fetch(int page, int pageSize) async {
+    final r = await ref
+        .read(nutritionRepositoryProvider)
+        .myHistory(page: page, pageSize: pageSize);
+    return PageResult(r.items, r.totalCount);
+  }
+}
+
+final nutritionHistoryProvider = AutoDisposeNotifierProvider<
+    NutritionHistoryNotifier,
+    AsyncValue<PagedData<NutritionDaySummary>>>(NutritionHistoryNotifier.new);
 
 /// One past day's read-only detail (self, cross-gym), keyed by `YYYY-MM-DD`.
 final nutritionDayProvider =
@@ -209,9 +225,11 @@ final nutritionDayProvider =
 /// The day's body check-in (latest weight + sleep).
 class CheckinController extends AsyncNotifier<DailyCheckin> {
   @override
-  Future<DailyCheckin> build() => ref.read(nutritionRepositoryProvider).checkin();
+  Future<DailyCheckin> build() =>
+      ref.read(nutritionRepositoryProvider).checkin();
 
-  Future<void> _log(String type, num value, String unit, DailyCheckin next) async {
+  Future<void> _log(
+      String type, num value, String unit, DailyCheckin next) async {
     final current = state.valueOrNull ?? DailyCheckin.empty;
     state = AsyncData(next);
     try {
@@ -235,8 +253,8 @@ class CheckinController extends AsyncNotifier<DailyCheckin> {
       (state.valueOrNull ?? DailyCheckin.empty).copyWith(sleepHours: hours));
 }
 
-final checkinProvider =
-    AsyncNotifierProvider<CheckinController, DailyCheckin>(CheckinController.new);
+final checkinProvider = AsyncNotifierProvider<CheckinController, DailyCheckin>(
+    CheckinController.new);
 
 /// Food-catalog search, keyed by (query, kind). Empty until the user types / picks a filter.
 final foodSearchProvider = FutureProvider.autoDispose
@@ -249,8 +267,8 @@ final foodSearchProvider = FutureProvider.autoDispose
 // ── Coach (tenant-scoped) ─────────────────────────────────────────────────
 
 /// A client's nutrition adherence timeline (coach monitor Nutrition segment).
-final clientNutritionProvider =
-    FutureProvider.autoDispose.family<NutritionDayList, String>((ref, clientId) {
+final clientNutritionProvider = FutureProvider.autoDispose
+    .family<NutritionDayList, String>((ref, clientId) {
   ref.watch(activeTenantIdProvider);
   return ref.read(nutritionRepositoryProvider).clientLogs(clientId,
       from: DateTime.now().subtract(const Duration(days: 28)));

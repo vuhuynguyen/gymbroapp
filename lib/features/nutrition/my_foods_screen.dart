@@ -30,8 +30,9 @@ class MyFoodsScreen extends ConsumerWidget {
               error: (e, _) => ErrorRetry(
                   message: e.toString(),
                   onRetry: () async => ref.invalidate(myFoodsProvider)),
-              data: (foods) =>
-                  foods.isEmpty ? _empty(context, ref) : _list(context, ref, foods),
+              data: (foods) => foods.isEmpty
+                  ? _empty(context, ref)
+                  : _list(context, ref, foods),
             ),
           ),
         ],
@@ -63,13 +64,16 @@ class MyFoodsScreen extends ConsumerWidget {
               const SizedBox(height: 12),
               Text('No saved foods yet',
                   style: TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w800, color: gb.ink)),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      color: gb.ink)),
               const SizedBox(height: 5),
               Text(
                 "Save foods you eat often — your own recipes or your brand's macros — "
                 'and reuse them in one tap when you log.',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 12.5, height: 1.55, color: gb.grey500),
+                style:
+                    TextStyle(fontSize: 12.5, height: 1.55, color: gb.grey500),
               ),
               const SizedBox(height: 16),
               FittedBox(
@@ -105,7 +109,8 @@ class MyFoodsScreen extends ConsumerWidget {
               Expanded(
                 child: Text.rich(
                   TextSpan(
-                    style: TextStyle(fontSize: 12.5, height: 1.5, color: gb.grey500),
+                    style: TextStyle(
+                        fontSize: 12.5, height: 1.5, color: gb.grey500),
                     children: [
                       const TextSpan(text: 'These appear under '),
                       TextSpan(
@@ -132,7 +137,8 @@ class MyFoodsScreen extends ConsumerWidget {
     );
   }
 
-  Widget _sectionHeader(BuildContext context, String title, int count, {required double top}) {
+  Widget _sectionHeader(BuildContext context, String title, int count,
+      {required double top}) {
     final gb = context.gb;
     return Padding(
       padding: EdgeInsets.fromLTRB(2, top, 2, 9),
@@ -147,20 +153,22 @@ class MyFoodsScreen extends ConsumerWidget {
           const SizedBox(width: 8),
           Text('$count',
               style: TextStyle(
-                  fontSize: 12, fontWeight: FontWeight.w700, color: gb.grey400)),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: gb.grey400)),
         ],
       ),
     );
   }
 
-  Widget _card(BuildContext context, WidgetRef ref, Food f) =>
-      _MyFoodCard(
+  Widget _card(BuildContext context, WidgetRef ref, Food f) => _MyFoodCard(
         food: f,
         onEdit: () => _openEditor(context, ref, food: f),
         onDelete: () => _confirmDelete(context, ref, f),
       );
 
-  Future<void> _openEditor(BuildContext context, WidgetRef ref, {Food? food}) async {
+  Future<void> _openEditor(BuildContext context, WidgetRef ref,
+      {Food? food}) async {
     final gb = context.gb;
     final editing = food != null;
     await showModalBottomSheet<void>(
@@ -168,7 +176,8 @@ class MyFoodsScreen extends ConsumerWidget {
       isScrollControlled: true,
       backgroundColor: gb.card,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg))),
+          borderRadius:
+              BorderRadius.vertical(top: Radius.circular(AppRadius.lg))),
       builder: (ctx) => DraggableScrollableSheet(
         expand: false,
         initialChildSize: 0.8,
@@ -202,7 +211,8 @@ class MyFoodsScreen extends ConsumerWidget {
                                 color: gb.grey900)),
                         const SizedBox(height: 1),
                         Text('Saved to My foods — reuse it any time you log.',
-                            style: TextStyle(fontSize: 12.5, color: gb.grey500)),
+                            style:
+                                TextStyle(fontSize: 12.5, color: gb.grey500)),
                       ],
                     ),
                   ),
@@ -219,7 +229,9 @@ class MyFoodsScreen extends ConsumerWidget {
                   note:
                       "Saved to My foods on this device — it won't change your gym's catalog.",
                   onContinue: (saved) {
-                    ref.read(myFoodsProvider.notifier).save(saved.copyWith(mine: true));
+                    ref
+                        .read(myFoodsProvider.notifier)
+                        .save(saved.copyWith(mine: true));
                     Navigator.of(ctx).pop();
                   },
                 ),
@@ -231,13 +243,15 @@ class MyFoodsScreen extends ConsumerWidget {
     );
   }
 
-  Future<void> _confirmDelete(BuildContext context, WidgetRef ref, Food f) async {
+  Future<void> _confirmDelete(
+      BuildContext context, WidgetRef ref, Food f) async {
     final gb = context.gb;
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: gb.card,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg))),
+          borderRadius:
+              BorderRadius.vertical(top: Radius.circular(AppRadius.lg))),
       builder: (ctx) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 6, 20, 24),
@@ -247,18 +261,22 @@ class MyFoodsScreen extends ConsumerWidget {
             children: [
               Text('Delete this food?',
                   style: TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.w800, color: gb.grey900)),
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: gb.grey900)),
               const SizedBox(height: 4),
               Text.rich(
                 TextSpan(
-                  style: TextStyle(fontSize: 13, color: gb.grey500, height: 1.45),
+                  style:
+                      TextStyle(fontSize: 13, color: gb.grey500, height: 1.45),
                   children: [
                     TextSpan(
                         text: f.name,
                         style: TextStyle(
                             color: gb.grey700, fontWeight: FontWeight.w700)),
                     const TextSpan(
-                        text: ' will be removed from My foods. Items you already '
+                        text:
+                            ' will be removed from My foods. Items you already '
                             'logged with it stay as they are.'),
                   ],
                 ),
@@ -339,7 +357,11 @@ class _Header extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              GbButton(label: 'Add', icon: Icons.add, size: GbButtonSize.sm, onPressed: onAdd),
+              GbButton(
+                  label: 'Add',
+                  icon: Icons.add,
+                  size: GbButtonSize.sm,
+                  onPressed: onAdd),
             ],
           ),
         ),
@@ -349,7 +371,8 @@ class _Header extends StatelessWidget {
 }
 
 class _MyFoodCard extends StatelessWidget {
-  const _MyFoodCard({required this.food, required this.onEdit, required this.onDelete});
+  const _MyFoodCard(
+      {required this.food, required this.onEdit, required this.onDelete});
   final Food food;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
@@ -358,7 +381,9 @@ class _MyFoodCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final gb = context.gb;
     final f = food;
-    String n(num? v) => v == null ? '0' : (v == v.roundToDouble() ? v.round().toString() : '$v');
+    String n(num? v) => v == null
+        ? '0'
+        : (v == v.roundToDouble() ? v.round().toString() : '$v');
     final meta = [
       if (f.brand != null) f.brand!,
       if (f.servingLabel != null) f.servingLabel!,
@@ -429,7 +454,8 @@ class _MyFoodCard extends StatelessWidget {
 }
 
 class _CircleIconButton extends StatelessWidget {
-  const _CircleIconButton({required this.icon, required this.onTap, this.size = 36});
+  const _CircleIconButton(
+      {required this.icon, required this.onTap, this.size = 36});
   final IconData icon;
   final VoidCallback onTap;
   final double size;
@@ -454,7 +480,8 @@ class _CircleIconButton extends StatelessWidget {
 }
 
 class _SquareIconButton extends StatelessWidget {
-  const _SquareIconButton({required this.icon, required this.onTap, this.color});
+  const _SquareIconButton(
+      {required this.icon, required this.onTap, this.color});
   final IconData icon;
   final VoidCallback onTap;
   final Color? color;

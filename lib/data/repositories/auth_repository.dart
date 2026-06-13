@@ -34,7 +34,8 @@ class AuthRepository {
         _tokenStore.setToken(AuthTokenResponse.fromJson(res.data!).token);
       });
 
-  Future<void> register(String email, String password, String fullName) => apiCall(() async {
+  Future<void> register(String email, String password, String fullName) =>
+      apiCall(() async {
         final res = await _authDio.post<Map<String, dynamic>>(
           '/api/auth/register',
           data: {'email': email, 'password': password, 'fullName': fullName},
@@ -51,20 +52,26 @@ class AuthRepository {
       });
 
   Future<void> forgotPassword(String email) => apiCall(() async {
-        await _authDio.post<dynamic>('/api/auth/forgot-password', data: {'email': email});
+        await _authDio
+            .post<dynamic>('/api/auth/forgot-password', data: {'email': email});
       });
 
-  Future<void> resetPassword(String email, String token, String newPassword) => apiCall(() async {
+  Future<void> resetPassword(String email, String token, String newPassword) =>
+      apiCall(() async {
         await _authDio.post<dynamic>(
           '/api/auth/reset-password',
           data: {'email': email, 'token': token, 'newPassword': newPassword},
         );
       });
 
-  Future<void> changePassword(String currentPassword, String newPassword) => apiCall(() async {
+  Future<void> changePassword(String currentPassword, String newPassword) =>
+      apiCall(() async {
         await _apiDio.post<dynamic>(
           '/api/auth/change-password',
-          data: {'currentPassword': currentPassword, 'newPassword': newPassword},
+          data: {
+            'currentPassword': currentPassword,
+            'newPassword': newPassword
+          },
         );
       });
 

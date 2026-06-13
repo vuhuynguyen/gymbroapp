@@ -22,7 +22,8 @@ class NutritionDayDetailScreen extends ConsumerWidget {
     final gb = context.gb;
     final isCoach = clientId != null;
     final async = isCoach
-        ? ref.watch(clientNutritionDayProvider((clientId: clientId!, date: date)))
+        ? ref.watch(
+            clientNutritionDayProvider((clientId: clientId!, date: date)))
         : ref.watch(nutritionDayProvider(date));
 
     return Scaffold(
@@ -37,7 +38,8 @@ class NutritionDayDetailScreen extends ConsumerWidget {
             child: AsyncValueView(
               value: async,
               onRetry: () async => ref.invalidate(isCoach
-                  ? clientNutritionDayProvider((clientId: clientId!, date: date))
+                  ? clientNutritionDayProvider(
+                      (clientId: clientId!, date: date))
                   : nutritionDayProvider(date)),
               loading: const GbSkeletonList(count: 5),
               data: (log) {
@@ -49,8 +51,8 @@ class NutritionDayDetailScreen extends ConsumerWidget {
                   );
                 }
                 return ListView(
-                  padding: const EdgeInsets.fromLTRB(
-                      AppSpacing.screenH, AppSpacing.gap, AppSpacing.screenH, AppSpacing.xxl),
+                  padding: const EdgeInsets.fromLTRB(AppSpacing.screenH,
+                      AppSpacing.gap, AppSpacing.screenH, AppSpacing.xxl),
                   children: [
                     if (isCoach)
                       Padding(
@@ -92,7 +94,20 @@ class NutritionDayDetailScreen extends ConsumerWidget {
     );
   }
 
-  static const _months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  static const _months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec'
+  ];
   static const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   static String _dateTitle(String date) {

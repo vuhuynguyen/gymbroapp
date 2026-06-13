@@ -6,6 +6,7 @@ import '../../core/network/api_exception.dart';
 import '../../data/models/plan_models.dart';
 import '../../data/repositories/plan_repository.dart';
 import '../../domain/enums.dart';
+import '../../shared/paging/paged.dart';
 import '../../shared/widgets/widgets.dart';
 import '../auth/auth_controller.dart';
 import 'coach_providers.dart';
@@ -28,8 +29,8 @@ class CoachPlansScreen extends ConsumerWidget {
       value: plans,
       onRetry: () async => ref.invalidate(coachPlansProvider),
       loading: const GbSkeletonList(count: 4, itemHeight: 110),
-      data: (list) {
-        if (list.items.isEmpty) {
+      data: (paged) {
+        if (paged.items.isEmpty) {
           return const EmptyState(
             icon: Icons.description_outlined,
             title: 'No plans yet',
@@ -38,29 +39,30 @@ class CoachPlansScreen extends ConsumerWidget {
           );
         }
         return RefreshIndicator(
-          onRefresh: () async {
-            ref.invalidate(coachPlansProvider);
-            await ref.read(coachPlansProvider.future);
-          },
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(
-                AppSpacing.screenH, AppSpacing.gap, AppSpacing.screenH, 90),
-            children: [
-              for (final p in list.items)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: AppSpacing.sm - 2),
-                  child: _PlanCard(plan: p),
+          onRefresh: () => ref.read(coachPlansProvider.notifier).refresh(),
+          child: InfiniteScroll(
+            onLoadMore: () => ref.read(coachPlansProvider.notifier).loadMore(),
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(
+                  AppSpacing.screenH, AppSpacing.gap, AppSpacing.screenH, 90),
+              children: [
+                for (final p in paged.items)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: AppSpacing.sm - 2),
+                    child: _PlanCard(plan: p),
+                  ),
+                PagingFooter(loadingMore: paged.loadingMore),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  'Editing a plan saves an immutable new version. Build and edit plans in the '
+                  'GymBro portal; existing assignments stay pinned to their version until you '
+                  'apply the latest.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      fontSize: 12, height: 1.5, color: context.gb.grey400),
                 ),
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                'Editing a plan saves an immutable new version. Build and edit plans in the '
-                'GymBro portal; existing assignments stay pinned to their version until you '
-                'apply the latest.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    fontSize: 12, height: 1.5, color: context.gb.grey400),
-              ),
-            ],
+              ],
+            ),
           ),
         );
       },

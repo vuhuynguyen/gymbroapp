@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/models/nutrition_models.dart';
 import '../../domain/session_grouping.dart' show mondayOf;
+import '../../shared/paging/paged.dart';
 import '../../shared/widgets/widgets.dart';
 import 'nutrition_providers.dart';
 import 'nutrition_widgets.dart';
@@ -20,43 +21,49 @@ class NutritionHistoryScreen extends ConsumerWidget {
       backgroundColor: context.gb.canvas,
       body: Column(
         children: [
-          GbDetailHeader(title: 'Tracking history', onLeading: () => context.pop()),
+          GbDetailHeader(
+              title: 'Tracking history', onLeading: () => context.pop()),
           Expanded(
             child: AsyncValueView(
               value: history,
               onRetry: () async => ref.invalidate(nutritionHistoryProvider),
               loading: const GbSkeletonList(count: 6, itemHeight: 64),
-              data: (list) {
-                if (list.items.isEmpty) {
+              data: (paged) {
+                if (paged.items.isEmpty) {
                   return const EmptyState(
                     icon: Icons.restaurant_menu,
                     title: 'No nutrition logged yet',
                     subtitle: 'Open Today to start following your plan.',
                   );
                 }
-                final groups = _byWeek(list.items);
+                final groups = _byWeek(paged.items);
                 return RefreshIndicator(
-                  onRefresh: () async {
-                    ref.invalidate(nutritionHistoryProvider);
-                    await ref.read(nutritionHistoryProvider.future);
-                  },
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(
-                        AppSpacing.screenH, AppSpacing.gap, AppSpacing.screenH, 100),
-                    children: [
-                      for (final g in groups) ...[
-                        _WeekHeader(label: g.label, avgPct: g.avgPct),
-                        for (final d in g.days)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-                            child: NutriDayCard(
-                              day: d,
-                              onTap: () => context.push('/nutrition-day/${d.localDate}'),
+                  onRefresh: () =>
+                      ref.read(nutritionHistoryProvider.notifier).refresh(),
+                  child: InfiniteScroll(
+                    onLoadMore: () =>
+                        ref.read(nutritionHistoryProvider.notifier).loadMore(),
+                    child: ListView(
+                      padding: const EdgeInsets.fromLTRB(AppSpacing.screenH,
+                          AppSpacing.gap, AppSpacing.screenH, 100),
+                      children: [
+                        for (final g in groups) ...[
+                          _WeekHeader(label: g.label, avgPct: g.avgPct),
+                          for (final d in g.days)
+                            Padding(
+                              padding:
+                                  const EdgeInsets.only(bottom: AppSpacing.xs),
+                              child: NutriDayCard(
+                                day: d,
+                                onTap: () => context
+                                    .push('/nutrition-day/${d.localDate}'),
+                              ),
                             ),
-                          ),
-                        const SizedBox(height: AppSpacing.sm),
+                          const SizedBox(height: AppSpacing.sm),
+                        ],
+                        PagingFooter(loadingMore: paged.loadingMore),
                       ],
-                    ],
+                    ),
                   ),
                 );
               },
@@ -79,8 +86,22 @@ class _WeekGroup {
 
 /// Group day summaries by their Monday-anchored week, labelled This week / Last week / Week of d MMM.
 List<_WeekGroup> _byWeek(List<NutritionDaySummary> days) {
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  final sorted = [...days]..sort((a, b) => (b.date ?? DateTime(0)).compareTo(a.date ?? DateTime(0)));
+  const months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec'
+  ];
+  final sorted = [...days]
+    ..sort((a, b) => (b.date ?? DateTime(0)).compareTo(a.date ?? DateTime(0)));
   final thisMonday = mondayOf(DateTime.now());
   final buckets = <DateTime, List<NutritionDaySummary>>{};
   for (final d in sorted) {
@@ -116,10 +137,17 @@ class _WeekHeader extends StatelessWidget {
       child: Row(
         children: [
           Text(label,
-              style: TextStyle(fontWeight: FontWeight.w800, color: gb.ink, letterSpacing: -0.14)),
+              style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  color: gb.ink,
+                  letterSpacing: -0.14)),
           const Spacer(),
           Text('avg $avgPct%',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: gb.grey500).tabular),
+              style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: gb.grey500)
+                  .tabular),
         ],
       ),
     );

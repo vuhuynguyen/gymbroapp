@@ -15,7 +15,8 @@ class PlanRepository {
 
   /// Assignment metadata for the current trainee (visibility flags, frequency, version status).
   /// `activeOnly` hides paused assignments — matches the Portal's start-workout picker.
-  Future<PlanAssignmentList> myAssignments({bool activeOnly = true}) => apiCall(() async {
+  Future<PlanAssignmentList> myAssignments({bool activeOnly = true}) =>
+      apiCall(() async {
         final res = await _dio.get<Map<String, dynamic>>(
           '/api/workout-plans/assignments',
           queryParameters: {'pageSize': 200, 'activeOnly': activeOnly},
@@ -35,22 +36,30 @@ class PlanRepository {
   /// Plan detail. For a Client the server REDACTS per the assignment's visibility (Guided hide
   /// flags) — render as-is; never reimplement redaction client-side.
   Future<WorkoutPlanDetail> planDetail(String planId) => apiCall(() async {
-        final res = await _dio.get<Map<String, dynamic>>('/api/workout-plans/$planId');
+        final res =
+            await _dio.get<Map<String, dynamic>>('/api/workout-plans/$planId');
         return WorkoutPlanDetail.fromJson(res.data!);
       });
 
   // ── Coach (Owner) ──────────────────────────────────────────────────────
   /// Owner sees the latest version per template; the server scopes this by PlanViewAll.
-  Future<WorkoutPlanList> listPlans({bool archived = false}) => apiCall(() async {
+  Future<WorkoutPlanList> listPlans(
+          {bool archived = false, int page = 1, int pageSize = 20}) =>
+      apiCall(() async {
         final res = await _dio.get<Map<String, dynamic>>(
           '/api/workout-plans',
-          queryParameters: {'pageSize': 200, 'archived': archived},
+          queryParameters: {
+            'page': page,
+            'pageSize': pageSize,
+            'archived': archived,
+          },
         );
         return WorkoutPlanList.fromJson(res.data!);
       });
 
   /// All assignments for a specific trainee (Owner-only; the server 403s a client asking for others).
-  Future<PlanAssignmentList> assignmentsForTrainee(String traineeId) => apiCall(() async {
+  Future<PlanAssignmentList> assignmentsForTrainee(String traineeId) =>
+      apiCall(() async {
         final res = await _dio.get<Map<String, dynamic>>(
           '/api/workout-plans/assignments',
           queryParameters: {'traineeId': traineeId, 'pageSize': 200},
@@ -98,7 +107,8 @@ class PlanRepository {
         return res.data!['id'].toString();
       });
 
-  Future<void> setAssignmentActive(String assignmentId, bool active) => apiCall(() async {
+  Future<void> setAssignmentActive(String assignmentId, bool active) =>
+      apiCall(() async {
         await _dio.put<dynamic>(
           '/api/workout-plans/assignments/$assignmentId/${active ? 'resume' : 'pause'}',
         );

@@ -49,12 +49,16 @@ class NutriControl extends StatelessWidget {
     Widget inner;
     switch (status) {
       case NutritionItemStatus.completed:
-        inner = _circle(gb.emerald, child: const Icon(Icons.check, size: 17, color: Colors.white), glow: gb.emerald);
+        inner = _circle(gb.emerald,
+            child: const Icon(Icons.check, size: 17, color: Colors.white),
+            glow: gb.emerald);
       case NutritionItemStatus.substituted:
         inner = Stack(
           clipBehavior: Clip.none,
           children: [
-            _circle(gb.emerald, child: const Icon(Icons.check, size: 17, color: Colors.white), glow: gb.emerald),
+            _circle(gb.emerald,
+                child: const Icon(Icons.check, size: 17, color: Colors.white),
+                glow: gb.emerald),
             Positioned(
               right: -2,
               bottom: -2,
@@ -62,16 +66,20 @@ class NutriControl extends StatelessWidget {
                 width: 14,
                 height: 14,
                 decoration: BoxDecoration(
-                    color: gb.card, shape: BoxShape.circle, border: Border.all(color: gb.card, width: 1.5)),
+                    color: gb.card,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: gb.card, width: 1.5)),
                 child: Icon(Icons.swap_horiz, size: 10, color: gb.primary600),
               ),
             ),
           ],
         );
       case NutritionItemStatus.skipped:
-        inner = _circle(gb.grey25, child: Icon(Icons.remove, size: 16, color: gb.grey500));
+        inner = _circle(gb.grey25,
+            child: Icon(Icons.remove, size: 16, color: gb.grey500));
       case NutritionItemStatus.missed:
-        inner = _circle(gb.danger0, child: Icon(Icons.flag_outlined, size: 15, color: gb.danger));
+        inner = _circle(gb.danger0,
+            child: Icon(Icons.flag_outlined, size: 15, color: gb.danger));
       case NutritionItemStatus.planned:
         inner = Container(
           width: 28,
@@ -103,7 +111,8 @@ class NutriControl extends StatelessWidget {
     );
   }
 
-  Widget _circle(Color color, {required Widget child, Color? glow}) => Container(
+  Widget _circle(Color color, {required Widget child, Color? glow}) =>
+      Container(
         width: 28,
         height: 28,
         alignment: Alignment.center,
@@ -112,7 +121,12 @@ class NutriControl extends StatelessWidget {
           shape: BoxShape.circle,
           boxShadow: glow == null
               ? null
-              : [BoxShadow(color: glow.withValues(alpha: 0.35), blurRadius: 8, spreadRadius: -2)],
+              : [
+                  BoxShadow(
+                      color: glow.withValues(alpha: 0.35),
+                      blurRadius: 8,
+                      spreadRadius: -2)
+                ],
         ),
         child: child,
       );
@@ -128,21 +142,39 @@ class NutriStatusChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final gb = context.gb;
     final (bg, fg, icon, text) = switch (status) {
-      NutritionItemStatus.substituted => (gb.primary0, gb.primary700, Icons.swap_horiz, 'Swapped'),
-      NutritionItemStatus.skipped => (gb.grey25, gb.grey600, Icons.remove, 'Skipped'),
-      NutritionItemStatus.missed => (gb.danger0, gb.danger, Icons.flag_outlined, 'Missed'),
+      NutritionItemStatus.substituted => (
+          gb.primary0,
+          gb.primary700,
+          Icons.swap_horiz,
+          'Swapped'
+        ),
+      NutritionItemStatus.skipped => (
+          gb.grey25,
+          gb.grey600,
+          Icons.remove,
+          'Skipped'
+        ),
+      NutritionItemStatus.missed => (
+          gb.danger0,
+          gb.danger,
+          Icons.flag_outlined,
+          'Missed'
+        ),
       _ => (Colors.transparent, Colors.transparent, null, null),
     };
     if (text == null) return const SizedBox.shrink();
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(5)),
+      decoration:
+          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(5)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 11, color: fg),
           const SizedBox(width: 4),
-          Text(text, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: fg)),
+          Text(text,
+              style: TextStyle(
+                  fontSize: 11, fontWeight: FontWeight.w700, color: fg)),
         ],
       ),
     );
@@ -159,20 +191,31 @@ class NutriKindTag extends StatelessWidget {
   Widget build(BuildContext context) {
     final gb = context.gb;
     final (bg, fg, icon) = switch (kind) {
-      FoodKind.supplement => (gb.primary0, gb.primary600, Icons.medication_outlined),
-      FoodKind.beverage => (gb.secondary0, gb.secondary300, Icons.local_drink_outlined),
+      FoodKind.supplement => (
+          gb.primary0,
+          gb.primary600,
+          Icons.medication_outlined
+        ),
+      FoodKind.beverage => (
+          gb.secondary0,
+          gb.secondary300,
+          Icons.local_drink_outlined
+        ),
       FoodKind.food => (Colors.transparent, Colors.transparent, null),
     };
     if (icon == null) return const SizedBox.shrink();
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(5)),
+      decoration:
+          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(5)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 11, color: fg),
           const SizedBox(width: 3),
-          Text(kind.label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: fg)),
+          Text(kind.label,
+              style: TextStyle(
+                  fontSize: 10, fontWeight: FontWeight.w700, color: fg)),
         ],
       ),
     );
@@ -189,9 +232,11 @@ class NutriUnverifiedTag extends StatelessWidget {
     final gb = context.gb;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-      decoration: BoxDecoration(color: gb.amberSoft, borderRadius: BorderRadius.circular(5)),
+      decoration: BoxDecoration(
+          color: gb.amberSoft, borderRadius: BorderRadius.circular(5)),
       child: Text(label,
-          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: gb.amberInk)),
+          style: TextStyle(
+              fontSize: 10, fontWeight: FontWeight.w700, color: gb.amberInk)),
     );
   }
 }
@@ -229,7 +274,8 @@ class NutriItemRow extends StatelessWidget {
         onTap: readOnly ? null : onMore,
         child: Row(
           children: [
-            NutriControl(status: item.status, onTap: readOnly ? null : onControlTap),
+            NutriControl(
+                status: item.status, onTap: readOnly ? null : onControlTap),
             const SizedBox(width: AppSpacing.xs - 2),
             Expanded(
               child: Column(
@@ -246,7 +292,8 @@ class NutriItemRow extends StatelessWidget {
                             fontSize: 15,
                             fontWeight: FontWeight.w700,
                             color: skipped ? gb.grey500 : gb.ink,
-                            decoration: skipped ? TextDecoration.lineThrough : null,
+                            decoration:
+                                skipped ? TextDecoration.lineThrough : null,
                           ),
                         ),
                       ),
@@ -262,7 +309,8 @@ class NutriItemRow extends StatelessWidget {
                       ],
                       if (flagged) ...[
                         const SizedBox(width: 5),
-                        NutriUnverifiedTag(label: item.isEdited ? 'Edited' : 'Custom'),
+                        NutriUnverifiedTag(
+                            label: item.isEdited ? 'Edited' : 'Custom'),
                       ],
                     ],
                   ),
@@ -271,7 +319,8 @@ class NutriItemRow extends StatelessWidget {
                       style: AppText.meta.copyWith(color: gb.grey500),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis),
-                  if (item.status == NutritionItemStatus.substituted && item.swappedFromName != null)
+                  if (item.status == NutritionItemStatus.substituted &&
+                      item.swappedFromName != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 1),
                       child: Text('was ${item.swappedFromName}',
@@ -303,11 +352,13 @@ class NutriMealHeader extends StatelessWidget {
     final gb = context.gb;
     final planned = meal.plannedItems.length;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(2, AppSpacing.xs, 2, AppSpacing.xs - 2),
+      padding:
+          const EdgeInsets.fromLTRB(2, AppSpacing.xs, 2, AppSpacing.xs - 2),
       child: Row(
         children: [
           Text(meal.name,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
+              style:
+                  const TextStyle(fontSize: 14, fontWeight: FontWeight.w800)),
           if (meal.scheduledTime != null) ...[
             const SizedBox(width: AppSpacing.xs),
             Icon(Icons.schedule, size: 12, color: gb.grey400),
@@ -325,7 +376,10 @@ class NutriMealHeader extends StatelessWidget {
             ),
             const SizedBox(width: 6),
             Text('${meal.plannedDone}/$planned',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: gb.grey600)
+                style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: gb.grey600)
                     .tabular),
           ],
         ],
@@ -355,7 +409,9 @@ class NutriAdherenceCard extends StatelessWidget {
         ? (log.adherencePct >= 80 ? 'Solid day — plan followed' : 'Day closed')
         : (total == 0
             ? 'Nothing planned today'
-            : (remaining == 0 ? 'Plan complete — nice work' : '$remaining ${remaining == 1 ? 'item' : 'items'} to go'));
+            : (remaining == 0
+                ? 'Plan complete — nice work'
+                : '$remaining ${remaining == 1 ? 'item' : 'items'} to go'));
 
     return GbCard(
       padding: const EdgeInsets.all(AppSpacing.heroPad),
@@ -370,11 +426,16 @@ class NutriAdherenceCard extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text('${log.adherencePct}%',
-                    style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w800, height: 1)
+                    style: const TextStyle(
+                            fontSize: 19,
+                            fontWeight: FontWeight.w800,
+                            height: 1)
                         .tabular),
                 Text('$done of $total',
                     style: TextStyle(
-                            fontSize: 10, color: gb.grey400, fontWeight: FontWeight.w700)
+                            fontSize: 10,
+                            color: gb.grey400,
+                            fontWeight: FontWeight.w700)
                         .tabular),
               ],
             ),
@@ -414,7 +475,9 @@ class NutriAdherenceCard extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(value,
-            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: gb.ink).tabular),
+            style: TextStyle(
+                    fontSize: 17, fontWeight: FontWeight.w800, color: gb.ink)
+                .tabular),
         const SizedBox(height: 1),
         Eyebrow(label),
       ],
@@ -443,7 +506,10 @@ class NutriDayCard extends StatelessWidget {
             stroke: 5,
             gradient: const [AppPalette.primary200, AppPalette.primary700],
             child: Text('${day.adherencePct}%',
-                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: gb.grey900)
+                style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        color: gb.grey900)
                     .tabular),
           ),
           const SizedBox(width: AppSpacing.sm),
@@ -455,13 +521,15 @@ class NutriDayCard extends StatelessWidget {
                 Row(
                   children: [
                     Text(_dayLabel(day.date, day.localDate),
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+                        style: const TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w700)),
                     const SizedBox(width: 6),
                     SourceTag(day.source, small: true),
                   ],
                 ),
                 const SizedBox(height: 2),
-                Text('${day.completedCount}/${day.plannedCount} completed'
+                Text(
+                    '${day.completedCount}/${day.plannedCount} completed'
                     '${day.skippedCount > 0 ? ' · ${day.skippedCount} skipped' : ''}',
                     style: AppText.meta.copyWith(color: gb.grey500)),
               ],
@@ -471,22 +539,39 @@ class NutriDayCard extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(right: 6),
               child: GbStatusBadge(
-                  label: '${day.missedCount} missed', background: gb.danger0, foreground: gb.danger),
+                  label: '${day.missedCount} missed',
+                  background: gb.danger0,
+                  foreground: gb.danger),
             ),
-          if (onTap != null) Icon(Icons.chevron_right, size: AppSizes.iconLg, color: gb.grey400),
+          if (onTap != null)
+            Icon(Icons.chevron_right, size: AppSizes.iconLg, color: gb.grey400),
         ],
       ),
     );
   }
 
-  static const _months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  static const _months = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec'
+  ];
   static const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
   static String _dayLabel(DateTime? d, String fallback) {
     if (d == null) return fallback;
     final today = DateTime.now();
     final dayOnly = DateTime(d.year, d.month, d.day);
-    final diff = DateTime(today.year, today.month, today.day).difference(dayOnly).inDays;
+    final diff =
+        DateTime(today.year, today.month, today.day).difference(dayOnly).inDays;
     if (diff == 0) return 'Today';
     if (diff == 1) return 'Yesterday';
     return '${_weekdays[d.weekday - 1]} ${d.day} ${_months[d.month - 1]}';

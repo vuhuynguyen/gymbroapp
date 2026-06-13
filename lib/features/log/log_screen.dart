@@ -8,6 +8,7 @@ import '../../data/models/session_models.dart';
 import '../../domain/enums.dart';
 import '../../domain/session_grouping.dart';
 import '../../domain/session_metrics.dart';
+import '../../shared/paging/paged.dart';
 import '../../shared/widgets/widgets.dart';
 import '../nutrition/nutrition_providers.dart';
 import '../nutrition/nutrition_today.dart';
@@ -34,9 +35,8 @@ class _LogScreenState extends ConsumerState<LogScreen> {
 
   Future<void> _refresh() async {
     ref.invalidate(activeSessionProvider);
-    ref.invalidate(sessionHistoryProvider);
     ref.read(todayNutritionProvider.notifier).reload();
-    await ref.read(sessionHistoryProvider.future);
+    await ref.read(sessionHistoryProvider.notifier).refresh();
   }
 
   bool _matches(SessionSummary s) => _filter == null || s.status == _filter;
@@ -59,11 +59,14 @@ class _LogScreenState extends ConsumerState<LogScreen> {
         children: [
           _LogHeader(history: history.valueOrNull?.items),
           Padding(
-            padding: const EdgeInsets.fromLTRB(
-                AppSpacing.screenH, AppSpacing.sm, AppSpacing.screenH, AppSpacing.xs),
+            padding: const EdgeInsets.fromLTRB(AppSpacing.screenH,
+                AppSpacing.sm, AppSpacing.screenH, AppSpacing.xs),
             child: GbSegmented<_LogTab>(
               value: _tab,
-              options: const [(_LogTab.today, 'Today'), (_LogTab.history, 'History')],
+              options: const [
+                (_LogTab.today, 'Today'),
+                (_LogTab.history, 'History')
+              ],
               onChanged: (t) => setState(() => _tab = t),
             ),
           ),
@@ -79,6 +82,8 @@ class _LogScreenState extends ConsumerState<LogScreen> {
                       onFilter: (f) => setState(() => _filter = f),
                       matches: _matches,
                       onOpen: _open,
+                      onLoadMore: () =>
+                          ref.read(sessionHistoryProvider.notifier).loadMore(),
                     ),
             ),
           ),
@@ -111,6 +116,10 @@ class _TodayPane extends ConsumerWidget {
         if (active != null)
           _Hero(session: active!)
         else ...[
+          // The "start" CTA leads the section (an action belongs at the top, not under today's log).
+          _NextWorkoutPrompt(
+              onStart: () => showStartWorkoutSheet(context, ref)),
+          if (todays.isNotEmpty) const SizedBox(height: AppSpacing.xs),
           for (final s in todays)
             GbSessionRow(
               day: _weekdayAbbr(s.startedAt),
@@ -121,12 +130,13 @@ class _TodayPane extends ConsumerWidget {
               durationLabel: s.durationSeconds != null
                   ? formatDurationCompact(s.durationSeconds!)
                   : null,
-              volumeLabel: s.totalVolumeKg > 0 ? '${_fmtVolume(s.totalVolumeKg)} kg' : null,
+              volumeLabel: s.totalVolumeKg > 0
+                  ? '${_fmtVolume(s.totalVolumeKg)} kg'
+                  : null,
               prCount: s.prCount,
               rpe: s.rpeOverall,
               onTap: () => context.push('/session-detail/${s.id}?me=1'),
             ),
-          _NextWorkoutPrompt(onStart: () => showStartWorkoutSheet(context, ref)),
         ],
         const SizedBox(height: AppSpacing.gap + 2),
         const NutritionTodaySection(),
@@ -155,7 +165,8 @@ class _NextWorkoutPrompt extends StatelessWidget {
       dashed: true,
       onTap: onStart,
       leading: GbIconTile(
-          background: gb.primary0, child: Icon(Icons.bolt, size: 21, color: gb.primary600)),
+          background: gb.primary0,
+          child: Icon(Icons.bolt, size: 21, color: gb.primary600)),
       title: 'Start today’s workout',
       subtitle: 'Tap to pick a plan or log an ad-hoc session',
       trailing: Icon(Icons.add, color: gb.grey400),
@@ -173,14 +184,16 @@ class _HistoryPane extends StatelessWidget {
     required this.onFilter,
     required this.matches,
     required this.onOpen,
+    required this.onLoadMore,
   });
 
-  final AsyncValue<SessionList> history;
+  final AsyncValue<PagedData<SessionSummary>> history;
   final ActiveSession? active;
   final SessionStatus? filter;
   final ValueChanged<SessionStatus?> onFilter;
   final bool Function(SessionSummary) matches;
   final ValueChanged<SessionSummary> onOpen;
+  final VoidCallback onLoadMore;
 
   @override
   Widget build(BuildContext context) {
@@ -200,22 +213,26 @@ class _HistoryPane extends StatelessWidget {
           child: _HistoryError(),
         ),
       ]),
-      data: (list) => ListView(
-        padding: const EdgeInsets.fromLTRB(
-            AppSpacing.screenH, AppSpacing.gap, AppSpacing.screenH, 100),
-        children: [
-          if (active != null) ...[
-            _Hero(session: active!),
-            const SizedBox(height: AppSpacing.gap)
+      data: (paged) => InfiniteScroll(
+        onLoadMore: onLoadMore,
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(
+              AppSpacing.screenH, AppSpacing.gap, AppSpacing.screenH, 100),
+          children: [
+            if (active != null) ...[
+              _Hero(session: active!),
+              const SizedBox(height: AppSpacing.gap)
+            ],
+            _History(
+              items: paged.items,
+              filter: filter,
+              onFilter: onFilter,
+              matches: matches,
+              onOpen: onOpen,
+            ),
+            PagingFooter(loadingMore: paged.loadingMore),
           ],
-          _History(
-            list: list,
-            filter: filter,
-            onFilter: onFilter,
-            matches: matches,
-            onOpen: onOpen,
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -587,14 +604,14 @@ class _PulsingDotState extends State<_PulsingDot>
 
 class _History extends StatelessWidget {
   const _History({
-    required this.list,
+    required this.items,
     required this.filter,
     required this.onFilter,
     required this.matches,
     required this.onOpen,
   });
 
-  final SessionList list;
+  final List<SessionSummary> items;
   final SessionStatus? filter;
   final ValueChanged<SessionStatus?> onFilter;
   final bool Function(SessionSummary) matches;
@@ -602,7 +619,6 @@ class _History extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final items = list.items;
     if (items.isEmpty) {
       return const Padding(
         padding: EdgeInsets.only(top: 60),
@@ -896,7 +912,8 @@ class _NutritionHistoryLink extends StatelessWidget {
       onTap: () => context.push('/nutrition-history'),
       leading: GbIconTile(
           background: gb.emeraldSoft,
-          child: Icon(Icons.restaurant_menu, size: AppSizes.iconXl, color: gb.emeraldInk)),
+          child: Icon(Icons.restaurant_menu,
+              size: AppSizes.iconXl, color: gb.emeraldInk)),
       title: 'Nutrition history',
       subtitle: 'Day-by-day plan adherence',
     );
