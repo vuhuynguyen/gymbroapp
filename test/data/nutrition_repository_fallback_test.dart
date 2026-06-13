@@ -30,7 +30,8 @@ void main() {
 
   group('today', () {
     test('404 ⇒ a synthesized no-plan day (not an error)', () async {
-      when(() => dio.get<Map<String, dynamic>>('/api/me/nutrition/today'))
+      when(() => dio.get<Map<String, dynamic>>('/api/me/nutrition/today',
+              queryParameters: any(named: 'queryParameters')))
           .thenThrow(httpStatus(404, '/api/me/nutrition/today'));
 
       final log = await repo.today();
@@ -41,14 +42,17 @@ void main() {
     });
 
     test('rethrows non-404 failures without falling back', () async {
-      when(() => dio.get<Map<String, dynamic>>('/api/me/nutrition/today'))
+      when(() => dio.get<Map<String, dynamic>>('/api/me/nutrition/today',
+              queryParameters: any(named: 'queryParameters')))
           .thenThrow(httpStatus(500, '/api/me/nutrition/today'));
 
       await expectLater(repo.today(), throwsA(isA<ApiException>()));
     });
 
     test('parses a populated day', () async {
-      when(() => dio.get<Map<String, dynamic>>('/api/me/nutrition/today')).thenAnswer((_) async => ok({
+      when(() => dio.get<Map<String, dynamic>>('/api/me/nutrition/today',
+              queryParameters: any(named: 'queryParameters')))
+          .thenAnswer((_) async => ok({
             'id': 'd1',
             'localDate': '2026-06-10',
             'status': 'open',

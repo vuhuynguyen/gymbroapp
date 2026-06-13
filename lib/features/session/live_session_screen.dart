@@ -35,6 +35,7 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
   // Mode-aware entry values keyed by metric (weight is a double, the rest ints).
   final Map<TrackingMetric, num> _entry = {};
   PerformedSetType _entryType = PerformedSetType.working;
+
   /// Reveals the secondary metric inputs (calories / heart rate / rest) for the current entry.
   bool _showMoreMetrics = false;
 
@@ -61,22 +62,26 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
     final snapSet = _snapshotSetFor(st, ex, ex.sets.length);
     final last = ex.sets.isNotEmpty ? ex.sets.last : null;
 
-    // Seed each metric the exercise's mode uses, preferring the last logged value then the plan target.
+    // Seed each metric from THIS set's plan prescription first, falling back to the last logged value
+    // only when the plan doesn't prescribe it (e.g. ad-hoc sets logged beyond the plan). Preferring the
+    // plan means each set shows what it's supposed to be — a 7-set plan walks through its escalating
+    // warmups / working / drop targets instead of carrying the first set's value forward.
     _entry
       ..clear()
-      ..[TrackingMetric.weight] = last?.weightKg ?? snapSet?.targetWeightKg ?? 0
-      ..[TrackingMetric.reps] = last?.reps ?? snapSet?.targetReps ?? 0
-      ..[TrackingMetric.duration] = last?.durationSeconds ?? snapSet?.targetDurationSeconds ?? 0
-      ..[TrackingMetric.distance] = last?.distanceM ?? snapSet?.targetDistanceM ?? 0
-      ..[TrackingMetric.rounds] = last?.rounds ?? snapSet?.targetRounds ?? 0
+      ..[TrackingMetric.weight] = snapSet?.targetWeightKg ?? last?.weightKg ?? 0
+      ..[TrackingMetric.reps] = snapSet?.targetReps ?? last?.reps ?? 0
+      ..[TrackingMetric.duration] =
+          snapSet?.targetDurationSeconds ?? last?.durationSeconds ?? 0
+      ..[TrackingMetric.distance] =
+          snapSet?.targetDistanceM ?? last?.distanceM ?? 0
+      ..[TrackingMetric.rounds] = snapSet?.targetRounds ?? last?.rounds ?? 0
       ..[TrackingMetric.calories] = last?.calories ?? 0
       ..[TrackingMetric.heartRate] = last?.avgHeartRate ?? 0
       // 0 = auto-capture the actual rest from the timer; the user can bump it to override.
       ..[TrackingMetric.rest] = 0;
-    _entryType = last?.setType ??
-        (snapSet != null
-            ? PerformedSetType.parse(snapSet.setType.wire)
-            : PerformedSetType.working);
+    _entryType = snapSet != null
+        ? PerformedSetType.parse(snapSet.setType.wire)
+        : (last?.setType ?? PerformedSetType.working);
   }
 
   SessionSnapshotSet? _snapshotSetFor(
@@ -109,8 +114,10 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
     // (and a strength set never carries duration). Non-relevant fields are dropped to null.
     final profile = trackingProfileFor(type);
     final keep = {...profile.fields, ...profile.extras};
-    int? gi(TrackingMetric m) => keep.contains(m) && _val(m) > 0 ? _val(m).toInt() : null;
-    double? gd(TrackingMetric m) => keep.contains(m) && _val(m) > 0 ? _val(m).toDouble() : null;
+    int? gi(TrackingMetric m) =>
+        keep.contains(m) && _val(m) > 0 ? _val(m).toInt() : null;
+    double? gd(TrackingMetric m) =>
+        keep.contains(m) && _val(m) > 0 ? _val(m).toDouble() : null;
 
     final values = SetMetricValues(
       reps: gi(TrackingMetric.reps),
@@ -125,7 +132,9 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
       showInfoSnack(context, requiredMetricMessage(type));
       return;
     }
-    final rest = keep.contains(TrackingMetric.rest) ? _val(TrackingMetric.rest).toInt() : 0;
+    final rest = keep.contains(TrackingMetric.rest)
+        ? _val(TrackingMetric.rest).toInt()
+        : 0;
     await _ctrl.logSet(
       exerciseId,
       reps: values.reps,
@@ -141,7 +150,9 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
     );
   }
 
-  Future<void> _confirmDeleteSet(String exerciseId, PerformedSet set) async {
+  /// Confirms and deletes a logged set. Returns true if the set was removed
+  /// (so swipe-to-delete can animate the row out only on actual deletion).
+  Future<bool> _confirmDeleteSet(String exerciseId, PerformedSet set) async {
     final ok = await showGbSheet<bool>(
       context,
       builder: (ctx) => const _ConfirmSheet(
@@ -152,7 +163,11 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
         cancelLabel: 'Cancel',
       ),
     );
-    if (ok == true) await _ctrl.deleteSet(exerciseId, set.id);
+    if (ok == true) {
+      await _ctrl.deleteSet(exerciseId, set.id);
+      return true;
+    }
+    return false;
   }
 
   Future<void> _confirmAbandon() async {
@@ -381,20 +396,23 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
                           SetMetricValues(
                             reps: _val(TrackingMetric.reps).toInt(),
                             weightKg: _val(TrackingMetric.weight).toDouble(),
-                            durationSeconds: _val(TrackingMetric.duration).toInt(),
+                            durationSeconds:
+                                _val(TrackingMetric.duration).toInt(),
                             distanceM: _val(TrackingMetric.distance).toInt(),
                             rounds: _val(TrackingMetric.rounds).toInt(),
                           ),
                         ),
                         showMore: _showMoreMetrics,
-                        onToggleMore: () =>
-                            setState(() => _showMoreMetrics = !_showMoreMetrics),
+                        onToggleMore: () => setState(
+                            () => _showMoreMetrics = !_showMoreMetrics),
                         onMetric: (m, v) => setState(() => _entry[m] = v),
                         onSetType: (t) => setState(() => _entryType = t),
                         onLog: () => _logSet(ex.id, ex.trackingType),
                         onDeleteSet: (s) => _confirmDeleteSet(ex.id, s),
+                        // returns Future<bool>: true when the set was deleted
                         onMenu: () => _openExerciseMenu(ex),
-                        onGuide: () => _openGuideSheet(ex, catalog[ex.exerciseId]),
+                        onGuide: () =>
+                            _openGuideSheet(ex, catalog[ex.exerciseId]),
                       ),
                       const SizedBox(height: AppSpacing.gap),
                       Center(
@@ -740,17 +758,23 @@ class _ExerciseCard extends StatelessWidget {
   final void Function(TrackingMetric, num) onMetric;
   final ValueChanged<PerformedSetType> onSetType;
   final VoidCallback onLog;
-  final ValueChanged<PerformedSet> onDeleteSet;
+  final Future<bool> Function(PerformedSet) onDeleteSet;
   final VoidCallback onMenu;
   final VoidCallback onGuide;
 
-  /// Mode-aware "Last / Target" hint pill. Prefers the last actually-logged set (formatted exactly like the
-  /// set rows — weight × reps, no rounding, zeros hidden); otherwise the plan's first prescribed target.
+  /// "Last time" pill: the trainee's most recent PRIOR performance of this lift (from a previous completed
+  /// session — never the set just logged), with how long ago. Falls back to the plan's first prescribed
+  /// target while no history exists and nothing's been logged yet. Null when neither is available.
   String? _metaTargets() {
-    if (exercise.sets.isNotEmpty) {
-      return 'Last ${formatLoggedSet(exercise.sets.last)}';
+    final lp = exercise.lastPerformed;
+    if (lp != null && (lp.weightKg ?? 0) > 0 && (lp.reps ?? 0) > 0) {
+      final w = lp.weightKg!;
+      final ago = lastPerformedAgo(lp.performedAt);
+      return 'Last ${w % 1 == 0 ? w.toInt() : w}kg × ${lp.reps}'
+          '${ago.isEmpty ? '' : ' · $ago'}';
     }
-    if (snapshotSets.isEmpty) return null;
+    // No prior history: show the plan's first prescribed target until the user starts logging.
+    if (exercise.sets.isNotEmpty || snapshotSets.isEmpty) return null;
     final t = snapshotSets.first;
     final parts = <String>[];
     final w = t.targetWeightKg ?? 0;
@@ -760,7 +784,8 @@ class _ExerciseCard extends StatelessWidget {
     } else if (r > 0) {
       parts.add('$r reps');
     }
-    if ((t.targetDurationSeconds ?? 0) > 0) parts.add(formatDuration(t.targetDurationSeconds!));
+    if ((t.targetDurationSeconds ?? 0) > 0)
+      parts.add(formatDuration(t.targetDurationSeconds!));
     if ((t.targetDistanceM ?? 0) > 0) parts.add('${t.targetDistanceM}m');
     if ((t.targetRounds ?? 0) > 0) parts.add('${t.targetRounds} rounds');
     return parts.isEmpty ? null : 'Target ${parts.join(' · ')}';
@@ -826,12 +851,9 @@ class _ExerciseCard extends StatelessWidget {
                           if (pills.isNotEmpty)
                             Padding(
                               padding: const EdgeInsets.only(top: 8),
-                              child: Wrap(
-                                  spacing: 8,
-                                  runSpacing: 6,
-                                  children: [
-                                    for (final p in pills) GbMetaPill(p)
-                                  ]),
+                              child: Wrap(spacing: 8, runSpacing: 6, children: [
+                                for (final p in pills) GbMetaPill(p)
+                              ]),
                             ),
                         ],
                       ),
@@ -858,6 +880,7 @@ class _ExerciseCard extends StatelessWidget {
                 // (= the next set's stored value) so it reads naturally and the first set isn't mislabelled.
                 for (var i = 0; i < exercise.sets.length; i++)
                   _LoggedSetRow(
+                    key: ValueKey('set-${exercise.sets[i].id}'),
                     set: exercise.sets[i],
                     restAfter: i + 1 < exercise.sets.length
                         ? exercise.sets[i + 1].restSeconds
@@ -892,6 +915,14 @@ class _ExerciseCard extends StatelessWidget {
                       onLog: onLog,
                     ),
                   ),
+                // Upcoming planned sets (beyond the one being logged) — a greyed preview so the whole
+                // prescription is visible at a glance: each remaining set's type, target weight × reps
+                // and RPE. The entry above covers the current set (planned index leadSetCount).
+                if (!isSkipped)
+                  for (var i = exercise.leadSetCount + 1;
+                      i < snapshotSets.length;
+                      i++)
+                    _PlannedSetRow(setNumber: i + 1, target: snapshotSets[i]),
               ],
             ),
           ),
@@ -902,15 +933,17 @@ class _ExerciseCard extends StatelessWidget {
 }
 
 /// A logged (done) set row — design layout: check + type on the left, weight×reps + e1RM right.
-/// Long-press to delete (the design keeps the row clean — no inline trash).
+/// Swipe left (or long-press) to delete; the row itself stays clean — no inline trash.
 class _LoggedSetRow extends StatelessWidget {
   const _LoggedSetRow(
-      {required this.set, this.restAfter, required this.onDelete});
+      {super.key, required this.set, this.restAfter, required this.onDelete});
   final PerformedSet set;
 
   /// Rest taken *after* this set (derived from the next set's stored "rest before"); null for the last set.
   final int? restAfter;
-  final VoidCallback onDelete;
+
+  /// Confirms + deletes the set; resolves to true when the set was removed.
+  final Future<bool> Function() onDelete;
 
   @override
   Widget build(BuildContext context) {
@@ -924,53 +957,172 @@ class _LoggedSetRow extends StatelessWidget {
       if ((set.rpe ?? 0) > 0) 'RPE ${set.rpe}',
       if ((restAfter ?? 0) > 0) 'rest ${formatRestClock(restAfter!)}',
     ];
-    return InkWell(
-      onLongPress: onDelete,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+    // Swipe-left reveals a red "delete" panel and runs the confirm flow; long-press
+    // is kept as a secondary affordance. confirmDismiss only lets the row animate
+    // out when the delete actually went through, so a cancel springs it back.
+    return Dismissible(
+      key: ValueKey('dismiss-set-${set.id}'),
+      direction: DismissDirection.endToStart,
+      confirmDismiss: (_) => onDelete(),
+      background: Container(
+        color: gb.danger0,
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.symmetric(horizontal: 20),
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 26,
-              height: 26,
-              decoration:
-                  BoxDecoration(color: gb.success0, shape: BoxShape.circle),
-              alignment: Alignment.center,
-              child: Icon(Icons.check, size: 15, color: gb.success),
-            ),
-            const SizedBox(width: 12),
-            SizedBox(
-              width: 56,
-              child: Text(set.setType.label,
-                  style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: gb.grey500)),
-            ),
-            // Value column takes ALL remaining space and right-aligns, so every row's value/sub-line is
-            // flush to the same right edge (no Spacer+Flexible splitting the space 50/50).
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(formatLoggedSet(set),
-                      textAlign: TextAlign.end,
-                      style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: gb.grey700,
-                          fontFeatures: const [FontFeature.tabularFigures()])),
-                  if (subParts.isNotEmpty)
-                    Text(subParts.join(' · '),
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: gb.grey500,
-                            fontFeatures: const [FontFeature.tabularFigures()])),
-                ],
-              ),
-            ),
+            Icon(Icons.delete_outline, size: 18, color: gb.danger),
+            const SizedBox(width: 6),
+            Text('Delete',
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: gb.danger)),
           ],
         ),
+      ),
+      child: InkWell(
+        onLongPress: () => onDelete(),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            children: [
+              Container(
+                width: 26,
+                height: 26,
+                decoration:
+                    BoxDecoration(color: gb.success0, shape: BoxShape.circle),
+                alignment: Alignment.center,
+                child: Icon(Icons.check, size: 15, color: gb.success),
+              ),
+              const SizedBox(width: 12),
+              SizedBox(
+                width: 56,
+                child: Text(set.setType.label,
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: gb.grey500)),
+              ),
+              // Value column takes ALL remaining space and right-aligns, so every row's value/sub-line is
+              // flush to the same right edge (no Spacer+Flexible splitting the space 50/50).
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(formatLoggedSet(set),
+                        textAlign: TextAlign.end,
+                        style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            color: gb.grey700,
+                            fontFeatures: const [
+                              FontFeature.tabularFigures()
+                            ])),
+                    if (subParts.isNotEmpty)
+                      Text(subParts.join(' · '),
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: gb.grey500,
+                              fontFeatures: const [
+                                FontFeature.tabularFigures()
+                              ])),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Compact "how long ago" for the last-performed chip: 'today', 'yesterday', '5d ago', '3w ago', '4mo ago',
+/// '2y ago'. Empty when there's no date. Keeps the recency tight enough to sit inside a meta pill.
+String lastPerformedAgo(DateTime? d) {
+  if (d == null) return '';
+  final today = DateTime.now();
+  final day = d.toLocal();
+  final days = DateTime(today.year, today.month, today.day)
+      .difference(DateTime(day.year, day.month, day.day))
+      .inDays;
+  if (days <= 0) return 'today';
+  if (days == 1) return 'yesterday';
+  if (days < 7) return '${days}d ago';
+  if (days < 30) return '${days ~/ 7}w ago';
+  if (days < 365) return '${days ~/ 30}mo ago';
+  return '${days ~/ 365}y ago';
+}
+
+/// Compact, mode-aware target string for a planned set: "27.5kg × 6 · RPE 10" (or reps/duration/distance/
+/// rounds as the mode dictates). Weight keeps its half-kg (no rounding); zero-valued metrics are dropped.
+String formatPlannedTarget(SessionSnapshotSet t) {
+  final parts = <String>[];
+  final w = t.targetWeightKg ?? 0;
+  final r = t.targetReps ?? 0;
+  if (w > 0 && r > 0) {
+    parts.add('${w % 1 == 0 ? w.toInt() : w}kg × $r');
+  } else if (r > 0) {
+    parts.add('$r reps');
+  } else if (w > 0) {
+    parts.add('${w % 1 == 0 ? w.toInt() : w}kg');
+  }
+  if ((t.targetDurationSeconds ?? 0) > 0) {
+    parts.add(formatDuration(t.targetDurationSeconds!));
+  }
+  if ((t.targetDistanceM ?? 0) > 0) parts.add('${t.targetDistanceM}m');
+  if ((t.targetRounds ?? 0) > 0) parts.add('${t.targetRounds} rounds');
+  if ((t.targetRpe ?? 0) > 0) parts.add('RPE ${t.targetRpe}');
+  return parts.isEmpty ? '—' : parts.join(' · ');
+}
+
+/// A greyed, read-only preview of an upcoming planned set: number badge + type + the plan's target. Shows
+/// what's prescribed so the whole workout is visible at a glance; it becomes loggable once it's the
+/// current set (then the highlighted entry card takes over).
+class _PlannedSetRow extends StatelessWidget {
+  const _PlannedSetRow({required this.setNumber, required this.target});
+  final int setNumber;
+  final SessionSnapshotSet target;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    final type = PerformedSetType.parse(target.setType.wire);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(
+        children: [
+          Container(
+            width: 26,
+            height: 26,
+            decoration: BoxDecoration(color: gb.grey25, shape: BoxShape.circle),
+            alignment: Alignment.center,
+            child: Text('$setNumber',
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: gb.grey500)),
+          ),
+          const SizedBox(width: 12),
+          SizedBox(
+            width: 56,
+            child: Text(type.label,
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: gb.grey400)),
+          ),
+          Expanded(
+            child: Text(formatPlannedTarget(target),
+                textAlign: TextAlign.end,
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: gb.grey500,
+                    fontFeatures: const [FontFeature.tabularFigures()])),
+          ),
+        ],
       ),
     );
   }
@@ -1012,7 +1164,8 @@ class _EntryRow extends StatelessWidget {
   List<TrackingMetric> get _stepperFields =>
       [...profile.fields, if (showMore) ...profile.extras];
 
-  static ({String label, String? unit, num step}) _metricSpec(TrackingMetric m) =>
+  static ({String label, String? unit, num step}) _metricSpec(
+          TrackingMetric m) =>
       switch (m) {
         TrackingMetric.weight => (label: 'WEIGHT', unit: 'kg', step: 2.5),
         TrackingMetric.reps => (label: 'REPS', unit: null, step: 1),
@@ -1035,7 +1188,8 @@ class _EntryRow extends StatelessWidget {
     } else if (t.targetReps != null) {
       parts.add('${t.targetReps} reps');
     }
-    if (t.targetDurationSeconds != null) parts.add('${t.targetDurationSeconds}s');
+    if (t.targetDurationSeconds != null)
+      parts.add('${t.targetDurationSeconds}s');
     if (t.targetDistanceM != null) parts.add('${t.targetDistanceM}m');
     if (t.targetRounds != null) parts.add('${t.targetRounds} rounds');
     return parts.isEmpty ? null : 'Target ${parts.join(' · ')}';
@@ -1131,8 +1285,8 @@ class _EntryRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final gb = context.gb;
-    final e1rm = epleyOneRepMax(
-        _val(TrackingMetric.weight).toDouble(), _val(TrackingMetric.reps).toInt());
+    final e1rm = epleyOneRepMax(_val(TrackingMetric.weight).toDouble(),
+        _val(TrackingMetric.reps).toInt());
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -1220,12 +1374,8 @@ class _EntryRow extends StatelessWidget {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
-                              showMore
-                                  ? Icons.expand_less
-                                  : Icons.tune,
-                              size: 15,
-                              color: gb.primary600),
+                          Icon(showMore ? Icons.expand_less : Icons.tune,
+                              size: 15, color: gb.primary600),
                           const SizedBox(width: 6),
                           Text(
                               showMore
@@ -1739,7 +1889,8 @@ Future<void> presentGuideSheet(BuildContext context, Widget sheet) {
     showDragHandle: false,
     backgroundColor: context.gb.card,
     shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg))),
+        borderRadius:
+            BorderRadius.vertical(top: Radius.circular(AppRadius.lg))),
     builder: (_) => sheet,
   );
 }
@@ -1878,7 +2029,8 @@ class _GuideSheet extends StatefulWidget {
     this.detailFuture,
     this.eyebrow = 'How to do this',
     this.footer,
-  }) : assert(detailFuture != null || (repository != null && exerciseId != null),
+  }) : assert(
+            detailFuture != null || (repository != null && exerciseId != null),
             'Provide either a detailFuture or a repository + exerciseId');
   final String? exerciseId;
   final String exerciseName;
@@ -2019,8 +2171,8 @@ class _GuideSheetState extends State<_GuideSheet> {
               ),
               if (widget.footer != null)
                 Container(
-                  padding: EdgeInsets.fromLTRB(16, 12, 16,
-                      12 + MediaQuery.of(ctx).padding.bottom),
+                  padding: EdgeInsets.fromLTRB(
+                      16, 12, 16, 12 + MediaQuery.of(ctx).padding.bottom),
                   decoration: BoxDecoration(
                     color: gb.card,
                     border: Border(top: BorderSide(color: gb.borderCard)),
@@ -2406,7 +2558,8 @@ class _StepsBody extends StatelessWidget {
           const SizedBox(height: 14),
         ],
         if (guide.steps.isEmpty)
-          const _EmptyTabNote(text: 'No step-by-step is authored for this exercise yet.')
+          const _EmptyTabNote(
+              text: 'No step-by-step is authored for this exercise yet.')
         else
           _NumberedSteps(
             steps: guide.steps,
@@ -2498,7 +2651,8 @@ class _MistakesBody extends StatelessWidget {
           16, 16, 16, 16 + MediaQuery.of(context).padding.bottom),
       children: [
         if (!hasAny)
-          const _EmptyTabNote(text: 'No common mistakes flagged for this exercise yet.'),
+          const _EmptyTabNote(
+              text: 'No common mistakes flagged for this exercise yet.'),
         for (final m in guide.mistakes)
           Padding(
             padding: const EdgeInsets.only(bottom: 10),
@@ -2778,7 +2932,8 @@ class _ComingSoonBody extends StatelessWidget {
                   'We don’t have a step-by-step for $exerciseName yet. '
                   'Here’s what it trains — your form stays your call this session.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 13, color: gb.grey500, height: 1.5),
+                  style:
+                      TextStyle(fontSize: 13, color: gb.grey500, height: 1.5),
                 ),
               ),
             ],

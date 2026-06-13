@@ -28,6 +28,7 @@ class PerformedSet {
 
   final String id;
   final String? planSetId;
+
   /// Set when this row is a drop/rest-pause stage of the lead set [parentSetId] (counts as one logical set).
   final String? parentSetId;
   final int setNumber;
@@ -68,6 +69,23 @@ class PerformedSet {
       );
 }
 
+/// The trainee's most recent PRIOR performance of a lift — the top working set of the last completed
+/// session that included it. The live "last time" reference shown while logging; null when there's no
+/// history. Computed server-side on read (see `LastPerformedSetDto`), never the current session.
+class LastPerformed {
+  const LastPerformed({this.weightKg, this.reps, this.performedAt});
+
+  final double? weightKg;
+  final int? reps;
+  final DateTime? performedAt;
+
+  factory LastPerformed.fromJson(Map<String, dynamic> j) => LastPerformed(
+        weightKg: asDouble(j['weightKg']),
+        reps: asInt(j['reps']),
+        performedAt: asDate(j['performedAt']),
+      );
+}
+
 class PerformedExercise {
   const PerformedExercise({
     required this.id,
@@ -82,6 +100,7 @@ class PerformedExercise {
     required this.sets,
     this.trackingType = ExerciseTrackingType.strength,
     this.supersetGroupId,
+    this.lastPerformed,
   });
 
   final String id;
@@ -101,6 +120,9 @@ class PerformedExercise {
   /// Exercises sharing a non-null group id are performed as a superset (rotated, rest after the round).
   final String? supersetGroupId;
 
+  /// Most recent prior performance of this lift (last completed session), or null when there's no history.
+  final LastPerformed? lastPerformed;
+
   /// Logged lead/standalone sets only — drop stages roll up into their lead, so a cluster counts as one set.
   int get leadSetCount => sets.where((s) => s.parentSetId == null).length;
 
@@ -118,6 +140,9 @@ class PerformedExercise {
         sets: asList(j['sets'], PerformedSet.fromJson),
         trackingType: ExerciseTrackingType.parse(j['trackingType']),
         supersetGroupId: asString(j['supersetGroupId']),
+        lastPerformed: j['lastPerformed'] is Map<String, dynamic>
+            ? LastPerformed.fromJson(j['lastPerformed'] as Map<String, dynamic>)
+            : null,
       );
 
   PerformedExercise copyWith(
@@ -135,6 +160,7 @@ class PerformedExercise {
         sets: sets ?? this.sets,
         trackingType: trackingType,
         supersetGroupId: supersetGroupId,
+        lastPerformed: lastPerformed,
       );
 }
 
@@ -572,6 +598,7 @@ class LogSetRequest {
   });
 
   final String? planSetId;
+
   /// Set when logging a drop/rest-pause stage of an existing lead set.
   final String? parentSetId;
   final int setNumber;
@@ -601,7 +628,8 @@ class LogSetRequest {
           'durationSeconds': durationSeconds,
         if (distanceM != null && distanceM! > 0) 'distanceM': distanceM,
         if (calories != null && calories! > 0) 'calories': calories,
-        if (avgHeartRate != null && avgHeartRate! > 0) 'avgHeartRate': avgHeartRate,
+        if (avgHeartRate != null && avgHeartRate! > 0)
+          'avgHeartRate': avgHeartRate,
         if (rounds != null && rounds! >= 1) 'rounds': rounds,
         if (rpe != null && rpe! > 0) 'rpe': rpe,
         if (restSeconds != null && restSeconds! > 0) 'restSeconds': restSeconds,
