@@ -25,6 +25,25 @@ class AppTimeZone {
     } catch (_) {
       _device = 'UTC';
     }
+    // Make tz.local the device zone so OS schedulers (local notifications) fire at the right wall-clock time.
+    try {
+      tz.setLocalLocation(tz.getLocation(_device));
+    } catch (_) {
+      /* leave tz.local at its UTC default */
+    }
+  }
+
+  /// The absolute instant of a local wall-clock time in [ianaZone] (device zone when null/empty/unknown),
+  /// as a <c>tz.TZDateTime</c> ready to hand to an OS scheduler. Falls back to UTC for an unknown zone.
+  static tz.TZDateTime zonedAt(int year, int month, int day, int hour, int minute, [String? ianaZone]) {
+    final zone = (ianaZone == null || ianaZone.isEmpty) ? _device : ianaZone;
+    tz.Location location;
+    try {
+      location = tz.getLocation(zone);
+    } catch (_) {
+      location = tz.UTC;
+    }
+    return tz.TZDateTime(location, year, month, day, hour, minute);
   }
 
   /// The wall-clock [DateTime] of [instant] as seen in [ianaZone] (the device zone when null/empty/unknown).

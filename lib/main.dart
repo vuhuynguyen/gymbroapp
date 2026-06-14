@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/app.dart';
+import 'core/notifications/nutrition_reminders.dart';
 import 'core/providers.dart';
 import 'core/time/app_time_zone.dart';
 import 'data/repositories/auth_repository.dart';
@@ -12,6 +13,8 @@ Future<void> main() async {
 
   // Load the IANA database and detect the device zone before anything formats a date or reports the zone.
   await AppTimeZone.init();
+  // Initialize local meal reminders (best-effort; no-op where notifications are unsupported/denied).
+  await NutritionReminders.instance.init();
 
   final container = ProviderContainer();
 
