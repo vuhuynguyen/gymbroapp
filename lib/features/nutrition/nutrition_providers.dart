@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/network/api_exception.dart';
+import '../../core/notifications/nutrition_reminders.dart';
 import '../../data/models/nutrition_models.dart';
 import '../../data/repositories/nutrition_repository.dart';
 import '../../domain/enums.dart';
@@ -13,8 +16,12 @@ import '../tenant/tenant_controller.dart';
 /// optimistically, the same graceful degradation the repository's reads use.
 class TodayNutritionController extends AsyncNotifier<DailyNutritionLog> {
   @override
-  Future<DailyNutritionLog> build() =>
-      ref.read(nutritionRepositoryProvider).today();
+  Future<DailyNutritionLog> build() async {
+    final day = await ref.read(nutritionRepositoryProvider).today();
+    // Keep local meal reminders in step with the loaded day (best-effort; never blocks the load).
+    unawaited(NutritionReminders.instance.scheduleDay(day));
+    return day;
+  }
 
   NutritionRepository get _repo => ref.read(nutritionRepositoryProvider);
 
@@ -30,6 +37,8 @@ class TodayNutritionController extends AsyncNotifier<DailyNutritionLog> {
   Future<void> reload() async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(_repo.today);
+    final day = state.valueOrNull;
+    if (day != null) unawaited(NutritionReminders.instance.scheduleDay(day));
   }
 
   /// Apply an optimistic transform, fire [write], roll back on a real failure (keep on 404).

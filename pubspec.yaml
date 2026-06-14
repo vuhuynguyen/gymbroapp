@@ -38,6 +38,9 @@ dependencies:
   # Client-generated ids for idempotent (retry-/offline-tolerant) nutrition logging — see clientItemId.
   uuid: ^4.5.1
 
+  # Local meal reminders: schedule OS notifications at the day's planned meal times (no server needed).
+  flutter_local_notifications: ^19.0.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
