@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/providers.dart';
+import '../../core/time/app_time_zone.dart';
 import '../../data/models/auth_models.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../tenant/tenant_controller.dart';
@@ -14,7 +17,22 @@ class AuthController extends AsyncNotifier<Me?> {
   @override
   Future<Me?> build() async {
     if (!ref.read(tokenStoreProvider).isAuthenticated) return null;
-    return _repo.me();
+    final me = await _repo.me();
+    unawaited(_reportDeviceTimeZone(me));
+    return me;
+  }
+
+  /// Keep the authoritative server-side zone (`User.TimeZoneId`) in step with the device — the device is where
+  /// the user actually is now, so reporting it on login/bootstrap makes a move take effect with no manual input.
+  /// Sent only when it differs (idempotent) and best-effort: a failure never affects the session.
+  Future<void> _reportDeviceTimeZone(Me me) async {
+    final device = AppTimeZone.device;
+    if (device.isEmpty || me.timeZoneId == device) return;
+    try {
+      await _repo.setTimeZone(device);
+    } catch (_) {
+      // A zone-report failure is non-fatal.
+    }
   }
 
   Future<void> login(String email, String password) async {

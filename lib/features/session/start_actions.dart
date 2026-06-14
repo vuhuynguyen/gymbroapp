@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/network/api_exception.dart';
+import '../../core/time/app_time_zone.dart';
 import '../../data/models/session_models.dart';
 import '../../data/repositories/session_repository.dart';
 import '../../domain/enums.dart';
@@ -50,7 +51,7 @@ Future<void> startSession(
 Future<void> startAdhoc(BuildContext context, WidgetRef ref, {bool replace = false}) => startSession(
       context,
       ref,
-      StartSessionRequest(source: SessionSource.adhoc, clientTimezone: DateTime.now().timeZoneName),
+      StartSessionRequest(source: SessionSource.adhoc, clientTimezone: AppTimeZone.device),
       replace: replace,
     );
 
@@ -68,7 +69,7 @@ Future<void> startFromAssignment(
         source: SessionSource.fromAssignment,
         planAssignmentId: planAssignmentId,
         plannedWorkoutId: plannedWorkoutId,
-        clientTimezone: DateTime.now().timeZoneName,
+        clientTimezone: AppTimeZone.device,
       ),
       replace: replace,
     );

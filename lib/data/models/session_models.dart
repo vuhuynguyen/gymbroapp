@@ -352,6 +352,7 @@ class SessionSummary {
     this.programName,
     this.planWeek,
     this.weeklyGoal,
+    this.clientTimezone,
   });
 
   final String id;
@@ -373,6 +374,9 @@ class SessionSummary {
   final int? planWeek;
   final int? weeklyGoal;
 
+  /// The trainee's IANA zone when the session started — coach views render it in the trainee's local time.
+  final String? clientTimezone;
+
   factory SessionSummary.fromJson(Map<String, dynamic> j) => SessionSummary(
         id: j['id'].toString(),
         traineeId: j['traineeId'].toString(),
@@ -392,6 +396,7 @@ class SessionSummary {
         programName: asString(j['programName']),
         planWeek: asInt(j['planWeek']),
         weeklyGoal: asInt(j['weeklyGoal']),
+        clientTimezone: asString(j['clientTimezone']),
       );
 }
 
