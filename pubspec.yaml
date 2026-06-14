@@ -30,6 +30,11 @@ dependencies:
   # Design fidelity — Inter Tight (the portal/design typeface), fetched + cached at runtime.
   google_fonts: ^6.2.1
 
+  # Per-user timezone: read the device's IANA zone (flutter_timezone) to report it to the API as the
+  # authoritative anchor, and render ANOTHER trainee's data in the trainee's captured zone (timezone db).
+  flutter_timezone: ^5.1.0
+  timezone: ^0.10.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

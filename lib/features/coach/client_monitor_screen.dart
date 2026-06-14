@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/time/app_time_zone.dart';
 import '../../data/models/coach_models.dart';
 import '../../data/models/plan_models.dart';
 import '../../data/models/session_models.dart';
@@ -89,10 +90,13 @@ class _Body extends StatelessWidget {
     final initial = (clientName != null && clientName!.isNotEmpty) ? clientName![0].toUpperCase() : '?';
 
     final completed = data.sessions.where((s) => s.status == SessionStatus.completed).toList();
-    final monday = mondayOf(DateTime.now());
-    final doneThisWeek = completed
-        .where((s) => s.startedAt != null && !s.startedAt!.toLocal().isBefore(monday))
-        .length;
+    // Count this week's completed sessions in each session's own captured zone (the trainee's local week).
+    final doneThisWeek = completed.where((s) {
+      if (s.startedAt == null) return false;
+      final local = AppTimeZone.wallClock(s.startedAt!, s.clientTimezone);
+      final monday = mondayOf(AppTimeZone.wallClock(DateTime.now(), s.clientTimezone));
+      return !local.isBefore(monday);
+    }).length;
     final active = data.assignments.where((a) => a.assignment.isActive).toList();
     final goal = active.isNotEmpty ? active.first.assignment.frequencyDaysPerWeek : 0;
     final volume = completed.fold<double>(0, (a, s) => a + s.totalVolumeKg);
@@ -256,11 +260,11 @@ class _WorkoutsList extends StatelessWidget {
         else
           for (final s in sessions)
             GbSessionRow(
-              day: _weekdayAbbr(s.startedAt),
+              day: _weekdayAbbr(s.startedAt, s.clientTimezone),
               status: s.status,
               title: s.workoutName ?? s.programName ?? 'Session',
               source: s.source,
-              relativeTime: _relativeTime(s.startedAt),
+              relativeTime: _relativeTime(s.startedAt, s.clientTimezone),
               durationLabel: s.durationSeconds != null ? formatDurationCompact(s.durationSeconds!) : null,
               volumeLabel: s.totalVolumeKg > 0 ? '${_fmtVolume(s.totalVolumeKg)} kg' : null,
               prCount: s.prCount,
@@ -419,10 +423,10 @@ class _NoPlanCard extends StatelessWidget {
 
 String _fmtVolume(double kg) => kg >= 1000 ? '${(kg / 1000).toStringAsFixed(1)}k' : kg.toStringAsFixed(0);
 
-String _weekdayAbbr(DateTime? d) {
+String _weekdayAbbr(DateTime? d, [String? zone]) {
   if (d == null) return '—';
   const days = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
-  return days[(d.toLocal().weekday - 1).clamp(0, 6)];
+  return days[(AppTimeZone.wallClock(d, zone).weekday - 1).clamp(0, 6)];
 }
 
 String _shortDate(DateTime d) {
@@ -432,10 +436,10 @@ String _shortDate(DateTime d) {
 }
 
 /// Relative day label for a session row: Today / Yesterday / weekday / d/m.
-String _relativeTime(DateTime? d) {
+String _relativeTime(DateTime? d, [String? zone]) {
   if (d == null) return '';
-  final local = d.toLocal();
-  final today = DateTime.now();
+  final local = AppTimeZone.wallClock(d, zone);
+  final today = AppTimeZone.wallClock(DateTime.now(), zone);
   final dayOnly = DateTime(local.year, local.month, local.day);
   final todayOnly = DateTime(today.year, today.month, today.day);
   final diff = todayOnly.difference(dayOnly).inDays;

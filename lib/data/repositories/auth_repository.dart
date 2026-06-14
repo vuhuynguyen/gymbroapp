@@ -51,6 +51,11 @@ class AuthRepository {
         return Me.fromJson(res.data!);
       });
 
+  /// Report the device's IANA zone as the user's authoritative anchor (`User.TimeZoneId`).
+  Future<void> setTimeZone(String ianaId) => apiCall(() async {
+        await _apiDio.put<dynamic>('/api/me/timezone', data: {'timeZoneId': ianaId});
+      });
+
   Future<void> forgotPassword(String email) => apiCall(() async {
         await _authDio
             .post<dynamic>('/api/auth/forgot-password', data: {'email': email});

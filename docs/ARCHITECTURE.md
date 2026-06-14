@@ -95,6 +95,10 @@ either body shape (bare string from `ToFailureResult`, or `{code,message}` from 
   the *exact* cookie refresh protocol the API already has — no API change was required (see §11).
 - **Boot** (`main.dart`): load persisted tenant → silent `restoreSession()` against the stored cookie →
   pre-resolve the active workspace role → `runApp`. So the first router redirect already knows auth + role.
+- **Timezone:** boot also runs `AppTimeZone.init()` (`core/time/app_time_zone.dart`) to load the IANA db + detect
+  the device zone; the auth controller reports it to `PUT /api/me/timezone` when it differs from the stored anchor,
+  and coach views render another trainee's session times in the trainee's captured zone via `AppTimeZone.wallClock`
+  (`flutter_timezone` for detection, the `timezone` db for conversion). The day-boundary rule is owned by the API docs.
 
 ## 6. State management (Riverpod)
 

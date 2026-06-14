@@ -3,11 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/app.dart';
 import 'core/providers.dart';
+import 'core/time/app_time_zone.dart';
 import 'data/repositories/auth_repository.dart';
 import 'features/tenant/tenant_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Load the IANA database and detect the device zone before anything formats a date or reports the zone.
+  await AppTimeZone.init();
 
   final container = ProviderContainer();
 

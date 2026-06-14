@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/time/app_time_zone.dart';
 import '../../data/models/session_models.dart';
 import '../../domain/enums.dart';
 import '../../domain/session_metrics.dart';
@@ -121,8 +122,8 @@ class _Body extends StatelessWidget {
     final metaParts = <String>[
       if (d.programName != null && d.programName!.isNotEmpty) d.programName!,
       if (d.planWeek != null) 'Week ${d.planWeek}',
-      if (at != null) _dateLabel(at),
-      if (at != null) _timeLabel(at),
+      if (at != null) _dateLabel(at, d.clientTimezone),
+      if (at != null) _timeLabel(at, d.clientTimezone),
     ];
 
     return ListView(
@@ -397,8 +398,8 @@ const _months = [
 ];
 
 /// `Monday, Jun 1` style date (local).
-String _dateLabel(DateTime d) {
-  final l = d.toLocal();
+String _dateLabel(DateTime d, [String? zone]) {
+  final l = AppTimeZone.wallClock(d, zone);
   return '${_fullWeekday(l.weekday)}, ${_months[l.month - 1]} ${l.day}';
 }
 
@@ -413,8 +414,8 @@ String _fullWeekday(int weekday) => switch (weekday) {
     };
 
 /// `6:40pm` style time (local).
-String _timeLabel(DateTime d) {
-  final l = d.toLocal();
+String _timeLabel(DateTime d, [String? zone]) {
+  final l = AppTimeZone.wallClock(d, zone);
   final h12 = l.hour % 12 == 0 ? 12 : l.hour % 12;
   final m = l.minute.toString().padLeft(2, '0');
   final ap = l.hour < 12 ? 'am' : 'pm';

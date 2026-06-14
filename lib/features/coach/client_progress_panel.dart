@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/time/app_time_zone.dart';
 import '../../data/models/session_models.dart';
 import '../../domain/enums.dart';
 import '../../domain/session_grouping.dart' show mondayOf;
@@ -96,9 +97,10 @@ class ClientProgressPanel extends StatelessWidget {
   static List<MapEntry<DateTime, double>> _weeklyVolume(List<SessionSummary> completed) {
     final buckets = <DateTime, double>{};
     for (final s in completed) {
-      final when = (s.completedAt ?? s.startedAt)?.toLocal();
-      if (when == null) continue;
-      final monday = mondayOf(when);
+      final instant = s.completedAt ?? s.startedAt;
+      if (instant == null) continue;
+      // Bucket in the trainee's captured zone so weeks align to the trainee's calendar, not the coach's.
+      final monday = mondayOf(AppTimeZone.wallClock(instant, s.clientTimezone));
       buckets[monday] = (buckets[monday] ?? 0) + s.totalVolumeKg;
     }
     if (buckets.isEmpty) return const [];
