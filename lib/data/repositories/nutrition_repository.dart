@@ -1,5 +1,6 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../core/network/api_call.dart';
 import '../../core/network/api_exception.dart';
@@ -24,6 +25,7 @@ import '../models/nutrition_models.dart';
 class NutritionRepository {
   NutritionRepository(this._dio);
   final Dio _dio;
+  static const _uuid = Uuid();
 
   static const _me = '/api/me/nutrition';
   static const _coach = '/api/nutrition';
@@ -139,12 +141,16 @@ class NutritionRepository {
     required String mealName,
     num quantity = 1,
     String? note,
-  }) =>
-      apiCall(() async {
+  }) {
+    // Generate the idempotency id ONCE, outside the call, so a network-retry/replay reuses it and the server
+    // dedups by (day, clientItemId) — a flaky "ate it" tap never double-logs.
+    final clientItemId = _uuid.v4();
+    return apiCall(() async {
         await _dio.post<dynamic>('$_log/items', data: {
           'date': date,
           'quantity': quantity,
           'mealName': mealName,
+          'clientItemId': clientItemId,
           if (note != null) 'note': note,
           if (!food.isCustom)
             'foodId': food.id
@@ -160,6 +166,7 @@ class NutritionRepository {
           },
         });
       });
+  }
 
   /// Remove an ad-hoc item: `DELETE /api/nutrition/log/items/{itemId}?date=`.
   Future<void> removeItem({required String date, required String itemId}) =>
