@@ -396,6 +396,8 @@ class NutritionAdherence {
     required this.hasPlan,
     this.currentWeekAvgPct,
     required this.recentDays,
+    this.loggedDaysThisWeek = 0,
+    this.hasAnyLogging = false,
   });
 
   /// Whether the trainee currently follows a meal plan. False → the card shows its invite, never a
@@ -409,14 +411,28 @@ class NutritionAdherence {
   /// Recent finalized days, oldest→newest (typically the trailing ~7), for the compact bar strip.
   final List<DailyAdherence> recentDays;
 
+  /// Count of distinct local days the trainee logged nutrition this week — the **honest ad-hoc
+  /// tracking signal**. Ad-hoc (no-plan) days are 100% adherence by convention so they're absent from
+  /// the adherence %; this count instead makes self-logging *count* on Progress without fabricating a
+  /// 100% ring. Drives the no-plan "You logged N of 7 days this week" state.
+  final int loggedDaysThisWeek;
+
+  /// Whether the trainee has logged any nutrition at all (planned or ad-hoc). Gates the no-plan card:
+  /// true → the ad-hoc tracking state; false → the "follow a meal plan" invite (genuinely nothing yet).
+  final bool hasAnyLogging;
+
   /// No closed days to chart yet (but a plan exists) → render a "log a day" nudge, not an empty strip.
   bool get isEmpty => recentDays.isEmpty;
 
   /// Wire shape is the **frozen** `NutritionAdherenceDto(HasPlan, Days, CurrentWeekAvgPct)`
-  /// serialized camelCase, so the recent series arrives under `days` (not `recentDays`).
+  /// serialized camelCase, extended (D-self-train) with `loggedDaysThisWeek` (int) + `hasAnyLogging`
+  /// (bool) so ad-hoc self-logging is recorded on Progress, so the recent series arrives under `days`
+  /// (not `recentDays`). Both new fields parse defensively (default 0 / false on an older payload).
   factory NutritionAdherence.fromJson(Map<String, dynamic> j) => NutritionAdherence(
         hasPlan: asBool(j['hasPlan']),
         currentWeekAvgPct: asInt(j['currentWeekAvgPct']),
         recentDays: asList(j['days'], DailyAdherence.fromJson),
+        loggedDaysThisWeek: asInt(j['loggedDaysThisWeek']) ?? 0,
+        hasAnyLogging: asBool(j['hasAnyLogging']),
       );
 }

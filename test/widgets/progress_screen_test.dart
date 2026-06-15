@@ -93,12 +93,25 @@ void main() {
         recentPrs: prs,
       );
 
+  /// The conditional Section-5 providers (Body / Nutrition) load independently of the overview and,
+  /// once their widgets scroll into the lazy ListView, would otherwise fire a real Dio call. Stub them
+  /// to their quiet empty-states so these overview-focused tests stay fully off-network and
+  /// deterministic regardless of how far the page scrolls (mirrors body_section_test's isolation).
+  final offNetworkSections = <Override>[
+    bodyweightSeriesProvider.overrideWith(
+        (ref) async => const MetricSeries(type: 'weight', points: [])),
+    goalWeightProvider.overrideWith((ref) async => null),
+    nutritionAdherenceProvider.overrideWith(
+        (ref) async => const NutritionAdherence(hasPlan: false, recentDays: [])),
+  ];
+
   /// Pumps [ProgressScreen] with [progressOverviewProvider] overridden to resolve to [data].
   Future<void> pumpData(WidgetTester tester, ProgressOverview data) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           progressOverviewProvider.overrideWith((ref) async => data),
+          ...offNetworkSections,
         ],
         child: MaterialApp(
           theme: AppTheme.light(),
@@ -124,7 +137,7 @@ void main() {
   }
 
   Widget hostWith(Override override, {bool settle = false}) => ProviderScope(
-        overrides: [override],
+        overrides: [override, ...offNetworkSections],
         child: MaterialApp(
           theme: AppTheme.light(),
           home: Builder(
@@ -292,6 +305,65 @@ void main() {
     // With null pct and no streak, no big-% header — no "%" anywhere on the page.
     expect(find.textContaining('%'), findsNothing);
     expect(find.text('CONSISTENCY'), findsOneWidget); // section still renders
+  });
+
+  testWidgets(
+      'no goal (pct null) but ad-hoc sessions → SESSIONS · LAST 12 WKS caption, not "%", no streak chip',
+      (tester) async {
+    // Self-training without a plan: no "% hit goal", but the completed ad-hoc sessions in `days` must
+    // still COUNT — the card headlines the total session count instead of an empty percent.
+    await pumpData(
+      tester,
+      overview(
+        thisWeek: week(completed: 1, hasPlan: false),
+        cons: consistency(
+          pct: null,
+          streak: 0,
+          days: const [
+            ConsistencyDay(date: null, sessionCount: 2),
+            ConsistencyDay(date: null, sessionCount: 1),
+          ],
+        ),
+        prs: [pr(id: 'p1', name: 'Row')],
+      ),
+    );
+    await scrollTo(tester, find.text('SESSIONS · LAST 12 WKS'));
+
+    // Big number = sum of sessionCount (2 + 1 = 3), with the sessions/window caption.
+    expect(find.text('3'), findsWidgets);
+    expect(find.text('SESSIONS · LAST 12 WKS'), findsOneWidget);
+    // Never a fabricated "% hit goal" on the no-goal state…
+    expect(find.textContaining('%'), findsNothing);
+    expect(find.text('HIT GOAL · LAST 12 WKS'), findsNothing);
+    // …and the goal-relative streak chip is dropped without a goal.
+    expect(find.textContaining('wk streak'), findsNothing);
+    expect(find.byIcon(Icons.local_fire_department), findsNothing);
+  });
+
+  testWidgets('with goal (pct set) → "% HIT GOAL" + streak chip render unchanged', (tester) async {
+    await pumpData(
+      tester,
+      overview(
+        thisWeek: week(completed: 3, goal: 4, hasPlan: true, start: DateTime.now()),
+        cons: consistency(
+          pct: 78,
+          streak: 5,
+          days: const [ConsistencyDay(date: null, sessionCount: 1)],
+        ),
+        prs: [pr(id: 'p1', name: 'Row')],
+      ),
+    );
+    await scrollTo(tester, find.text('HIT GOAL · LAST 12 WKS'));
+
+    // The with-goal header is exactly as before: big % + the "hit goal" label + the streak flame chip.
+    // The big number lives in a Text.rich ("78" + "%" spans), so match the rendered text.
+    expect(find.textContaining('78'), findsWidgets); // big % number
+    expect(find.textContaining('%'), findsWidgets); // the "%" suffix span
+    expect(find.text('HIT GOAL · LAST 12 WKS'), findsOneWidget);
+    expect(find.text('5 WK STREAK'), findsOneWidget);
+    expect(find.byIcon(Icons.local_fire_department), findsOneWidget);
+    // The no-goal sessions caption must NOT appear when there is a goal.
+    expect(find.text('SESSIONS · LAST 12 WKS'), findsNothing);
   });
 
   // ── §1 red discipline + direction tags ──────────────────────────────────────
