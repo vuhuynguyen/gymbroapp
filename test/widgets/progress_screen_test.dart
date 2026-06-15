@@ -103,6 +103,11 @@ void main() {
     goalWeightProvider.overrideWith((ref) async => null),
     nutritionAdherenceProvider.overrideWith(
         (ref) async => const NutritionAdherence(hasPlan: false, recentDays: [])),
+    // The Strength section watches strengthLiftsProvider for its muscle chips + picker. Stub it empty
+    // so these overview-focused tests stay off-network — the "All" glance strip (driven by the
+    // overview's topLifts) renders unchanged regardless.
+    strengthLiftsProvider
+        .overrideWith((ref) async => const StrengthLifts(lifts: [])),
   ];
 
   /// Pumps [ProgressScreen] with [progressOverviewProvider] overridden to resolve to [data].

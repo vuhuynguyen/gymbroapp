@@ -251,4 +251,8 @@ class _FakeProgressRepository implements ProgressRepository {
     DateTime? to,
   }) async =>
       NutritionAdherence.fromJson(const {});
+
+  @override
+  Future<StrengthLifts> strengthLifts({int? weeks, String? muscleGroup}) async =>
+      StrengthLifts.fromJson(const {});
 }

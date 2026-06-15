@@ -68,6 +68,39 @@ class ProgressRepository {
     }
   }
 
+  /// Every performed lift over the window for the Strength section's muscle-group / exercise filtering
+  /// (`GET /api/me/exercises/strength-lifts`). Self-scoped, cross-gym (NO `X-Tenant-Id`,
+  /// `QueryOwnAcrossGyms`); windowed by [weeks] exactly like [overview] and sorted by current e1RM desc
+  /// server-side. The honesty gate lives in the query — a lift with `hasTrend == false` carries no
+  /// meaningful direction, so the client renders e1RM + session count only.
+  ///
+  /// [weeks] threads the Progress period control through as `?weeks=N` (the server clamps 4..52,
+  /// default 12). [muscleGroup] optionally narrows server-side to one camelCase group; the client also
+  /// filters the already-fetched list client-side for the chip row (so switching chips needs no
+  /// refetch), but the param is supported for a future server-narrowed fetch. 404-graceful like
+  /// [overview]: an API build that predates this action degrades to an empty-but-valid list (the
+  /// Strength section shows its honest empty state) rather than erroring the tab.
+  Future<StrengthLifts> strengthLifts({int? weeks, String? muscleGroup}) async {
+    try {
+      return await apiCall(() async {
+        final res = await _dio.get<Map<String, dynamic>>(
+          '/api/me/exercises/strength-lifts',
+          queryParameters: {
+            if (weeks != null) 'weeks': weeks,
+            if (muscleGroup != null && muscleGroup.isNotEmpty)
+              'muscleGroup': muscleGroup,
+          },
+        );
+        return StrengthLifts.fromJson(res.data ?? const {});
+      });
+    } on ApiException catch (e) {
+      if (e.isNotFound) {
+        return StrengthLifts.fromJson(const {});
+      }
+      rethrow;
+    }
+  }
+
   /// Body-metric trend series (API-CONTRACTS §3) — bodyweight today. Self-scoped, cross-gym.
   /// 404-graceful: until the new `MetricEntry` range endpoint ships, this surface 404s — degrade to
   /// an empty-but-valid series so the home Body section shows its log-your-weight invite, never an

@@ -116,16 +116,20 @@ class _MonoLabel extends StatelessWidget {
 }
 
 /// Section header (design `SectionTitle`) — a 3px brand keyline, an uppercase 12.5/800 ink title, and
-/// a flex hairline rule. The recurring brand signature down the page. (The design's optional right
-/// action links to drill-down screens this Phase-1 flow doesn't route to, so it is intentionally
-/// omitted — the page adds no navigation it can't honour.)
+/// a flex hairline rule. The recurring brand signature down the page. The design's optional right
+/// action slot ([action]) is honoured when a section has navigation it can deliver (the Strength
+/// section's all-exercises picker); the info button still trails it.
 class _SectionTitle extends StatelessWidget {
-  const _SectionTitle(this.text, {this.onInfo});
+  const _SectionTitle(this.text, {this.onInfo, this.action});
   final String text;
 
   /// When non-null, a small "how this is counted" info button is rendered at the trailing edge of the
   /// title rule; tapping it opens the section's transparency sheet.
   final VoidCallback? onInfo;
+
+  /// An optional right-action widget (e.g. the Strength "All exercises" affordance), rendered just
+  /// before the info button.
+  final Widget? action;
 
   @override
   Widget build(BuildContext context) {
@@ -154,6 +158,10 @@ class _SectionTitle extends StatelessWidget {
         ),
         const SizedBox(width: AppSpacing.xs + 2),
         Expanded(child: Container(height: 1, color: gb.progLine)),
+        if (action != null) ...[
+          const SizedBox(width: AppSpacing.xs),
+          action!,
+        ],
         if (onInfo != null) ...[
           const SizedBox(width: AppSpacing.xs),
           _InfoButton(onTap: onInfo!, semanticLabel: 'How $text is counted'),
@@ -624,44 +632,135 @@ String _daysLeftCaption(WeekAdherence week) {
   return '$leftPart · rest days count';
 }
 
-// ── Section 2 — Strength (top-lift direction strip) ─────────────────────────
+// ── Section 2 — Strength (top-lift direction strip + muscle / exercise filters) ──
 
-class _StrengthSection extends StatelessWidget {
+/// The canonical muscle-group buckets, in display order. The chip row renders ONLY the subset of these
+/// that the user has actually trained (derived from the lifts' `primaryMuscleGroup`), so it never shows
+/// a dead chip. Stored lowercase to match the canonicalized wire token; [_muscleLabel] gives the chip
+/// caption.
+const _muscleOrder = ['chest', 'back', 'legs', 'shoulders', 'arms', 'core'];
+
+/// Title-case label for a muscle token's chip / picker group header.
+String _muscleLabel(String token) =>
+    token.isEmpty ? token : '${token[0].toUpperCase()}${token.substring(1)}';
+
+/// Section 2 — Strength. A [ConsumerStatefulWidget] so it can hold the selected muscle-chip state and
+/// watch [strengthLiftsProvider] (the wider per-lift list behind the home top-3 glance). The default
+/// "All" chip keeps the EXISTING top-3 glance strip (driven by the overview's [topLifts]) unchanged.
+/// Selecting a muscle chip swaps in the filtered lift list for that group (reusing [_LiftRow], honest
+/// about thin lifts). The header's right-action opens a searchable all-exercises picker.
+class _StrengthSection extends ConsumerStatefulWidget {
   const _StrengthSection({required this.lifts});
+
+  /// The overview's honesty-gated top lifts — the "All" glance strip (unchanged from Phase 1).
+  final List<LiftDirection> lifts;
+
+  @override
+  ConsumerState<_StrengthSection> createState() => _StrengthSectionState();
+}
+
+class _StrengthSectionState extends ConsumerState<_StrengthSection> {
+  /// The selected muscle chip, or null for "All" (the default — the unchanged top-3 glance strip).
+  String? _muscle;
+
+  @override
+  Widget build(BuildContext context) {
+    final liftsAsync = ref.watch(strengthLiftsProvider);
+    // The trained muscle set drives the chip row; null while loading/errored (chips simply hide).
+    final allLifts = liftsAsync.valueOrNull?.lifts ?? const <StrengthLift>[];
+    final trained = _trainedMuscles(allLifts);
+
+    // If the selected chip's group vanished (period change dropped it), fall back to "All" so we never
+    // render a selected-but-dead chip.
+    final selected = (_muscle != null && trained.contains(_muscle)) ? _muscle : null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionTitle(
+          'Strength',
+          onInfo: () => _showHowSheet(context, _HowCounted.strength),
+          // The all-exercises picker is offered only once there are lifts to list.
+          action: allLifts.isEmpty
+              ? null
+              : _AllExercisesAction(
+                  onTap: () => _showAllExercisesSheet(context, allLifts),
+                ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        // Muscle chip row — "All" plus only the trained groups (never a dead chip). Hidden entirely
+        // until at least one trained group is known.
+        if (trained.isNotEmpty) ...[
+          _MuscleChipRow(
+            trained: trained,
+            selected: selected,
+            onSelect: (m) => setState(() => _muscle = m),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+        ],
+        // "All" → the unchanged top-3 glance strip; a muscle → that group's filtered lift list.
+        if (selected == null)
+          _GlanceStrip(lifts: widget.lifts)
+        else
+          _MuscleLiftList(
+            lifts: [
+              for (final l in allLifts)
+                if (l.primaryMuscleGroup == selected) l
+            ],
+          ),
+      ],
+    );
+  }
+
+  /// The set of trained muscle groups present in [lifts] (non-null tokens only), in canonical display
+  /// order, with any unexpected server token appended after the known set — so the chip row is honest
+  /// (only trained groups) and stable.
+  static List<String> _trainedMuscles(List<StrengthLift> lifts) {
+    final present = <String>{
+      for (final l in lifts)
+        if (l.primaryMuscleGroup != null) l.primaryMuscleGroup!
+    };
+    return [
+      for (final m in _muscleOrder)
+        if (present.contains(m)) m,
+      // Any non-canonical token the server sent still gets a chip (kept stable + de-duped).
+      for (final m in present)
+        if (!_muscleOrder.contains(m)) m,
+    ];
+  }
+}
+
+/// The "All" top-3 glance strip (unchanged from Phase 1): the overview's honesty-gated [topLifts] in a
+/// surface card, with the stall callout row. Extracted verbatim so the "All" chip preserves the exact
+/// existing behavior.
+class _GlanceStrip extends StatelessWidget {
+  const _GlanceStrip({required this.lifts});
   final List<LiftDirection> lifts;
 
   @override
   Widget build(BuildContext context) {
+    if (lifts.isEmpty) {
+      return const _QuietCard(
+        text: 'Log a few working sets to see your strength trend.',
+      );
+    }
     final gb = context.gb;
     final stall = _stallCallout(lifts);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _SectionTitle('Strength',
-            onInfo: () => _showHowSheet(context, _HowCounted.strength)),
-        const SizedBox(height: AppSpacing.sm),
-        if (lifts.isEmpty)
-          const _QuietCard(
-            text: 'Log a few working sets to see your strength trend.',
-          )
-        else
-          _ProgCard(
-            padding: EdgeInsets.zero,
-            child: Column(
-              children: [
-                for (var i = 0; i < lifts.length; i++) ...[
-                  if (i > 0) _RuleInset(color: gb.progLine2),
-                  _LiftRow(lift: lifts[i]),
-                ],
-                // The stall callout row — a warn dot + "… time to change something" (PHASE-1 §1).
-                if (stall != null) ...[
-                  _RuleInset(color: gb.progLine2),
-                  _StallCallout(lift: stall),
-                ],
-              ],
-            ),
-          ),
-      ],
+    return _ProgCard(
+      padding: EdgeInsets.zero,
+      child: Column(
+        children: [
+          for (var i = 0; i < lifts.length; i++) ...[
+            if (i > 0) _RuleInset(color: gb.progLine2),
+            _LiftRow(lift: lifts[i]),
+          ],
+          // The stall callout row — a warn dot + "… time to change something" (PHASE-1 §1).
+          if (stall != null) ...[
+            _RuleInset(color: gb.progLine2),
+            _StallCallout(lift: stall),
+          ],
+        ],
+      ),
     );
   }
 
@@ -675,6 +774,369 @@ class _StrengthSection extends StatelessWidget {
       }
     }
     return null;
+  }
+}
+
+/// The filtered lift list for a selected muscle chip — every lift in that group (reusing [_LiftRow],
+/// which is honest about thin lifts: a `hasTrend == false` lift shows name + e1RM + "N sessions" with
+/// no direction tag / spark). An empty group shows the existing honest empty state (the [_QuietCard]).
+class _MuscleLiftList extends StatelessWidget {
+  const _MuscleLiftList({required this.lifts});
+  final List<StrengthLift> lifts;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    if (lifts.isEmpty) {
+      return const _QuietCard(
+        text: 'Log a few working sets to see your strength trend.',
+      );
+    }
+    return _ProgCard(
+      padding: EdgeInsets.zero,
+      child: Column(
+        children: [
+          for (var i = 0; i < lifts.length; i++) ...[
+            if (i > 0) _RuleInset(color: gb.progLine2),
+            _LiftRow.fromStrength(lifts[i]),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// The horizontal muscle chip row under the Strength title: "All" plus one chip per trained group. A
+/// scrollable single-line row so a long set never overflows. Reuses the shared prog tints; the selected
+/// chip fills primary, the rest read as quiet outlined pills.
+class _MuscleChipRow extends StatelessWidget {
+  const _MuscleChipRow({
+    required this.trained,
+    required this.selected,
+    required this.onSelect,
+  });
+
+  /// Trained muscle tokens, display-ordered.
+  final List<String> trained;
+
+  /// The selected token, or null for "All".
+  final String? selected;
+
+  /// Called with null for "All", or a muscle token for a group chip.
+  final ValueChanged<String?> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: AppSizes.chipHeight,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        physics: const ClampingScrollPhysics(),
+        children: [
+          _MuscleChip(
+            label: 'All',
+            selected: selected == null,
+            onTap: () => onSelect(null),
+          ),
+          for (final m in trained) ...[
+            const SizedBox(width: AppSpacing.xs),
+            _MuscleChip(
+              label: _muscleLabel(m),
+              selected: selected == m,
+              onTap: () => onSelect(m),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// One muscle chip — a prog-toned selectable pill (primary fill when selected, quiet outline otherwise).
+/// Built inline (not the grey-toned shared [GbChip]) so it stays on the Graphite paper ramp.
+class _MuscleChip extends StatelessWidget {
+  const _MuscleChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    final fg = selected ? Colors.white : gb.progInk2;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: Material(
+        color: selected ? gb.primary600 : gb.card,
+        shape: StadiumBorder(
+          side: BorderSide(color: selected ? gb.primary600 : gb.progLine),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: Center(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.13,
+                  color: fg,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The Strength header right-action — a small "All exercises" text+chevron affordance that opens the
+/// searchable all-exercises picker. Lives in the [_SectionTitle] action slot.
+class _AllExercisesAction extends StatelessWidget {
+  const _AllExercisesAction({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return Semantics(
+      button: true,
+      label: 'All exercises',
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          excludeFromSemantics: true,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.xs, vertical: 3),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'All exercises',
+                  style: AppText.mono(const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0,
+                  )).copyWith(color: gb.progBrandInk),
+                ),
+                const SizedBox(width: 2),
+                Icon(Icons.chevron_right, size: 15, color: gb.progBrandInk),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Opens the searchable all-exercises picker (reusing the app [showGbSheet] pattern, scrollable). Lists
+/// every performed lift grouped by muscle group, each with its current e1RM; tapping one routes to the
+/// EXISTING per-lift drill-down (`/progress/lift/:exerciseId`) — no new detail screen.
+void _showAllExercisesSheet(BuildContext context, List<StrengthLift> lifts) {
+  showGbSheet<void>(
+    context,
+    scrollable: true,
+    builder: (_) => _AllExercisesSheet(lifts: lifts),
+  );
+}
+
+/// The searchable all-exercises picker (reuses [showGbSheet], scrollable). Lists every performed lift
+/// grouped by muscle group (display-ordered, null/unresolved group last under "Other"), each with its
+/// current e1RM; a live search field filters by lift name. Tapping a lift pops the sheet then routes to
+/// the EXISTING per-lift drill-down (`/progress/lift/:exerciseId`) — no new detail screen is added.
+class _AllExercisesSheet extends StatefulWidget {
+  const _AllExercisesSheet({required this.lifts});
+  final List<StrengthLift> lifts;
+
+  @override
+  State<_AllExercisesSheet> createState() => _AllExercisesSheetState();
+}
+
+class _AllExercisesSheetState extends State<_AllExercisesSheet> {
+  final _search = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  /// Lifts matching the current query (case-insensitive name contains), grouped by muscle in display
+  /// order with an "Other" bucket last for null/unresolved groups. Within a group, the server's e1RM
+  /// desc order is preserved.
+  List<(String, List<StrengthLift>)> _grouped() {
+    final q = _query.trim().toLowerCase();
+    final matched = [
+      for (final l in widget.lifts)
+        if (q.isEmpty || (l.exerciseName ?? '').toLowerCase().contains(q)) l
+    ];
+    final byMuscle = <String, List<StrengthLift>>{};
+    for (final l in matched) {
+      // Null/unresolved → an "other" bucket (never a fabricated muscle group).
+      final key = l.primaryMuscleGroup ?? 'other';
+      (byMuscle[key] ??= []).add(l);
+    }
+    final order = [..._muscleOrder, 'other'];
+    return [
+      for (final m in order)
+        if (byMuscle[m] != null) (m, byMuscle[m]!),
+      // Any non-canonical group, appended after the known set.
+      for (final e in byMuscle.entries)
+        if (!order.contains(e.key)) (e.key, e.value),
+    ];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    final groups = _grouped();
+    // Cap the sheet at ~80% of screen height; the list scrolls within.
+    final maxH = MediaQuery.of(context).size.height * 0.8;
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: maxH),
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          AppSpacing.md,
+          AppSpacing.md,
+          AppSpacing.md,
+          AppSpacing.md + MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const GbSheetHeader(
+              title: 'All exercises',
+              subtitle: 'Tap a lift to see its trend.',
+            ),
+            const SizedBox(height: AppSpacing.sm + 2),
+            GbSearchField(
+              controller: _search,
+              hint: 'Search exercises…',
+              onChanged: (v) => setState(() => _query = v),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Flexible(
+              child: groups.isEmpty
+                  ? Padding(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: AppSpacing.lg),
+                      child: Text(
+                        'No exercises match "${_query.trim()}".',
+                        style: TextStyle(
+                            fontSize: 13.5, height: 1.5, color: gb.progInk3),
+                      ),
+                    )
+                  : ListView(
+                      shrinkWrap: true,
+                      children: [
+                        for (final (muscle, ls) in groups) ...[
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(2, 6, 0, 6),
+                            child: _MonoLabel(
+                              muscle == 'other'
+                                  ? 'Other'
+                                  : _muscleLabel(muscle),
+                              color: gb.progInk3,
+                            ),
+                          ),
+                          for (final l in ls)
+                            _AllExercisesRow(
+                              lift: l,
+                              onTap: () {
+                                Navigator.of(context).pop();
+                                context.push('/progress/lift/${l.exerciseId}');
+                              },
+                            ),
+                          const SizedBox(height: AppSpacing.sm),
+                        ],
+                      ],
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One row in the all-exercises picker — the lift name + its current e1RM (mono), a trailing chevron.
+class _AllExercisesRow extends StatelessWidget {
+  const _AllExercisesRow({required this.lift, required this.onTap});
+  final StrengthLift lift;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(AppRadius.sm),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 4),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  lift.exerciseName ?? 'Exercise',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.14,
+                    color: gb.progInk,
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Text.rich(
+                TextSpan(children: [
+                  TextSpan(
+                    text: fmtKg(lift.currentE1rmKg),
+                    style: AppText.mono(const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.3,
+                    )).copyWith(color: gb.progInk2),
+                  ),
+                  TextSpan(
+                    text: ' kg',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: gb.progInk3,
+                    ),
+                  ),
+                ]),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Icon(Icons.chevron_right, size: 18, color: gb.progInk4),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -692,17 +1154,62 @@ class _RuleInset extends StatelessWidget {
 /// for <4 pts) · the mono DirTag (PHASE-1 §1 card 2). Tapping it opens the per-lift e1RM drill-down
 /// (`/progress/lift/:exerciseId`, Phase 2). Wrapped in an [InkWell] so the ripple and the
 /// dividers/padding inside the strip card stay intact.
+///
+/// Two construction paths so the SAME visual serves both the home top-3 glance (a [LiftDirection], all
+/// honesty-gated so always a trend) and the muscle-group filtered list (a [StrengthLift], which may be
+/// thin). The named `.lift` ctor is the legacy [LiftDirection] path (unchanged); `.fromStrength`
+/// adapts a [StrengthLift] and respects its `hasTrend` gate — a thin lift shows name + e1RM +
+/// "N sessions" with NO direction tag and NO sparkline (never a fabricated trend, WIRE CONTRACT).
 class _LiftRow extends StatelessWidget {
-  const _LiftRow({required this.lift});
-  final LiftDirection lift;
+  _LiftRow({required LiftDirection lift})
+      : exerciseId = lift.exerciseId,
+        exerciseName = lift.exerciseName,
+        currentE1rmKg = lift.currentE1rmKg,
+        direction = lift.direction,
+        stalled = lift.stalled,
+        stallSessions = lift.stallSessions,
+        sparkE1rmKg = lift.sparkE1rmKg,
+        // The home strip is honesty-gated server-side (≥4 sessions), so it always shows the trend.
+        hasTrend = true,
+        sessionCount = null;
+
+  _LiftRow.fromStrength(StrengthLift lift)
+      : exerciseId = lift.exerciseId,
+        exerciseName = lift.exerciseName,
+        currentE1rmKg = lift.currentE1rmKg,
+        direction = lift.direction,
+        stalled = lift.stalled,
+        stallSessions = lift.stallSessions,
+        sparkE1rmKg = lift.sparkE1rmKg,
+        hasTrend = lift.hasTrend,
+        sessionCount = lift.sessionCount;
+
+  final String exerciseId;
+  final String? exerciseName;
+  final double currentE1rmKg;
+  final LiftTrendDirection direction;
+  final bool stalled;
+  final int stallSessions;
+  final List<double> sparkE1rmKg;
+
+  /// When false (a thin lift), the row drops the direction tag + sparkline and shows the honest
+  /// "N sessions" caption instead — never a fabricated trend.
+  final bool hasTrend;
+
+  /// Session count for the no-trend caption; null on the legacy home-strip path (always a trend there).
+  final int? sessionCount;
 
   @override
   Widget build(BuildContext context) {
     final gb = context.gb;
-    final spark = lift.sparkE1rmKg;
-    final few = spark.length < 4;
+    final spark = sparkE1rmKg;
+    // On the legacy home-strip path (always-trend), a thin spark still degrades the *value* line to a
+    // "log a few more" hint (the original behavior). For the muscle-filtered path the honesty gate is
+    // explicit (`hasTrend`): a thin lift shows e1RM + "N sessions" and no spark/tag at all.
+    final fewSpark = spark.length < 4;
+    final showValueHint = hasTrend && sessionCount == null && fewSpark;
     return InkWell(
-      onTap: () => context.push('/progress/lift/${lift.exerciseId}'),
+      onTap: () => context.push('/progress/lift/$exerciseId'),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
         child: Row(
@@ -713,7 +1220,7 @@ class _LiftRow extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    lift.exerciseName ?? 'Exercise',
+                    exerciseName ?? 'Exercise',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -723,13 +1230,13 @@ class _LiftRow extends StatelessWidget {
                       color: gb.progInk,
                     ),
                   ),
-                  // Design: 4px above the thin-data label, 5px above the e1RM row.
-                  SizedBox(height: few ? 4 : 5),
-                  if (few)
+                  // Design: 4px above the thin-data hint, 5px above the e1RM row.
+                  SizedBox(height: showValueHint ? 4 : 5),
+                  if (showValueHint)
                     _MonoLabel('Log a few more to see trend',
                         color: gb.progInk3, fontSize: 10.5)
                   else
-                    // Big e1RM with a kg unit suffix + an "est. 1RM" micro-label.
+                    // Big e1RM with a kg unit suffix + an "est. 1RM" micro-label — always honest data.
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.baseline,
                       textBaseline: TextBaseline.alphabetic,
@@ -737,7 +1244,7 @@ class _LiftRow extends StatelessWidget {
                         Text.rich(
                           TextSpan(children: [
                             TextSpan(
-                              text: fmtKg(lift.currentE1rmKg),
+                              text: fmtKg(currentE1rmKg),
                               style: AppText.mono(const TextStyle(
                                 fontSize: 21,
                                 fontWeight: FontWeight.w800,
@@ -755,42 +1262,57 @@ class _LiftRow extends StatelessWidget {
                           ]),
                         ),
                         const SizedBox(width: 6),
-                        _MonoLabel('est. 1RM', color: gb.progInk4, fontSize: 9),
+                        _MonoLabel('est. 1RM',
+                            color: gb.progInk4, fontSize: 9),
+                        // A thin (no-trend) lift annotates the honest session count inline instead of
+                        // a (forbidden) fabricated direction tag.
+                        if (!hasTrend && sessionCount != null) ...[
+                          const SizedBox(width: 8),
+                          _MonoLabel(
+                            '${sessionCount!} ${sessionCount == 1 ? 'session' : 'sessions'}',
+                            color: gb.progInk3,
+                            fontSize: 9,
+                          ),
+                        ],
                       ],
                     ),
                 ],
               ),
             ),
-            const SizedBox(width: AppSpacing.sm),
-            // Gradient-filled sparkline (donut endpoint), or dots-only for thin data.
-            // Design `Sparkline width={92} height={36}`.
-            SizedBox(
-              width: 92,
-              height: 36,
-              child: _Sparkline(
-                points: spark,
-                color: sparkColor(gb, lift.direction),
-                cardColor: gb.card,
+            // Sparkline + DirTag ONLY when there's a real trend. A thin lift shows neither — name +
+            // e1RM + "N sessions" only (WIRE CONTRACT: never fabricate a direction for a thin lift).
+            if (hasTrend) ...[
+              const SizedBox(width: AppSpacing.sm),
+              // Gradient-filled sparkline (donut endpoint), or dots-only for thin spark data.
+              // Design `Sparkline width={92} height={36}`.
+              SizedBox(
+                width: 92,
+                height: 36,
+                child: _Sparkline(
+                  points: spark,
+                  color: sparkColor(gb, direction),
+                  cardColor: gb.card,
+                ),
               ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            // Design right-aligns the DirTag in a ~78px trailing slot so the deltas line up. As the
-            // last row child it already trails; a 78px min-width box (right-aligned) reserves that
-            // column, and Flexible lets a longer tag shrink rather than overflow (the Expanded name
-            // absorbs the rest).
-            Flexible(
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(minWidth: 78),
-                  child: LiftDirectionTag(
-                    direction: lift.direction,
-                    stalled: lift.stalled,
-                    stallSessions: lift.stallSessions,
+              const SizedBox(width: AppSpacing.sm),
+              // Design right-aligns the DirTag in a ~78px trailing slot so the deltas line up. As the
+              // last row child it already trails; a 78px min-width box (right-aligned) reserves that
+              // column, and Flexible lets a longer tag shrink rather than overflow (the Expanded name
+              // absorbs the rest).
+              Flexible(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minWidth: 78),
+                    child: LiftDirectionTag(
+                      direction: direction,
+                      stalled: stalled,
+                      stallSessions: stallSessions,
+                    ),
                   ),
                 ),
               ),
-            ),
+            ],
           ],
         ),
       ),

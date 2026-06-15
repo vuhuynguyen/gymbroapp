@@ -41,6 +41,19 @@ final exerciseE1rmSeriesProvider = FutureProvider.autoDispose
       .exerciseE1rmSeries(exerciseId, from: from, to: to);
 });
 
+/// Every performed lift over the selected period (`/api/me/exercises/strength-lifts?weeks=N`), behind
+/// the Strength section's muscle-group chip row + all-exercises picker. `autoDispose`: fetched on tab
+/// entry like the overview, fresh every visit. Watches [progressPeriodWeeksProvider] so changing the
+/// period re-requests the lift list with the new window — keeping it aligned with the top-3 glance
+/// strip the overview powers. The muscle filter is applied client-side off this one list (so switching
+/// chips needs no refetch); the chip set itself is derived from the non-null `primaryMuscleGroup`
+/// values present here, so a dead/untrained group never renders a chip.
+final strengthLiftsProvider =
+    FutureProvider.autoDispose<StrengthLifts>((ref) async {
+  final weeks = ref.watch(progressPeriodWeeksProvider);
+  return ref.read(progressRepositoryProvider).strengthLifts(weeks: weeks);
+});
+
 /// Bodyweight trend for the home Body section (`/api/me/progress/metrics/series?type=weight`).
 /// `autoDispose`: loads independently of the overview call so a slow/absent metrics endpoint never
 /// blocks the page; the section degrades to an empty-state invite on no data and stays quiet on error.

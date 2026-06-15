@@ -235,6 +235,15 @@ class _FakeProgressRepository implements ProgressRepository {
   }) async =>
       ExerciseE1rmSeries.fromJson({'exerciseId': exerciseId});
 
+  /// Every `weeks` value the screen has requested the strength-lifts list with (in order).
+  final List<int?> strengthWeeks = [];
+
+  @override
+  Future<StrengthLifts> strengthLifts({int? weeks, String? muscleGroup}) async {
+    strengthWeeks.add(weeks);
+    return StrengthLifts.fromJson(const {});
+  }
+
   @override
   Future<MetricSeries> metricSeries(String type, {DateTime? from}) async =>
       MetricSeries(type: type, unit: 'kg', points: const []);

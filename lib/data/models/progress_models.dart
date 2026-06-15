@@ -228,6 +228,104 @@ List<double> _asDoubleList(Object? v) {
   return List.unmodifiable(out);
 }
 
+// ── Strength lifts (`GET /api/me/exercises/strength-lifts`) ──────────────────
+
+/// One performed lift in the trailing window, for the Strength section's muscle-group / exercise
+/// filtering (`GET /api/me/exercises/strength-lifts?weeks=N&muscleGroup=…`). This is the wider
+/// per-lift list behind the home strip's top-3 glance: every lift the user has trained over the
+/// period, each with its current e1RM, session count, and an honesty-gated direction.
+///
+/// The honesty gate is the same one the overview's top-lift strip uses: [hasTrend] is true only when
+/// the server saw ≥4 qualifying sessions, and [direction] is meaningful ONLY then. A thin lift
+/// (`hasTrend == false`) carries `direction = flat` purely as a default — the client must NOT render a
+/// direction tag or a sparkline for it, only its name + e1RM + session count (never a fabricated
+/// trend). [primaryMuscleGroup] is a camelCase token (one of chest|back|legs|shoulders|arms|core) or
+/// null when the server couldn't resolve the lift's muscle — a null-group lift is never bucketed under
+/// a fabricated chip.
+class StrengthLift {
+  const StrengthLift({
+    required this.exerciseId,
+    this.exerciseName,
+    this.primaryMuscleGroup,
+    required this.sessionCount,
+    required this.currentE1rmKg,
+    required this.hasTrend,
+    required this.direction,
+    required this.stalled,
+    required this.stallSessions,
+    required this.sparkE1rmKg,
+  });
+
+  final String exerciseId;
+  final String? exerciseName;
+
+  /// camelCase muscle token (chest|back|legs|shoulders|arms|core), or null when unresolved. Lowercased
+  /// + trimmed on parse so the client can group/compare without re-normalizing. The chip row renders
+  /// ONLY the groups that actually appear here — never a dead chip for an untrained (or null) group.
+  final String? primaryMuscleGroup;
+
+  /// Qualifying sessions for this lift over the window. Always shown (even for a thin lift) — it's the
+  /// honest "N sessions" caption when there's no trend to draw.
+  final int sessionCount;
+
+  /// Latest session-best working-set e1RM.
+  final double currentE1rmKg;
+
+  /// True only when the honesty gate is met (≥4 qualifying sessions). When false the client shows
+  /// e1RM + [sessionCount] only — no [LiftDirectionTag], no spark.
+  final bool hasTrend;
+
+  /// Trend direction — meaningful ONLY when [hasTrend]. Defaults to [LiftTrendDirection.flat] for a
+  /// thin lift, but the client must not render it in that case.
+  final LiftTrendDirection direction;
+
+  /// Best e1RM not exceeded in the last K exposures (meaningful only with [hasTrend]).
+  final bool stalled;
+
+  /// Exposures since the last new best (0 if not stalled).
+  final int stallSessions;
+
+  /// Up to ~8 recent session-best points, oldest→newest. Empty / thin for a no-trend lift.
+  final List<double> sparkE1rmKg;
+
+  factory StrengthLift.fromJson(Map<String, dynamic> j) => StrengthLift(
+        exerciseId: j['exerciseId'].toString(),
+        exerciseName: asString(j['exerciseName']),
+        // Normalize defensively: lowercase + trim so grouping/compare is canonical; a blank string
+        // collapses to null so it's treated as "unresolved" (never an empty-label chip).
+        primaryMuscleGroup: _muscleToken(j['primaryMuscleGroup']),
+        sessionCount: asInt(j['sessionCount']) ?? 0,
+        currentE1rmKg: asDouble(j['currentE1rmKg']) ?? 0,
+        hasTrend: asBool(j['hasTrend']),
+        direction: LiftTrendDirection.parse(j['direction']),
+        stalled: asBool(j['stalled']),
+        stallSessions: asInt(j['stallSessions']) ?? 0,
+        sparkE1rmKg: _asDoubleList(j['sparkE1rmKg']),
+      );
+}
+
+/// The `strength-lifts` payload — every performed lift over the window, sorted by [StrengthLift.currentE1rmKg]
+/// desc server-side. Always present and empty-but-valid for a new user (`lifts: []`). The client
+/// derives the muscle-chip set from the non-null [StrengthLift.primaryMuscleGroup] values present here.
+class StrengthLifts {
+  const StrengthLifts({required this.lifts});
+
+  /// All performed lifts, e1RM-desc (server-sorted). May be empty.
+  final List<StrengthLift> lifts;
+
+  factory StrengthLifts.fromJson(Map<String, dynamic> j) =>
+      StrengthLifts(lifts: asList(j['lifts'], StrengthLift.fromJson));
+}
+
+/// Canonicalize a wire muscle-group token: lowercase + trim, collapsing null/blank to null (so an
+/// unresolved group is never rendered as an empty chip). Kept loose — any non-blank string is kept
+/// as-is, so an unexpected server token still groups consistently rather than throwing.
+String? _muscleToken(Object? v) {
+  final s = v?.toString().trim().toLowerCase();
+  if (s == null || s.isEmpty) return null;
+  return s;
+}
+
 // ── Phase 2 — per-lift e1RM series (`GET /api/me/exercises/{id}/e1rm-series`) ──
 
 /// One session-best e1RM point on the per-lift trend (API-CONTRACTS §2). `isPr` is derived
