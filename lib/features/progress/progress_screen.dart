@@ -66,6 +66,11 @@ class ProgressScreen extends ConsumerWidget {
                         padding: const EdgeInsets.fromLTRB(AppSpacing.screenH,
                             AppSpacing.md + 4, AppSpacing.screenH, 100),
                         children: [
+                          // The period control sits under the page title, above the glance layer —
+                          // 4w / 8w / 12w (default) / 26w. The This Week hero below stays current-week
+                          // regardless of the selection (it never reads the period).
+                          const _PeriodBar(),
+                          const SizedBox(height: AppSpacing.md),
                           _ThisWeekSection(overview: o),
                           const SizedBox(height: AppSpacing.lg),
                           _StrengthSection(lifts: o.topLifts),
@@ -115,8 +120,12 @@ class _MonoLabel extends StatelessWidget {
 /// action links to drill-down screens this Phase-1 flow doesn't route to, so it is intentionally
 /// omitted — the page adds no navigation it can't honour.)
 class _SectionTitle extends StatelessWidget {
-  const _SectionTitle(this.text);
+  const _SectionTitle(this.text, {this.onInfo});
   final String text;
+
+  /// When non-null, a small "how this is counted" info button is rendered at the trailing edge of the
+  /// title rule; tapping it opens the section's transparency sheet.
+  final VoidCallback? onInfo;
 
   @override
   Widget build(BuildContext context) {
@@ -145,7 +154,53 @@ class _SectionTitle extends StatelessWidget {
         ),
         const SizedBox(width: AppSpacing.xs + 2),
         Expanded(child: Container(height: 1, color: gb.progLine)),
+        if (onInfo != null) ...[
+          const SizedBox(width: AppSpacing.xs),
+          _InfoButton(onTap: onInfo!, semanticLabel: 'How $text is counted'),
+        ],
       ],
+    );
+  }
+}
+
+/// A small "how this is counted" info button (an outline `info` glyph in the muted ink ramp). Used on
+/// each Progress section header — tapping it opens that section's transparency sheet ([_showHowSheet]).
+class _InfoButton extends StatelessWidget {
+  const _InfoButton({
+    required this.onTap,
+    required this.semanticLabel,
+    this.color,
+  });
+  final VoidCallback onTap;
+  final String semanticLabel;
+
+  /// Glyph colour; defaults to the muted `progInk3` for the paper section headers. The hero passes a
+  /// hero-ink tint so the button reads over the dark navy panel.
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return Semantics(
+      button: true,
+      label: semanticLabel,
+      // The InkWell carries the gesture but is excluded from semantics, so this Semantics node is the
+      // single authoritative one for the button (a clean `bySemanticsLabel` target + screen-reader node).
+      child: Material(
+        color: Colors.transparent,
+        shape: const CircleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          excludeFromSemantics: true,
+          child: SizedBox(
+            width: 26,
+            height: 26,
+            child: Icon(Icons.info_outline,
+                size: 16, color: color ?? gb.progInk3),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -181,6 +236,154 @@ class _ProgCard extends StatelessWidget {
           color: Colors.transparent,
           child: Padding(padding: padding, child: child),
         ),
+      ),
+    );
+  }
+}
+
+// ── Period control (4w / 8w / 12w / 26w segmented) ───────────────────────────
+
+/// The Progress page's period control — a compact prog-toned segmented track (4w / 8w / 12w / 26w)
+/// sitting under the page title. Reads/writes [progressPeriodWeeksProvider]; selecting an option
+/// re-requests the overview, the per-lift e1RM series, and the nutrition trend with the new window.
+/// Built inline (not the grey-toned shared [GbSegmented]) so it stays on the Graphite paper ramp.
+class _PeriodBar extends ConsumerWidget {
+  const _PeriodBar();
+
+  /// (weeks, label) options; 12 is the default selection.
+  static const _options = [(4, '4w'), (8, '8w'), (12, '12w'), (26, '26w')];
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final gb = context.gb;
+    final selected = ref.watch(progressPeriodWeeksProvider);
+    return Semantics(
+      label: 'Period',
+      child: Container(
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: gb.progCard2,
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          border: Border.all(color: gb.progLine),
+        ),
+        child: Row(
+          children: [
+            for (final (weeks, label) in _options)
+              Expanded(
+                child: _PeriodSegment(
+                  label: label,
+                  selected: weeks == selected,
+                  onTap: () => ref
+                      .read(progressPeriodWeeksProvider.notifier)
+                      .state = weeks,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One segment of the period control — a raised white pill when selected, transparent otherwise.
+class _PeriodSegment extends StatelessWidget {
+  const _PeriodSegment({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: AppDurations.fast,
+        height: 32,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? gb.card : Colors.transparent,
+          borderRadius: BorderRadius.circular(AppRadius.sm - 3),
+          boxShadow: selected ? AppShadows.sm : null,
+        ),
+        child: Text(
+          label,
+          // App font, tight tracking — the data-channel period labels read tight (no custom font).
+          style: AppText.mono(const TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0,
+          )).copyWith(color: selected ? gb.progInk : gb.progInk3),
+        ),
+      ),
+    );
+  }
+}
+
+// ── "How this is counted" transparency sheets ────────────────────────────────
+
+/// The four Progress sections that carry a "how this is counted" transparency sheet.
+enum _HowCounted { thisWeek, strength, consistency, nutrition }
+
+/// Title + plain-language body for each section's transparency sheet. The copy is intentionally
+/// apostrophe-free and phrased "over the selected period" so it stays accurate with the period control.
+extension _HowCountedCopy on _HowCounted {
+  String get title => switch (this) {
+        _HowCounted.thisWeek => 'This Week',
+        _HowCounted.strength => 'Strength',
+        _HowCounted.consistency => 'Consistency',
+        _HowCounted.nutrition => 'Nutrition',
+      };
+
+  String get body => switch (this) {
+        _HowCounted.thisWeek =>
+          'Completed sessions in the current week (Mon to Sun, your time zone) versus your weekly plan goal. Rest days count — the goal is number of sessions, not every day.',
+        _HowCounted.strength =>
+          'Estimated 1RM per lift from your top working set (Epley formula), over the selected period. A lift appears once it has at least 4 qualifying sessions. Flat / has not moved means no new best in your last few exposures.',
+        _HowCounted.consistency =>
+          'The percent of weeks you hit your session goal, over the selected period. The grid marks each day you trained. With no goal set, we show your session count instead.',
+        _HowCounted.nutrition =>
+          'Calories you logged each day (all foods). The dashed line is your plan calories on days that have a plan — days with no plan show your intake only.',
+      };
+}
+
+/// Opens the section's "how this is counted" transparency sheet (reuses the app [showGbSheet] pattern,
+/// with a [GbSheetHeader] + the plain-language body).
+void _showHowSheet(BuildContext context, _HowCounted section) {
+  showGbSheet<void>(
+    context,
+    builder: (_) => _HowCountedSheet(section: section),
+  );
+}
+
+/// The transparency sheet body — a sheet header ("How <Section> is counted") + the section's plain
+/// explanation. Graphite tokens, app font; no numbers, no fabricated data.
+class _HowCountedSheet extends StatelessWidget {
+  const _HowCountedSheet({required this.section});
+  final _HowCounted section;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.md, AppSpacing.md, AppSpacing.md, AppSpacing.md),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GbSheetHeader(title: 'How ${section.title} is counted'),
+          const SizedBox(height: AppSpacing.sm + 2),
+          Text(
+            section.body,
+            style: TextStyle(fontSize: 13.5, height: 1.5, color: gb.progInk2),
+          ),
+        ],
       ),
     );
   }
@@ -228,7 +431,18 @@ class _ThisWeekSection extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            const _MonoLabel('This week', color: heroMut),
+            // Eyebrow + the "how this is counted" info button. The button is tinted on hero ink
+            // (heroMut) since the hero sits on the dark navy panel, not the paper page.
+            Row(
+              children: [
+                const Expanded(child: _MonoLabel('This week', color: heroMut)),
+                _InfoButton(
+                  onTap: () => _showHowSheet(context, _HowCounted.thisWeek),
+                  semanticLabel: 'How This Week is counted',
+                  color: heroMut,
+                ),
+              ],
+            ),
             const SizedBox(height: AppSpacing.sm),
             // The verdict headline — green (hero-pos) or neutral white, NEVER red (PHASE-1 §1 card 1a).
             _HeadlineText(
@@ -423,7 +637,8 @@ class _StrengthSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const _SectionTitle('Strength'),
+        _SectionTitle('Strength',
+            onInfo: () => _showHowSheet(context, _HowCounted.strength)),
         const SizedBox(height: AppSpacing.sm),
         if (lifts.isEmpty)
           const _QuietCard(
@@ -654,7 +869,8 @@ class _ConsistencySection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const _SectionTitle('Consistency'),
+        _SectionTitle('Consistency',
+            onInfo: () => _showHowSheet(context, _HowCounted.consistency)),
         const SizedBox(height: AppSpacing.sm),
         _ProgCard(
           padding: const EdgeInsets.all(18),
@@ -1424,7 +1640,8 @@ class _NutritionSection extends ConsumerWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const _SectionTitle('Nutrition'),
+            _SectionTitle('Nutrition',
+                onInfo: () => _showHowSheet(context, _HowCounted.nutrition)),
             const SizedBox(height: AppSpacing.sm),
             if (a.recentDays.isNotEmpty)
               // Any logged days (planned or ad-hoc, all-source) → the consumed-kcal trend.

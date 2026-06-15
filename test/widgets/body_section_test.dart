@@ -182,13 +182,11 @@ void main() {
       repo: repo,
     );
 
-    // The real provider read the (empty) goal_weight series once on first build.
-    final readsBeforeWrite = repo.goalReads;
-    expect(readsBeforeWrite, greaterThanOrEqualTo(1));
-
     // Open the sheet from the affordance. Scroll the page fully to the bottom first so the affordance
     // sits comfortably above the fold (scrollUntilVisible alone can leave it pinned at the very edge,
-    // where the tap offset misses the hit box).
+    // where the tap offset misses the hit box). Scrolling here also mounts the Body card — which now
+    // sits below the new period bar — so the real goalWeightProvider subscribes + reads before we
+    // snapshot the count below.
     final affordance = find.text('Set a goal weight');
     final scrollable = find.byType(Scrollable).first;
     await tester.scrollUntilVisible(affordance, 300, scrollable: scrollable);
@@ -196,6 +194,11 @@ void main() {
     await tester.pumpAndSettle();
     await tester.ensureVisible(affordance);
     await tester.pumpAndSettle();
+
+    // The real provider read the (empty) goal_weight series once the Body card mounted.
+    final readsBeforeWrite = repo.goalReads;
+    expect(readsBeforeWrite, greaterThanOrEqualTo(1));
+
     await tester.tap(affordance);
     await tester.pumpAndSettle();
     expect(find.text('Save goal'), findsOneWidget);
@@ -231,14 +234,21 @@ class _FakeProgressRepository implements ProgressRepository {
   // The screen only invalidates goalWeightProvider (which goes through the overridden provider in the
   // test, not this method) — but implement the rest of the surface defensively.
   @override
-  Future<ProgressOverview> overview() async =>
+  Future<ProgressOverview> overview({int? weeks}) async =>
       ProgressOverview.fromJson(const {});
 
   @override
-  Future<ExerciseE1rmSeries> exerciseE1rmSeries(String exerciseId) async =>
+  Future<ExerciseE1rmSeries> exerciseE1rmSeries(
+    String exerciseId, {
+    DateTime? from,
+    DateTime? to,
+  }) async =>
       ExerciseE1rmSeries.fromJson({'exerciseId': exerciseId});
 
   @override
-  Future<NutritionAdherence> nutritionAdherence() async =>
+  Future<NutritionAdherence> nutritionAdherence({
+    DateTime? from,
+    DateTime? to,
+  }) async =>
       NutritionAdherence.fromJson(const {});
 }
