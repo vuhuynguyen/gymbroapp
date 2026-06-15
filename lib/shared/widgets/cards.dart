@@ -200,6 +200,8 @@ class GbTappableRow extends StatelessWidget {
     this.trailing = const Icon(Icons.chevron_right),
     this.onTap,
     this.dashed = false,
+    this.color,
+    this.border,
     this.padding = const EdgeInsets.all(AppSpacing.sm),
     super.key,
   });
@@ -213,6 +215,8 @@ class GbTappableRow extends StatelessWidget {
   final Widget? trailing;
   final VoidCallback? onTap;
   final bool dashed;
+  final Color? color;
+  final Color? border;
   final EdgeInsetsGeometry padding;
 
   @override
@@ -222,6 +226,8 @@ class GbTappableRow extends StatelessWidget {
       onTap: onTap,
       dashed: dashed,
       shadow: !dashed,
+      color: color,
+      border: border,
       padding: padding,
       child: Row(
         children: [

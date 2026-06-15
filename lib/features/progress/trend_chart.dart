@@ -20,7 +20,19 @@ double e1rmValue(E1rmSeriesPoint p) => p.sessionBestE1rmKg;
 /// Alternate plotted value: the top working-set weight that session (null → 0).
 double weightValue(E1rmSeriesPoint p) => p.topSetWeightKg ?? 0;
 
-class TrendChart extends StatelessWidget {
+const _months = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec' //
+];
+
+/// "15 Jun" — compact tooltip date; empty when the point has no date.
+String _shortDate(DateTime? d) =>
+    d == null ? '' : '${d.day} ${_months[d.month - 1]}';
+
+/// Left gutter reserved for the y-axis labels — shared by the painter and the tap hit-test.
+const double _leftGutter = 34.0;
+
+class TrendChart extends StatefulWidget {
   const TrendChart({
     required this.points,
     required this.hasTrend,
@@ -44,7 +56,7 @@ class TrendChart extends StatelessWidget {
   /// Whether the 4-point honesty gate is cleared — gates the connecting line on/off.
   final bool hasTrend;
 
-  /// The e1RM line colour (direction-tinted by the caller).
+  /// The line colour (direction-tinted by the caller).
   final Color line;
 
   /// Faint raw-point colour.
@@ -57,19 +69,55 @@ class TrendChart extends StatelessWidget {
   final Color label;
 
   @override
+  State<TrendChart> createState() => _TrendChartState();
+}
+
+class _TrendChartState extends State<TrendChart> {
+  /// The tapped point whose date+value tooltip is shown; null = none. Tapping it again clears it.
+  int? _selected;
+
+  @override
+  void didUpdateWidget(TrendChart old) {
+    super.didUpdateWidget(old);
+    // Clear a stale selection when the series or metric changes under us.
+    if (old.metricId != widget.metricId ||
+        old.points.length != widget.points.length) {
+      _selected = null;
+    }
+  }
+
+  void _onTapDown(Offset local, double width) {
+    final n = widget.points.length;
+    if (n == 0) return;
+    final plotW = (width - _leftGutter).clamp(1.0, double.infinity);
+    final idx = n == 1
+        ? 0
+        : (((local.dx - _leftGutter) / plotW).clamp(0.0, 1.0) * (n - 1))
+            .round();
+    setState(() => _selected = _selected == idx ? null : idx);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: TrendPainter(
-        points: points,
-        hasTrend: hasTrend,
-        line: line,
-        raw: raw,
-        pr: pr,
-        label: label,
-        valueOf: valueOf,
-        metricId: metricId,
+    return LayoutBuilder(
+      builder: (context, constraints) => GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTapDown: (d) => _onTapDown(d.localPosition, constraints.maxWidth),
+        child: CustomPaint(
+          painter: TrendPainter(
+            points: widget.points,
+            hasTrend: widget.hasTrend,
+            line: widget.line,
+            raw: widget.raw,
+            pr: widget.pr,
+            label: widget.label,
+            valueOf: widget.valueOf,
+            metricId: widget.metricId,
+            selectedIndex: _selected,
+          ),
+          size: Size.infinite,
+        ),
       ),
-      size: Size.infinite,
     );
   }
 }
@@ -85,9 +133,11 @@ class TrendPainter extends CustomPainter {
     required this.label,
     this.valueOf = e1rmValue,
     this.metricId = 'e1rm',
+    this.selectedIndex,
   });
   final List<E1rmSeriesPoint> points;
   final bool hasTrend;
+  final int? selectedIndex;
   final Color line;
   final Color raw;
   final Color pr;
@@ -125,7 +175,7 @@ class TrendPainter extends CustomPainter {
     final (minV, maxV, span) = _bounds;
 
     // Reserve a left gutter for the min/max y labels and a little top/bottom breathing room.
-    const leftGutter = 34.0;
+    const leftGutter = _leftGutter;
     const topPad = 10.0;
     const bottomPad = 10.0;
     final plotLeft = leftGutter;
@@ -176,6 +226,37 @@ class TrendPainter extends CustomPainter {
       canvas.drawCircle(c, 6.5, prRing);
       canvas.drawCircle(c, 3.6, prFill);
     }
+
+    // Tapped point: emphasise it and float a date · value tooltip (clamped inside the plot).
+    final sel = selectedIndex;
+    if (sel != null && sel >= 0 && sel < n) {
+      final c = Offset(x(sel), y(values[sel]));
+      canvas.drawCircle(
+          c, 5.5, Paint()..color = line..style = PaintingStyle.stroke..strokeWidth = 2);
+      canvas.drawCircle(c, 3, Paint()..color = line);
+
+      final tp = TextPainter(
+        text: TextSpan(
+          text: '${_shortDate(points[sel].date)} · ${fmtKg(values[sel])} kg',
+          style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+              fontFeatures: [FontFeature.tabularFigures()]),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      const pad = 6.0;
+      final boxW = tp.width + pad * 2;
+      final boxH = tp.height + pad * 2;
+      final bx = (c.dx - boxW / 2).clamp(plotLeft, plotRight - boxW);
+      var by = c.dy - 10 - boxH;
+      if (by < plotTop) by = c.dy + 10; // no room above → drop below the point
+      final r = RRect.fromRectAndRadius(
+          Rect.fromLTWH(bx, by, boxW, boxH), const Radius.circular(6));
+      canvas.drawRRect(r, Paint()..color = line);
+      tp.paint(canvas, Offset(bx + pad, by + pad));
+    }
   }
 
   void _drawLabel(Canvas canvas, String text, Offset at, Color color) {
@@ -196,6 +277,7 @@ class TrendPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(TrendPainter old) =>
+      old.selectedIndex != selectedIndex ||
       old.metricId != metricId ||
       old.hasTrend != hasTrend ||
       old.line != line ||
