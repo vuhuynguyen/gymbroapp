@@ -2,7 +2,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/models/coach_models.dart';
 import '../../data/models/plan_models.dart';
+import '../../data/models/progress_models.dart';
 import '../../data/models/tenant_models.dart';
+import '../../data/repositories/coach_progress_repository.dart';
 import '../../data/repositories/plan_repository.dart';
 import '../../data/repositories/session_repository.dart';
 import '../../data/repositories/tenant_repository.dart';
@@ -115,4 +117,37 @@ final clientMonitorProvider = FutureProvider.autoDispose
       .read(sessionRepositoryProvider)
       .list(traineeId: clientId, pageSize: 20);
   return ClientMonitorData(assignments: assignments, sessions: sessions.items);
+});
+
+// ── Coach Progress surface (Phase 2b) — tenant-scoped, own gym only ──
+// Both providers watch [activeTenantIdProvider] so they refetch (and reset) on a workspace switch —
+// the coach's roster and any per-client trend are gym-specific. They return empty when there's no
+// active tenant rather than firing a tenant-less read (which would be ambiguous / leak-prone).
+
+/// The coach roster — an at-risk-first triage list of the active gym's clients
+/// (`GET /api/clients/progress/roster`). Tenant-scoped (the `AuthInterceptor` sends `X-Tenant-Id`).
+final coachRosterProvider = FutureProvider.autoDispose<Roster>((ref) async {
+  final tenantId = ref.watch(activeTenantIdProvider);
+  if (tenantId == null) return const Roster(items: []);
+  return ref.read(coachProgressRepositoryProvider).roster();
+});
+
+/// One client's per-lift strength trend, built from TENANT-SCOPED sessions (own gym)
+/// (`GET /api/clients/{traineeId}/progress/strength`). Keyed by `traineeId`; watches
+/// [activeTenantIdProvider] so it refetches on a gym switch. The server 403/404s a non-member id.
+final clientStrengthProvider = FutureProvider.autoDispose
+    .family<List<ExerciseE1rmSeries>, String>((ref, traineeId) async {
+  ref.watch(activeTenantIdProvider);
+  return ref.read(coachProgressRepositoryProvider).clientStrength(traineeId);
+});
+
+/// One client's acute-vs-chronic workload, built from TENANT-SCOPED sessions (own gym)
+/// (`GET /api/clients/{traineeId}/progress/load`, Phase 4 / Decision D14). Keyed by `traineeId`;
+/// watches [activeTenantIdProvider] so it refetches on a gym switch. Loads independently of
+/// [clientStrengthProvider] so the workload card never blocks the strength trends above it — the
+/// server 403/404s a non-member id (surfaced as a real error, never masked / rescoped to self).
+final clientLoadProvider = FutureProvider.autoDispose
+    .family<AcuteChronicLoad, String>((ref, traineeId) async {
+  ref.watch(activeTenantIdProvider);
+  return ref.read(coachProgressRepositoryProvider).clientLoad(traineeId);
 });

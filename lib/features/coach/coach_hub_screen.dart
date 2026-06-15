@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../shared/widgets/widgets.dart';
 import '../tenant/tenant_controller.dart';
@@ -39,14 +40,22 @@ class _CoachHubScreenState extends ConsumerState<CoachHubScreen> {
             title: 'Coach',
             subtitle: workspace,
             actions: [
-              // Invite belongs to the roster — hide it on the Plans segment.
-              if (onClients)
+              // Progress + Invite belong to the roster — hide them on the Plans segment. Progress
+              // opens the at-risk-first triage roster (the coach Progress surface, Phase 2b).
+              if (onClients) ...[
+                GbIconButton(
+                  icon: Icons.insights_outlined,
+                  semanticLabel: 'Client progress',
+                  onTap: () => context.push('/coach-progress'),
+                ),
+                const SizedBox(width: AppSpacing.xs),
                 GbButton(
                   label: 'Invite',
                   icon: Icons.person_add_alt,
                   size: GbButtonSize.sm,
                   onPressed: () => showCoachInviteSheet(context),
                 ),
+              ],
             ],
           ),
           Padding(

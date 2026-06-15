@@ -63,6 +63,26 @@ abstract final class AppText {
         bodyColor: AppPalette.grey900,
         displayColor: AppPalette.grey900,
       );
+
+  // ── Mono data channel (Progress "Graphite" — `.gb-mono` / `.gb-num` / `.gb-label`) ──
+  // JetBrains Mono with tabular figures, for the Progress tab's instrument-grade
+  // numerals, deltas, and tracked micro-labels. Inter Tight stays the sans
+  // channel everywhere else; this is the dedicated data channel.
+
+  /// JetBrains Mono with tabular figures (`.gb-mono`) — wraps any base style.
+  /// Used for stat numerals, the DirTag delta, and mono captions.
+  static TextStyle mono(TextStyle base) =>
+      GoogleFonts.jetBrainsMono(textStyle: base, fontFeatures: _tnum);
+
+  /// Mono uppercase micro-label (`.gb-label`) — 10px / 600, uppercase. Tightened to +0.05em
+  /// (from the design's looser 0.12em) for a less spaced-out read on these tracked eyebrows.
+  /// Caller uppercases the text; color defaults are applied at the call site.
+  static TextStyle monoLabel() => GoogleFonts.jetBrainsMono(
+        fontSize: 10,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.5,
+        fontFeatures: _tnum,
+      );
 }
 
 /// Apply the design's tabular-figure treatment to any style (e.g. `AppText.rowTitle.tabular`).

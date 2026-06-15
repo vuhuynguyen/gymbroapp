@@ -1,0 +1,164 @@
+/* ============================================================
+   GymBro Progress — visual system
+   Premium fitness aesthetic built on the brand blue. Rich
+   blue-tinted neutrals (never pure black/white), deep navy
+   signature surfaces, a monospace data channel, and brand
+   color used with intent for recognition + hierarchy.
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+:root {
+  --sans: 'Inter Tight', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* Ink ramp — navy-tinted, never pure black */
+  --ink:   #121a2c;
+  --ink2:  #4b5670;
+  --ink3:  #7c879f;
+  --ink4:  #a6b0c4;
+
+  /* Backgrounds + surfaces — cool, blue-tinted, layered for depth */
+  --paper:  #e7ebf3;
+  --paper2: #eef1f7;
+  --card:   #ffffff;
+  --card2:  #f3f6fc;
+  --line:   #dde3ef;
+  --line2:  #e7ecf4;
+  --field:  #d2d9e6;
+
+  /* Brand blue — recognition, hierarchy, energy (used with intent) */
+  --brand:       #2563eb;
+  --brand-strong:#1d4ed8;
+  --brand-grad:  linear-gradient(160deg, #3f8bf7 0%, #2563eb 58%, #1f4fd0 100%);
+  --brand-soft:  #ebf2ff;
+  --brand-ink:   #1d4ed8;
+  --ring:        #3b82f6;
+
+  /* Semantic — honest data signals only */
+  --pos: #157a4a;  --pos-bg: #e7f3ed;
+  --warn:#8a6312;  --warn-bg:#f3eddf;
+  --neg: #ad3b32;  --neg-bg: #f4e9e8;
+
+  /* Primary action = brand blue */
+  --btn-bg: #2563eb;  --btn-fg: #ffffff;
+
+  /* Hero — deep brand-navy signature panel (subtle tonal depth) */
+  --hero-bg: linear-gradient(156deg, #2f64da 0%, #2150c2 58%, #1c44ac 100%);
+  --hero-fg: #ffffff;
+  --hero-mut: rgba(223,233,255,0.74);
+  --hero-line: rgba(255,255,255,0.18);
+  --hero-track: rgba(255,255,255,0.22);
+  --hero-ring: #cfe0ff;
+  --hero-pos: #74e6b0;
+  --hero-shadow: 0 1px 0 rgba(255,255,255,0.16) inset, 0 18px 36px -22px rgba(33,72,190,0.5), 0 2px 6px -2px rgba(33,72,190,0.28);
+
+  /* Consistency heatmap — single-hue brand-blue sequential ramp */
+  --heat0: #e3e8f3;
+  --heat1: #c2d6f7;
+  --heat2: #8bb2f0;
+  --heat3: #4f8ae8;
+  --heat4: #2563eb;
+
+  /* Radii — consistent, crisp */
+  --rc: 16px;   /* cards */
+  --rh: 18px;   /* hero */
+  --rs: 12px;   /* buttons */
+  --rt: 11px;   /* icon tiles */
+  --rchip: 7px;
+
+  /* Elevation — soft, navy-tinted, layered; inner top highlight */
+  --sh:  0 1px 2px rgba(16,28,64,0.05), 0 6px 18px -10px rgba(16,28,64,0.12), inset 0 1px 0 rgba(255,255,255,0.7);
+  --sh2: 0 2px 4px rgba(16,28,64,0.08), 0 14px 32px -14px rgba(16,28,64,0.20), inset 0 1px 0 rgba(255,255,255,0.6);
+  --inset: inset 0 1px 2px rgba(16,28,64,0.045);
+}
+
+.gb-dark {
+  --ink:  #eaeefb;
+  --ink2: #98a4be;
+  --ink3: #6d7a98;
+  --ink4: #4a5673;
+
+  --paper:  #080d1a;
+  --paper2: #0c1322;
+  --card:   #121b33;
+  --card2:  #172140;
+  --line:   #263458;
+  --line2:  #1d294a;
+  --field:  #303f63;
+
+  --brand:       #4b8bf5;
+  --brand-strong:#2f6bff;
+  --brand-grad:  linear-gradient(160deg, #5f9bff 0%, #2f6bff 58%, #285fe0 100%);
+  --brand-soft:  rgba(75,139,245,0.15);
+  --brand-ink:   #9cc0fb;
+  --ring:        #5b9bff;
+
+  --pos: #3cc184;  --pos-bg: rgba(60,193,132,0.13);
+  --warn:#d0a043;  --warn-bg:rgba(208,160,67,0.13);
+  --neg: #d97169;  --neg-bg: rgba(217,113,105,0.13);
+
+  --btn-bg: #2f6bff;  --btn-fg: #ffffff;
+
+  --hero-bg: linear-gradient(156deg, #2a5ccd 0%, #1f49b2 60%, #193f99 100%);
+  --hero-fg: #ffffff;
+  --hero-mut: rgba(216,227,255,0.70);
+  --hero-line: rgba(255,255,255,0.16);
+  --hero-track: rgba(255,255,255,0.20);
+  --hero-ring: #cfe0ff;
+  --hero-pos: #5fdca6;
+  --hero-shadow: 0 1px 0 rgba(255,255,255,0.12) inset, 0 22px 44px -24px rgba(0,0,0,0.6);
+
+  --heat0: rgba(255,255,255,0.055);
+  --heat1: #1d3463;
+  --heat2: #2f5bb0;
+  --heat3: #3f7ce0;
+  --heat4: #5f9dff;
+
+  --sh:  0 1px 2px rgba(0,0,0,0.5), 0 10px 26px -14px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.045);
+  --sh2: 0 2px 4px rgba(0,0,0,0.5), 0 16px 34px -16px rgba(0,0,0,0.62), inset 0 1px 0 rgba(255,255,255,0.05);
+  --inset: inset 0 1px 2px rgba(0,0,0,0.32);
+}
+
+* { box-sizing: border-box; }
+
+/* Type channels */
+.gb-mono { font-family: var(--mono); font-feature-settings: "tnum" 1; letter-spacing: -0.01em; }
+.gb-num  { font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.gb-label {
+  font-family: var(--mono); font-size: 10px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink3);
+  white-space: nowrap;
+}
+
+/* Surfaces */
+.surf       { background: var(--card);  border: 1px solid var(--line); border-radius: var(--rc); box-shadow: var(--sh); }
+.surf-raise { background: var(--card);  border: 1px solid var(--line); border-radius: var(--rc); box-shadow: var(--sh2); }
+.surf-quiet { background: var(--card2); border: 1px solid var(--line2); border-radius: var(--rc); box-shadow: var(--inset); }
+.rule { height: 1px; background: var(--line2); border: 0; }
+
+/* ── Motion — rests on a VISIBLE base state, animates FROM hidden,
+   no fill-mode → a paused preview or reduced-motion shows full UI. ── */
+@keyframes gbDraw { from { stroke-dasharray: 1; stroke-dashoffset: 1; } to { stroke-dasharray: 1; stroke-dashoffset: 0; } }
+@keyframes gbFadeK { from { opacity: 0; } }
+@keyframes gbRingSweep { from { stroke-dashoffset: var(--ring-c); } }
+@keyframes gbShimmer { 0% { background-position: -240px 0; } 100% { background-position: 240px 0; } }
+@keyframes gbSpin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: no-preference) {
+  .gb-spark-path { animation: gbDraw 1.0s .12s cubic-bezier(.4,0,.2,1); }
+  .gb-spark-fill { animation: gbFadeK .7s .2s ease; }
+  .gb-spark-dot  { animation: gbFadeK .5s .8s ease; }
+  .gb-heat-cell  { animation: gbFadeK .45s; }
+  .gb-ring-prog  { animation: gbRingSweep 1.05s cubic-bezier(.3,.85,.3,1); }
+}
+
+.gb-skel {
+  background: linear-gradient(90deg,
+    var(--line2) 25%,
+    color-mix(in srgb, var(--line2) 50%, var(--card)) 50%,
+    var(--line2) 75%);
+  background-size: 480px 100%;
+  animation: gbShimmer 1.25s linear infinite;
+  border-radius: 7px;
+}

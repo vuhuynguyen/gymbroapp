@@ -10,17 +10,51 @@ import '../../shared/widgets/widgets.dart';
 /// The Progress segment of the coach's client monitor — the client's weekly volume trend, recent PRs,
 /// and a client-logged body-data note. Volume/PRs are derived from the same sessions the monitor
 /// already loaded (no extra fetch); body metrics are self-reported via the trainee's daily check-in.
-class ClientProgressPanel extends StatelessWidget {
+///
+/// Stateful so the weekly-volume bucketing + PR filtering run **once per session list**, not on every
+/// rebuild: the host (`_ClientTabs`) `setState`s on each Workouts/Nutrition/Progress segment toggle,
+/// which would otherwise re-run this O(n) derivation over the immutable `sessions` each time. The
+/// derived values are cached and only recomputed when the `sessions` identity changes.
+class ClientProgressPanel extends StatefulWidget {
   const ClientProgressPanel({required this.sessions, super.key});
   final List<SessionSummary> sessions;
 
   @override
-  Widget build(BuildContext context) {
-    final gb = context.gb;
+  State<ClientProgressPanel> createState() => _ClientProgressPanelState();
+}
+
+class _ClientProgressPanelState extends State<ClientProgressPanel> {
+  late List<SessionSummary> _sessions;
+  late List<MapEntry<DateTime, double>> _weekly;
+  late List<SessionSummary> _prs;
+
+  @override
+  void initState() {
+    super.initState();
+    _derive(widget.sessions);
+  }
+
+  @override
+  void didUpdateWidget(covariant ClientProgressPanel old) {
+    super.didUpdateWidget(old);
+    // Re-derive only when a genuinely different session list arrives (the host passes the same
+    // immutable list across segment toggles, so this is an identity check, not a deep compare).
+    if (!identical(widget.sessions, _sessions)) _derive(widget.sessions);
+  }
+
+  void _derive(List<SessionSummary> sessions) {
+    _sessions = sessions;
     final completed =
         sessions.where((s) => s.status == SessionStatus.completed).toList();
-    final weekly = _weeklyVolume(completed);
-    final prs = completed.where((s) => s.prCount > 0).toList();
+    _weekly = _weeklyVolume(completed);
+    _prs = completed.where((s) => s.prCount > 0).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    final weekly = _weekly;
+    final prs = _prs;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
