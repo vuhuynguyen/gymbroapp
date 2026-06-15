@@ -60,6 +60,10 @@ void main() {
       ProviderScope(
         overrides: [
           progressOverviewProvider.overrideWith((ref) async => data),
+          // The Strength section watches strengthLiftsProvider; stub it empty so these hero/strip
+          // tests stay off-network (the "All" glance strip is driven by the overview's topLifts).
+          strengthLiftsProvider
+              .overrideWith((ref) async => const StrengthLifts(lifts: [])),
         ],
         child: MaterialApp(
           theme: AppTheme.light(),

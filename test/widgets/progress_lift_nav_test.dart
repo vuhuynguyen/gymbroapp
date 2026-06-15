@@ -68,6 +68,10 @@ void main() {
           progressOverviewProvider.overrideWith((ref) async => overview),
           exerciseE1rmSeriesProvider
               .overrideWith((ref, id) async => detail),
+          // The Strength section watches strengthLiftsProvider; stub it empty so this nav test stays
+          // off-network (it taps the "All" glance-strip row, driven by the overview's topLifts).
+          strengthLiftsProvider
+              .overrideWith((ref) async => const StrengthLifts(lifts: [])),
         ],
         child: MaterialApp.router(
           theme: AppTheme.light(),

@@ -145,7 +145,7 @@ class LiftDirection {
 }
 
 /// Section 4 — a PR teaser row reusing the existing `/api/me/records` shape (current best per lift,
-/// e1RM-sorted). Display-only in Phase 1.
+/// e1RM-sorted). Taps through to the per-lift e1RM drill-down via `exerciseId`.
 class PersonalRecord {
   const PersonalRecord({
     required this.exerciseId,
@@ -226,6 +226,104 @@ List<double> _asDoubleList(Object? v) {
     if (d != null) out.add(d);
   }
   return List.unmodifiable(out);
+}
+
+// ── Strength lifts (`GET /api/me/exercises/strength-lifts`) ──────────────────
+
+/// One performed lift in the trailing window, for the Strength section's muscle-group / exercise
+/// filtering (`GET /api/me/exercises/strength-lifts?weeks=N&muscleGroup=…`). This is the wider
+/// per-lift list behind the home strip's top-3 glance: every lift the user has trained over the
+/// period, each with its current e1RM, session count, and an honesty-gated direction.
+///
+/// The honesty gate is the same one the overview's top-lift strip uses: [hasTrend] is true only when
+/// the server saw ≥4 qualifying sessions, and [direction] is meaningful ONLY then. A thin lift
+/// (`hasTrend == false`) carries `direction = flat` purely as a default — the client must NOT render a
+/// direction tag or a sparkline for it, only its name + e1RM + session count (never a fabricated
+/// trend). [primaryMuscleGroup] is a camelCase token (one of chest|back|legs|shoulders|arms|core) or
+/// null when the server couldn't resolve the lift's muscle — a null-group lift is never bucketed under
+/// a fabricated chip.
+class StrengthLift {
+  const StrengthLift({
+    required this.exerciseId,
+    this.exerciseName,
+    this.primaryMuscleGroup,
+    required this.sessionCount,
+    required this.currentE1rmKg,
+    required this.hasTrend,
+    required this.direction,
+    required this.stalled,
+    required this.stallSessions,
+    required this.sparkE1rmKg,
+  });
+
+  final String exerciseId;
+  final String? exerciseName;
+
+  /// camelCase muscle token (chest|back|legs|shoulders|arms|core), or null when unresolved. Lowercased
+  /// + trimmed on parse so the client can group/compare without re-normalizing. The chip row renders
+  /// ONLY the groups that actually appear here — never a dead chip for an untrained (or null) group.
+  final String? primaryMuscleGroup;
+
+  /// Qualifying sessions for this lift over the window. Always shown (even for a thin lift) — it's the
+  /// honest "N sessions" caption when there's no trend to draw.
+  final int sessionCount;
+
+  /// Latest session-best working-set e1RM.
+  final double currentE1rmKg;
+
+  /// True only when the honesty gate is met (≥4 qualifying sessions). When false the client shows
+  /// e1RM + [sessionCount] only — no [LiftDirectionTag], no spark.
+  final bool hasTrend;
+
+  /// Trend direction — meaningful ONLY when [hasTrend]. Defaults to [LiftTrendDirection.flat] for a
+  /// thin lift, but the client must not render it in that case.
+  final LiftTrendDirection direction;
+
+  /// Best e1RM not exceeded in the last K exposures (meaningful only with [hasTrend]).
+  final bool stalled;
+
+  /// Exposures since the last new best (0 if not stalled).
+  final int stallSessions;
+
+  /// Up to ~8 recent session-best points, oldest→newest. Empty / thin for a no-trend lift.
+  final List<double> sparkE1rmKg;
+
+  factory StrengthLift.fromJson(Map<String, dynamic> j) => StrengthLift(
+        exerciseId: j['exerciseId'].toString(),
+        exerciseName: asString(j['exerciseName']),
+        // Normalize defensively: lowercase + trim so grouping/compare is canonical; a blank string
+        // collapses to null so it's treated as "unresolved" (never an empty-label chip).
+        primaryMuscleGroup: _muscleToken(j['primaryMuscleGroup']),
+        sessionCount: asInt(j['sessionCount']) ?? 0,
+        currentE1rmKg: asDouble(j['currentE1rmKg']) ?? 0,
+        hasTrend: asBool(j['hasTrend']),
+        direction: LiftTrendDirection.parse(j['direction']),
+        stalled: asBool(j['stalled']),
+        stallSessions: asInt(j['stallSessions']) ?? 0,
+        sparkE1rmKg: _asDoubleList(j['sparkE1rmKg']),
+      );
+}
+
+/// The `strength-lifts` payload — every performed lift over the window, sorted by [StrengthLift.currentE1rmKg]
+/// desc server-side. Always present and empty-but-valid for a new user (`lifts: []`). The client
+/// derives the muscle-chip set from the non-null [StrengthLift.primaryMuscleGroup] values present here.
+class StrengthLifts {
+  const StrengthLifts({required this.lifts});
+
+  /// All performed lifts, e1RM-desc (server-sorted). May be empty.
+  final List<StrengthLift> lifts;
+
+  factory StrengthLifts.fromJson(Map<String, dynamic> j) =>
+      StrengthLifts(lifts: asList(j['lifts'], StrengthLift.fromJson));
+}
+
+/// Canonicalize a wire muscle-group token: lowercase + trim, collapsing null/blank to null (so an
+/// unresolved group is never rendered as an empty chip). Kept loose — any non-blank string is kept
+/// as-is, so an unexpected server token still groups consistently rather than throwing.
+String? _muscleToken(Object? v) {
+  final s = v?.toString().trim().toLowerCase();
+  if (s == null || s.isEmpty) return null;
+  return s;
 }
 
 // ── Phase 2 — per-lift e1RM series (`GET /api/me/exercises/{id}/e1rm-series`) ──
@@ -367,9 +465,17 @@ class MetricSeries {
 ///
 /// Wire shape is the **frozen** `DailyAdherenceDto(LocalDate, AdherencePct, PlannedCount,
 /// CompletedCount)` serialized camelCase (`localDate`, `adherencePct`, …), so `fromJson` reads those
-/// exact keys — not the Dart field names.
+/// exact keys — not the Dart field names. The per-day payload now also carries the **calories** the
+/// CALORIES TREND renders: `consumedKcal` (all-source, ad-hoc + planned) and the plan-derived
+/// `targetKcal` (null when no plan target / hidden) — both parsed defensively so an older payload that
+/// omits them degrades to consumed=0 / no-target rather than throwing.
 class DailyAdherence {
-  const DailyAdherence({this.date, required this.pct});
+  const DailyAdherence({
+    this.date,
+    required this.pct,
+    this.consumedKcal = 0,
+    this.targetKcal,
+  });
 
   /// The log's local calendar day. Null only on a malformed payload — dropped before plotting.
   final DateTime? date;
@@ -377,9 +483,53 @@ class DailyAdherence {
   /// Finalized adherence percent (0–100): completed/substituted planned items ÷ planned items.
   final int pct;
 
+  /// Calories consumed that day, all-source (ad-hoc self-logged + planned). Defaults to 0 on an older
+  /// payload that predates the field — the trend then simply draws a zero-height bar for that day.
+  final int consumedKcal;
+
+  /// Plan-derived target calories for that day, or null when there's no plan target (or it's hidden).
+  /// The trend draws the dashed "Plan" line and the deficit/surplus tint ONLY on days where this is
+  /// present — never a fabricated target on a no-target day.
+  final int? targetKcal;
+
   factory DailyAdherence.fromJson(Map<String, dynamic> j) => DailyAdherence(
         date: asDate(j['localDate']),
         pct: (asInt(j['adherencePct']) ?? 0).clamp(0, 100),
+        // Defensive for older payloads: consumed defaults to 0, target stays null when absent.
+        consumedKcal: (asInt(j['consumedKcal']) ?? 0).clamp(0, 1 << 30),
+        targetKcal: asInt(j['targetKcal']),
+      );
+}
+
+/// One logged day for the **CALORIES-LOGGED LIST** (the ad-hoc-friendly companion to the calories
+/// trend). Unlike [DailyAdherence] (the plan-only trend series under `days`), this row exists for
+/// EVERY day in the endpoint window that has ≥1 logged item from ANY source — plan or ad-hoc — so a
+/// no-plan logger (whose plan-only trend is empty) still sees what they actually logged.
+///
+/// `consumedKcal` is the all-source adherent-item kcal sum (same semantics as the per-day
+/// `DailyAdherence.consumedKcal`); `targetKcal` is the plan-meal kcal sum for that day, nullable
+/// (null when there's no plan / no planned energy / macro targets are hidden) — never fabricated.
+class DayCalories {
+  const DayCalories({
+    this.localDate,
+    required this.consumedKcal,
+    this.targetKcal,
+  });
+
+  /// The logged day's local calendar day. Null only on a malformed payload — dropped before rendering.
+  final DateTime? localDate;
+
+  /// Consumed kcal that day, all-source (ad-hoc self-logged + planned, adherent items only).
+  final int consumedKcal;
+
+  /// Plan-derived target kcal for that day, or null when there's no plan target (or it's hidden). The
+  /// list shows an under/over delta ONLY where this is present — never a fabricated target.
+  final int? targetKcal;
+
+  factory DayCalories.fromJson(Map<String, dynamic> j) => DayCalories(
+        localDate: asDate(j['localDate']),
+        consumedKcal: (asInt(j['consumedKcal']) ?? 0).clamp(0, 1 << 30),
+        targetKcal: asInt(j['targetKcal']),
       );
 }
 
@@ -398,6 +548,7 @@ class NutritionAdherence {
     required this.recentDays,
     this.loggedDaysThisWeek = 0,
     this.hasAnyLogging = false,
+    this.caloriesByDay = const [],
   });
 
   /// Whether the trainee currently follows a meal plan. False → the card shows its invite, never a
@@ -408,31 +559,38 @@ class NutritionAdherence {
   /// closed days this week (the card then leans on the recent strip / invite instead of a ring).
   final int? currentWeekAvgPct;
 
-  /// Recent finalized days, oldest→newest (typically the trailing ~7), for the compact bar strip.
+  /// Recent finalized days, oldest→newest (typically the trailing ~7), for the CALORIES TREND bars
+  /// (each carries `consumedKcal` + optional `targetKcal`).
   final List<DailyAdherence> recentDays;
 
   /// Count of distinct local days the trainee logged nutrition this week — the **honest ad-hoc
   /// tracking signal**. Ad-hoc (no-plan) days are 100% adherence by convention so they're absent from
   /// the adherence %; this count instead makes self-logging *count* on Progress without fabricating a
-  /// 100% ring. Drives the no-plan "You logged N of 7 days this week" state.
+  /// 100% ring. Surfaced as the trend's small days-logged sub-caption.
   final int loggedDaysThisWeek;
 
   /// Whether the trainee has logged any nutrition at all (planned or ad-hoc). Gates the no-plan card:
   /// true → the ad-hoc tracking state; false → the "follow a meal plan" invite (genuinely nothing yet).
   final bool hasAnyLogging;
 
-  /// No closed days to chart yet (but a plan exists) → render a "log a day" nudge, not an empty strip.
-  bool get isEmpty => recentDays.isEmpty;
+  /// Every day in the endpoint window with ≥1 logged item, ANY source (plan or ad-hoc), date-ASCENDING
+  /// — the **CALORIES-LOGGED LIST** source. This is the ad-hoc-friendly companion to [recentDays]: a
+  /// no-plan logger has an empty plan-only [recentDays] trend but still gets rows here. Empty on an
+  /// older payload that predates the field (the list then simply doesn't render).
+  final List<DayCalories> caloriesByDay;
 
   /// Wire shape is the **frozen** `NutritionAdherenceDto(HasPlan, Days, CurrentWeekAvgPct)`
   /// serialized camelCase, extended (D-self-train) with `loggedDaysThisWeek` (int) + `hasAnyLogging`
   /// (bool) so ad-hoc self-logging is recorded on Progress, so the recent series arrives under `days`
   /// (not `recentDays`). Both new fields parse defensively (default 0 / false on an older payload).
+  /// `caloriesByDay` (the all-source CALORIES-LOGGED LIST) parses defensively too: an older payload
+  /// missing the key degrades to an empty list rather than throwing.
   factory NutritionAdherence.fromJson(Map<String, dynamic> j) => NutritionAdherence(
         hasPlan: asBool(j['hasPlan']),
         currentWeekAvgPct: asInt(j['currentWeekAvgPct']),
         recentDays: asList(j['days'], DailyAdherence.fromJson),
         loggedDaysThisWeek: asInt(j['loggedDaysThisWeek']) ?? 0,
         hasAnyLogging: asBool(j['hasAnyLogging']),
+        caloriesByDay: asList(j['caloriesByDay'], DayCalories.fromJson),
       );
 }

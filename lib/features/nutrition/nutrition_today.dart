@@ -109,6 +109,11 @@ class NutritionTodaySection extends ConsumerWidget {
         ],
         const DailyCheckinCard(),
         const SizedBox(height: AppSpacing.gap),
+        // Honest calories-today readout: "Logged Y / Target X" with a thin bar when the plan sets a
+        // target, "Logged Y today" with NO target / bar otherwise. Always shown (plan or self-logger).
+        CaloriesTodayCard(
+            consumedKcal: log.consumedKcal, targetKcal: log.targetKcal),
+        const SizedBox(height: AppSpacing.gap),
         // Off-plan logging leads the food section (an "add" affordance belongs at the top, not buried
         // under the meal list) — always available on an open day, even with no assigned plan.
         if (!log.isClosed) ...[

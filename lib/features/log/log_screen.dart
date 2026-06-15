@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/time/relative_day.dart';
 import '../../data/models/session_models.dart';
 import '../../domain/enums.dart';
 import '../../domain/session_grouping.dart';
@@ -126,7 +127,7 @@ class _TodayPane extends ConsumerWidget {
               status: s.status,
               title: s.workoutName ?? s.programName ?? 'Session',
               source: s.source,
-              relativeTime: _relativeTime(s.startedAt),
+              relativeTime: relativeDayLabel(s.startedAt),
               durationLabel: s.durationSeconds != null
                   ? formatDurationCompact(s.durationSeconds!)
                   : null,
@@ -256,30 +257,6 @@ String _weekdayAbbr(DateTime? d) {
 
 String _fmtVolume(double kg) =>
     kg >= 1000 ? '${(kg / 1000).toStringAsFixed(1)}k' : kg.toStringAsFixed(0);
-
-/// Relative day label for a session row: Today / Yesterday / weekday / d/m.
-String _relativeTime(DateTime? d) {
-  if (d == null) return '';
-  final local = d.toLocal();
-  final today = DateTime.now();
-  final dayOnly = DateTime(local.year, local.month, local.day);
-  final todayOnly = DateTime(today.year, today.month, today.day);
-  final diff = todayOnly.difference(dayOnly).inDays;
-  if (diff == 0) return 'Today';
-  if (diff == 1) return 'Yesterday';
-  if (diff < 7) {
-    return const [
-      'Mon',
-      'Tue',
-      'Wed',
-      'Thu',
-      'Fri',
-      'Sat',
-      'Sun'
-    ][local.weekday - 1];
-  }
-  return '${local.day}/${local.month}';
-}
 
 /// Consecutive-day streak: calendar days (ending today/yesterday) with ≥1 completed session.
 /// A genuine client-derived metric (like Progress); returns 0 when the chain is broken — never faked.
@@ -885,7 +862,7 @@ class _WeekGroupState extends State<_WeekGroup> {
               status: s.status,
               title: s.workoutName ?? s.programName ?? 'Session',
               source: s.source,
-              relativeTime: _relativeTime(s.startedAt),
+              relativeTime: relativeDayLabel(s.startedAt),
               durationLabel: s.durationSeconds != null
                   ? formatDurationCompact(s.durationSeconds!)
                   : null,

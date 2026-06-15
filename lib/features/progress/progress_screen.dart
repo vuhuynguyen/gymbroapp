@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/time/relative_day.dart';
 import '../../data/models/progress_models.dart';
 import '../../data/repositories/progress_repository.dart';
 import '../../shared/widgets/widgets.dart';
@@ -66,6 +67,11 @@ class ProgressScreen extends ConsumerWidget {
                         padding: const EdgeInsets.fromLTRB(AppSpacing.screenH,
                             AppSpacing.md + 4, AppSpacing.screenH, 100),
                         children: [
+                          // The period control sits under the page title, above the glance layer —
+                          // 4w / 8w / 12w (default) / 26w. The This Week hero below stays current-week
+                          // regardless of the selection (it never reads the period).
+                          const _PeriodBar(),
+                          const SizedBox(height: AppSpacing.md),
                           _ThisWeekSection(overview: o),
                           const SizedBox(height: AppSpacing.lg),
                           _StrengthSection(lifts: o.topLifts),
@@ -102,19 +108,29 @@ class _MonoLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    var style = AppText.monoLabel().copyWith(color: color ?? context.gb.progInk3);
+    var style =
+        AppText.monoLabel().copyWith(color: color ?? context.gb.progInk3);
     if (fontSize != null) style = style.copyWith(fontSize: fontSize);
-    return Text(text.toUpperCase(), style: style, maxLines: 1, overflow: TextOverflow.ellipsis);
+    return Text(text.toUpperCase(),
+        style: style, maxLines: 1, overflow: TextOverflow.ellipsis);
   }
 }
 
 /// Section header (design `SectionTitle`) — a 3px brand keyline, an uppercase 12.5/800 ink title, and
-/// a flex hairline rule. The recurring brand signature down the page. (The design's optional right
-/// action links to drill-down screens this Phase-1 flow doesn't route to, so it is intentionally
-/// omitted — the page adds no navigation it can't honour.)
+/// a flex hairline rule. The recurring brand signature down the page. The design's optional right
+/// action slot ([action]) is honoured when a section has navigation it can deliver (the Strength
+/// section's all-exercises picker); the info button still trails it.
 class _SectionTitle extends StatelessWidget {
-  const _SectionTitle(this.text);
+  const _SectionTitle(this.text, {this.onInfo, this.action});
   final String text;
+
+  /// When non-null, a small "how this is counted" info button is rendered at the trailing edge of the
+  /// title rule; tapping it opens the section's transparency sheet.
+  final VoidCallback? onInfo;
+
+  /// An optional right-action widget (e.g. the Strength "All exercises" affordance), rendered just
+  /// before the info button.
+  final Widget? action;
 
   @override
   Widget build(BuildContext context) {
@@ -143,7 +159,57 @@ class _SectionTitle extends StatelessWidget {
         ),
         const SizedBox(width: AppSpacing.xs + 2),
         Expanded(child: Container(height: 1, color: gb.progLine)),
+        if (action != null) ...[
+          const SizedBox(width: AppSpacing.xs),
+          action!,
+        ],
+        if (onInfo != null) ...[
+          const SizedBox(width: AppSpacing.xs),
+          _InfoButton(onTap: onInfo!, semanticLabel: 'How $text is counted'),
+        ],
       ],
+    );
+  }
+}
+
+/// A small "how this is counted" info button (an outline `info` glyph in the muted ink ramp). Used on
+/// each Progress section header — tapping it opens that section's transparency sheet ([_showHowSheet]).
+class _InfoButton extends StatelessWidget {
+  const _InfoButton({
+    required this.onTap,
+    required this.semanticLabel,
+    this.color,
+  });
+  final VoidCallback onTap;
+  final String semanticLabel;
+
+  /// Glyph colour; defaults to the muted `progInk3` for the paper section headers. The hero passes a
+  /// hero-ink tint so the button reads over the dark navy panel.
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return Semantics(
+      button: true,
+      label: semanticLabel,
+      // The InkWell carries the gesture but is excluded from semantics, so this Semantics node is the
+      // single authoritative one for the button (a clean `bySemanticsLabel` target + screen-reader node).
+      child: Material(
+        color: Colors.transparent,
+        shape: const CircleBorder(),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          excludeFromSemantics: true,
+          child: SizedBox(
+            width: 26,
+            height: 26,
+            child: Icon(Icons.info_outline,
+                size: 16, color: color ?? gb.progInk3),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -184,6 +250,154 @@ class _ProgCard extends StatelessWidget {
   }
 }
 
+// ── Period control (4w / 8w / 12w / 26w segmented) ───────────────────────────
+
+/// The Progress page's period control — a compact prog-toned segmented track (4w / 8w / 12w / 26w)
+/// sitting under the page title. Reads/writes [progressPeriodWeeksProvider]; selecting an option
+/// re-requests the overview, the per-lift e1RM series, and the nutrition trend with the new window.
+/// Built inline (not the grey-toned shared [GbSegmented]) so it stays on the Graphite paper ramp.
+class _PeriodBar extends ConsumerWidget {
+  const _PeriodBar();
+
+  /// (weeks, label) options; 12 is the default selection.
+  static const _options = [(4, '4w'), (8, '8w'), (12, '12w'), (26, '26w')];
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final gb = context.gb;
+    final selected = ref.watch(progressPeriodWeeksProvider);
+    return Semantics(
+      label: 'Period',
+      child: Container(
+        padding: const EdgeInsets.all(3),
+        decoration: BoxDecoration(
+          color: gb.progCard2,
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          border: Border.all(color: gb.progLine),
+        ),
+        child: Row(
+          children: [
+            for (final (weeks, label) in _options)
+              Expanded(
+                child: _PeriodSegment(
+                  label: label,
+                  selected: weeks == selected,
+                  onTap: () => ref
+                      .read(progressPeriodWeeksProvider.notifier)
+                      .state = weeks,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One segment of the period control — a raised white pill when selected, transparent otherwise.
+class _PeriodSegment extends StatelessWidget {
+  const _PeriodSegment({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: AppDurations.fast,
+        height: 32,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? gb.card : Colors.transparent,
+          borderRadius: BorderRadius.circular(AppRadius.sm - 3),
+          boxShadow: selected ? AppShadows.sm : null,
+        ),
+        child: Text(
+          label,
+          // App font, tight tracking — the data-channel period labels read tight (no custom font).
+          style: AppText.mono(const TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0,
+          )).copyWith(color: selected ? gb.progInk : gb.progInk3),
+        ),
+      ),
+    );
+  }
+}
+
+// ── "How this is counted" transparency sheets ────────────────────────────────
+
+/// The four Progress sections that carry a "how this is counted" transparency sheet.
+enum _HowCounted { thisWeek, strength, consistency, nutrition }
+
+/// Title + plain-language body for each section's transparency sheet. The copy is intentionally
+/// apostrophe-free and phrased "over the selected period" so it stays accurate with the period control.
+extension _HowCountedCopy on _HowCounted {
+  String get title => switch (this) {
+        _HowCounted.thisWeek => 'This Week',
+        _HowCounted.strength => 'Strength',
+        _HowCounted.consistency => 'Consistency',
+        _HowCounted.nutrition => 'Nutrition',
+      };
+
+  String get body => switch (this) {
+        _HowCounted.thisWeek =>
+          'Completed sessions in the current week (Mon to Sun, your time zone) versus your weekly plan goal. Rest days count — the goal is number of sessions, not every day.',
+        _HowCounted.strength =>
+          'Estimated 1RM per lift from your top working set (Epley formula), over the selected period. A lift appears once it has at least 4 qualifying sessions. Flat / has not moved means no new best in your last few exposures.',
+        _HowCounted.consistency =>
+          'The percent of weeks you hit your session goal, over the selected period. The grid marks each day you trained. With no goal set, we show your session count instead.',
+        _HowCounted.nutrition =>
+          'Calories you logged each day (all foods). The dashed line is your plan calories on days that have a plan — days with no plan show your intake only.',
+      };
+}
+
+/// Opens the section's "how this is counted" transparency sheet (reuses the app [showGbSheet] pattern,
+/// with a [GbSheetHeader] + the plain-language body).
+void _showHowSheet(BuildContext context, _HowCounted section) {
+  showGbSheet<void>(
+    context,
+    builder: (_) => _HowCountedSheet(section: section),
+  );
+}
+
+/// The transparency sheet body — a sheet header ("How <Section> is counted") + the section's plain
+/// explanation. Graphite tokens, app font; no numbers, no fabricated data.
+class _HowCountedSheet extends StatelessWidget {
+  const _HowCountedSheet({required this.section});
+  final _HowCounted section;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.md, AppSpacing.md, AppSpacing.md, AppSpacing.md),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GbSheetHeader(title: 'How ${section.title} is counted'),
+          const SizedBox(height: AppSpacing.sm + 2),
+          Text(
+            section.body,
+            style: TextStyle(fontSize: 13.5, height: 1.5, color: gb.progInk2),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ── Section 1 — This week (DARK HERO: headline verdict + adherence ring) ─────
 
 /// Composes the 5-second verdict line from this week's adherence + the top lifts, then renders the
@@ -202,7 +416,8 @@ class _ThisWeekSection extends StatelessWidget {
     const heroFg = Colors.white;
     const heroMut = Color(0xBDDFE9FF); // --hero-mut (rgba(223,233,255,0.74))
     const heroLine = Color(0x2EFFFFFF); // --hero-line (rgba(255,255,255,0.18))
-    const heroTrack = Color(0x38FFFFFF); // --hero-track (rgba(255,255,255,0.22))
+    const heroTrack =
+        Color(0x38FFFFFF); // --hero-track (rgba(255,255,255,0.22))
     const heroRing = Color(0xFFCFE0FF); // --hero-ring
     const heroShadow = [
       BoxShadow(
@@ -225,10 +440,22 @@ class _ThisWeekSection extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            const _MonoLabel('This week', color: heroMut),
+            // Eyebrow + the "how this is counted" info button. The button is tinted on hero ink
+            // (heroMut) since the hero sits on the dark navy panel, not the paper page.
+            Row(
+              children: [
+                const Expanded(child: _MonoLabel('This week', color: heroMut)),
+                _InfoButton(
+                  onTap: () => _showHowSheet(context, _HowCounted.thisWeek),
+                  semanticLabel: 'How This Week is counted',
+                  color: heroMut,
+                ),
+              ],
+            ),
             const SizedBox(height: AppSpacing.sm),
             // The verdict headline — green (hero-pos) or neutral white, NEVER red (PHASE-1 §1 card 1a).
-            _HeadlineText(overview: overview, fg: heroFg, pos: const Color(0xFF74E6B0)),
+            _HeadlineText(
+                overview: overview, fg: heroFg, pos: const Color(0xFF74E6B0)),
             const SizedBox(height: AppSpacing.md + 2),
             Container(height: 1, color: heroLine),
             const SizedBox(height: AppSpacing.md + 2),
@@ -335,7 +562,8 @@ class _ThisWeekSection extends StatelessWidget {
 /// in hero-pos green, the rest white. Never red (PHASE-1 §1). The composition logic is unchanged from
 /// the prior screen ([_headline]); only the per-fragment colouring is new.
 class _HeadlineText extends StatelessWidget {
-  const _HeadlineText({required this.overview, required this.fg, required this.pos});
+  const _HeadlineText(
+      {required this.overview, required this.fg, required this.pos});
   final ProgressOverview overview;
   final Color fg;
   final Color pos;
@@ -386,7 +614,9 @@ String _goalCaption(WeekAdherence week) {
   final goal = week.goal ?? 0;
   final remaining = goal - week.completedSessions;
   if (remaining <= 0) return 'Goal reached this week';
-  return remaining == 1 ? '1 session to your goal' : '$remaining sessions to your goal';
+  return remaining == 1
+      ? '1 session to your goal'
+      : '$remaining sessions to your goal';
 }
 
 /// "2 days left · rest days count" / "Last day · rest days count" — a forgiving nudge, only with a plan.
@@ -395,52 +625,143 @@ String _daysLeftCaption(WeekAdherence week) {
   if (start == null) return 'Rest days count';
   final now = DateTime.now();
   final today = DateTime(now.year, now.month, now.day);
-  final weekEnd = DateTime(start.year, start.month, start.day)
-      .add(const Duration(days: 6));
+  final weekEnd =
+      DateTime(start.year, start.month, start.day).add(const Duration(days: 6));
   final left = weekEnd.difference(today).inDays;
-  final leftPart = left <= 0
-      ? 'Last day'
-      : (left == 1 ? '1 day left' : '$left days left');
+  final leftPart =
+      left <= 0 ? 'Last day' : (left == 1 ? '1 day left' : '$left days left');
   return '$leftPart · rest days count';
 }
 
-// ── Section 2 — Strength (top-lift direction strip) ─────────────────────────
+// ── Section 2 — Strength (top-lift direction strip + muscle / exercise filters) ──
 
-class _StrengthSection extends StatelessWidget {
+/// The canonical muscle-group buckets, in display order. The chip row renders ONLY the subset of these
+/// that the user has actually trained (derived from the lifts' `primaryMuscleGroup`), so it never shows
+/// a dead chip. Stored lowercase to match the canonicalized wire token; [_muscleLabel] gives the chip
+/// caption.
+const _muscleOrder = ['chest', 'back', 'legs', 'shoulders', 'arms', 'core'];
+
+/// Title-case label for a muscle token's chip / picker group header.
+String _muscleLabel(String token) =>
+    token.isEmpty ? token : '${token[0].toUpperCase()}${token.substring(1)}';
+
+/// Section 2 — Strength. A [ConsumerStatefulWidget] so it can hold the selected muscle-chip state and
+/// watch [strengthLiftsProvider] (the wider per-lift list behind the home top-3 glance). The default
+/// "All" chip keeps the EXISTING top-3 glance strip (driven by the overview's [topLifts]) unchanged.
+/// Selecting a muscle chip swaps in the filtered lift list for that group (reusing [_LiftRow], honest
+/// about thin lifts). The header's right-action opens a searchable all-exercises picker.
+class _StrengthSection extends ConsumerStatefulWidget {
   const _StrengthSection({required this.lifts});
+
+  /// The overview's honesty-gated top lifts — the "All" glance strip (unchanged from Phase 1).
+  final List<LiftDirection> lifts;
+
+  @override
+  ConsumerState<_StrengthSection> createState() => _StrengthSectionState();
+}
+
+class _StrengthSectionState extends ConsumerState<_StrengthSection> {
+  /// The selected muscle chip, or null for "All" (the default — the unchanged top-3 glance strip).
+  String? _muscle;
+
+  @override
+  Widget build(BuildContext context) {
+    final liftsAsync = ref.watch(strengthLiftsProvider);
+    // The trained muscle set drives the chip row; null while loading/errored (chips simply hide).
+    final allLifts = liftsAsync.valueOrNull?.lifts ?? const <StrengthLift>[];
+    final trained = _trainedMuscles(allLifts);
+
+    // If the selected chip's group vanished (period change dropped it), fall back to "All" so we never
+    // render a selected-but-dead chip.
+    final selected = (_muscle != null && trained.contains(_muscle)) ? _muscle : null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionTitle(
+          'Strength',
+          onInfo: () => _showHowSheet(context, _HowCounted.strength),
+          // The all-exercises picker is offered only once there are lifts to list.
+          action: allLifts.isEmpty
+              ? null
+              : _AllExercisesAction(
+                  onTap: () => _showAllExercisesSheet(context, allLifts),
+                ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        // Muscle chip row — "All" plus only the trained groups (never a dead chip). Hidden entirely
+        // until at least one trained group is known.
+        if (trained.isNotEmpty) ...[
+          _MuscleChipRow(
+            trained: trained,
+            selected: selected,
+            onSelect: (m) => setState(() => _muscle = m),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+        ],
+        // "All" → the unchanged top-3 glance strip; a muscle → that group's filtered lift list.
+        if (selected == null)
+          _GlanceStrip(lifts: widget.lifts)
+        else
+          _MuscleLiftList(
+            lifts: [
+              for (final l in allLifts)
+                if (l.primaryMuscleGroup == selected) l
+            ],
+          ),
+      ],
+    );
+  }
+
+  /// The set of trained muscle groups present in [lifts] (non-null tokens only), in canonical display
+  /// order, with any unexpected server token appended after the known set — so the chip row is honest
+  /// (only trained groups) and stable.
+  static List<String> _trainedMuscles(List<StrengthLift> lifts) {
+    final present = <String>{
+      for (final l in lifts)
+        if (l.primaryMuscleGroup != null) l.primaryMuscleGroup!
+    };
+    return [
+      for (final m in _muscleOrder)
+        if (present.contains(m)) m,
+      // Any non-canonical token the server sent still gets a chip (kept stable + de-duped).
+      for (final m in present)
+        if (!_muscleOrder.contains(m)) m,
+    ];
+  }
+}
+
+/// The "All" top-3 glance strip (unchanged from Phase 1): the overview's honesty-gated [topLifts] in a
+/// surface card, with the stall callout row. Extracted verbatim so the "All" chip preserves the exact
+/// existing behavior.
+class _GlanceStrip extends StatelessWidget {
+  const _GlanceStrip({required this.lifts});
   final List<LiftDirection> lifts;
 
   @override
   Widget build(BuildContext context) {
+    if (lifts.isEmpty) {
+      return const _QuietCard(
+        text: 'Log a few working sets to see your strength trend.',
+      );
+    }
     final gb = context.gb;
     final stall = _stallCallout(lifts);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const _SectionTitle('Strength'),
-        const SizedBox(height: AppSpacing.sm),
-        if (lifts.isEmpty)
-          const _QuietCard(
-            text: 'Log a few working sets to see your strength trend.',
-          )
-        else
-          _ProgCard(
-            padding: EdgeInsets.zero,
-            child: Column(
-              children: [
-                for (var i = 0; i < lifts.length; i++) ...[
-                  if (i > 0) _RuleInset(color: gb.progLine2),
-                  _LiftRow(lift: lifts[i]),
-                ],
-                // The stall callout row — a warn dot + "… time to change something" (PHASE-1 §1).
-                if (stall != null) ...[
-                  _RuleInset(color: gb.progLine2),
-                  _StallCallout(lift: stall),
-                ],
-              ],
-            ),
-          ),
-      ],
+    return _ProgCard(
+      padding: EdgeInsets.zero,
+      child: Column(
+        children: [
+          for (var i = 0; i < lifts.length; i++) ...[
+            if (i > 0) _RuleInset(color: gb.progLine2),
+            _LiftRow(lift: lifts[i]),
+          ],
+          // The stall callout row — a warn dot + "… time to change something" (PHASE-1 §1).
+          if (stall != null) ...[
+            _RuleInset(color: gb.progLine2),
+            _StallCallout(lift: stall),
+          ],
+        ],
+      ),
     );
   }
 
@@ -457,30 +778,439 @@ class _StrengthSection extends StatelessWidget {
   }
 }
 
+/// The filtered lift list for a selected muscle chip — every lift in that group (reusing [_LiftRow],
+/// which is honest about thin lifts: a `hasTrend == false` lift shows name + e1RM + "N sessions" with
+/// no direction tag / spark). An empty group shows the existing honest empty state (the [_QuietCard]).
+class _MuscleLiftList extends StatelessWidget {
+  const _MuscleLiftList({required this.lifts});
+  final List<StrengthLift> lifts;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    if (lifts.isEmpty) {
+      return const _QuietCard(
+        text: 'Log a few working sets to see your strength trend.',
+      );
+    }
+    return _ProgCard(
+      padding: EdgeInsets.zero,
+      child: Column(
+        children: [
+          for (var i = 0; i < lifts.length; i++) ...[
+            if (i > 0) _RuleInset(color: gb.progLine2),
+            _LiftRow.fromStrength(lifts[i]),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// The horizontal muscle chip row under the Strength title: "All" plus one chip per trained group. A
+/// scrollable single-line row so a long set never overflows. Reuses the shared prog tints; the selected
+/// chip fills primary, the rest read as quiet outlined pills.
+class _MuscleChipRow extends StatelessWidget {
+  const _MuscleChipRow({
+    required this.trained,
+    required this.selected,
+    required this.onSelect,
+  });
+
+  /// Trained muscle tokens, display-ordered.
+  final List<String> trained;
+
+  /// The selected token, or null for "All".
+  final String? selected;
+
+  /// Called with null for "All", or a muscle token for a group chip.
+  final ValueChanged<String?> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: AppSizes.chipHeight,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        physics: const ClampingScrollPhysics(),
+        children: [
+          _MuscleChip(
+            label: 'All',
+            selected: selected == null,
+            onTap: () => onSelect(null),
+          ),
+          for (final m in trained) ...[
+            const SizedBox(width: AppSpacing.xs),
+            _MuscleChip(
+              label: _muscleLabel(m),
+              selected: selected == m,
+              onTap: () => onSelect(m),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// One muscle chip — a prog-toned selectable pill (primary fill when selected, quiet outline otherwise).
+/// Built inline (not the grey-toned shared [GbChip]) so it stays on the Graphite paper ramp.
+class _MuscleChip extends StatelessWidget {
+  const _MuscleChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    final fg = selected ? Colors.white : gb.progInk2;
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: Material(
+        color: selected ? gb.primary600 : gb.card,
+        shape: StadiumBorder(
+          side: BorderSide(color: selected ? gb.primary600 : gb.progLine),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: Center(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.13,
+                  color: fg,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The Strength header right-action — a small "All exercises" text+chevron affordance that opens the
+/// searchable all-exercises picker. Lives in the [_SectionTitle] action slot.
+class _AllExercisesAction extends StatelessWidget {
+  const _AllExercisesAction({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return Semantics(
+      button: true,
+      label: 'All exercises',
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          excludeFromSemantics: true,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.xs, vertical: 3),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'All exercises',
+                  style: AppText.mono(const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0,
+                  )).copyWith(color: gb.progBrandInk),
+                ),
+                const SizedBox(width: 2),
+                Icon(Icons.chevron_right, size: 15, color: gb.progBrandInk),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Opens the searchable all-exercises picker (reusing the app [showGbSheet] pattern, scrollable). Lists
+/// every performed lift grouped by muscle group, each with its current e1RM; tapping one routes to the
+/// EXISTING per-lift drill-down (`/progress/lift/:exerciseId`) — no new detail screen.
+void _showAllExercisesSheet(BuildContext context, List<StrengthLift> lifts) {
+  showGbSheet<void>(
+    context,
+    scrollable: true,
+    builder: (_) => _AllExercisesSheet(lifts: lifts),
+  );
+}
+
+/// The searchable all-exercises picker (reuses [showGbSheet], scrollable). Lists every performed lift
+/// grouped by muscle group (display-ordered, null/unresolved group last under "Other"), each with its
+/// current e1RM; a live search field filters by lift name. Tapping a lift pops the sheet then routes to
+/// the EXISTING per-lift drill-down (`/progress/lift/:exerciseId`) — no new detail screen is added.
+class _AllExercisesSheet extends StatefulWidget {
+  const _AllExercisesSheet({required this.lifts});
+  final List<StrengthLift> lifts;
+
+  @override
+  State<_AllExercisesSheet> createState() => _AllExercisesSheetState();
+}
+
+class _AllExercisesSheetState extends State<_AllExercisesSheet> {
+  final _search = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  /// Lifts matching the current query (case-insensitive name contains), grouped by muscle in display
+  /// order with an "Other" bucket last for null/unresolved groups. Within a group, the server's e1RM
+  /// desc order is preserved.
+  List<(String, List<StrengthLift>)> _grouped() {
+    final q = _query.trim().toLowerCase();
+    final matched = [
+      for (final l in widget.lifts)
+        if (q.isEmpty || (l.exerciseName ?? '').toLowerCase().contains(q)) l
+    ];
+    final byMuscle = <String, List<StrengthLift>>{};
+    for (final l in matched) {
+      // Null/unresolved → an "other" bucket (never a fabricated muscle group).
+      final key = l.primaryMuscleGroup ?? 'other';
+      (byMuscle[key] ??= []).add(l);
+    }
+    final order = [..._muscleOrder, 'other'];
+    return [
+      for (final m in order)
+        if (byMuscle[m] != null) (m, byMuscle[m]!),
+      // Any non-canonical group, appended after the known set.
+      for (final e in byMuscle.entries)
+        if (!order.contains(e.key)) (e.key, e.value),
+    ];
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    final groups = _grouped();
+    // Cap the sheet at ~80% of screen height; the list scrolls within.
+    final maxH = MediaQuery.of(context).size.height * 0.8;
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: maxH),
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          AppSpacing.md,
+          AppSpacing.md,
+          AppSpacing.md,
+          AppSpacing.md + MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const GbSheetHeader(
+              title: 'All exercises',
+              subtitle: 'Tap a lift to see its trend.',
+            ),
+            const SizedBox(height: AppSpacing.sm + 2),
+            GbSearchField(
+              controller: _search,
+              hint: 'Search exercises…',
+              onChanged: (v) => setState(() => _query = v),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+            Flexible(
+              child: groups.isEmpty
+                  ? Padding(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: AppSpacing.lg),
+                      child: Text(
+                        'No exercises match "${_query.trim()}".',
+                        style: TextStyle(
+                            fontSize: 13.5, height: 1.5, color: gb.progInk3),
+                      ),
+                    )
+                  : ListView(
+                      shrinkWrap: true,
+                      children: [
+                        for (final (muscle, ls) in groups) ...[
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(2, 6, 0, 6),
+                            child: _MonoLabel(
+                              muscle == 'other'
+                                  ? 'Other'
+                                  : _muscleLabel(muscle),
+                              color: gb.progInk3,
+                            ),
+                          ),
+                          for (final l in ls)
+                            _AllExercisesRow(
+                              lift: l,
+                              onTap: () {
+                                Navigator.of(context).pop();
+                                context.push('/progress/lift/${l.exerciseId}');
+                              },
+                            ),
+                          const SizedBox(height: AppSpacing.sm),
+                        ],
+                      ],
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One row in the all-exercises picker — the lift name + its current e1RM (mono), a trailing chevron.
+class _AllExercisesRow extends StatelessWidget {
+  const _AllExercisesRow({required this.lift, required this.onTap});
+  final StrengthLift lift;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(AppRadius.sm),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 4),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  lift.exerciseName ?? 'Exercise',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.14,
+                    color: gb.progInk,
+                  ),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Text.rich(
+                TextSpan(children: [
+                  TextSpan(
+                    text: fmtKg(lift.currentE1rmKg),
+                    style: AppText.mono(const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.3,
+                    )).copyWith(color: gb.progInk2),
+                  ),
+                  TextSpan(
+                    text: ' kg',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: gb.progInk3,
+                    ),
+                  ),
+                ]),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              Icon(Icons.chevron_right, size: 18, color: gb.progInk4),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// A hairline rule inset to match the card's horizontal row padding (design `.rule` with `0 14px`).
 class _RuleInset extends StatelessWidget {
   const _RuleInset({required this.color});
   final Color color;
   @override
-  Widget build(BuildContext context) =>
-      Padding(padding: const EdgeInsets.symmetric(horizontal: 14), child: Container(height: 1, color: color));
+  Widget build(BuildContext context) => Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      child: Container(height: 1, color: color));
 }
 
 /// A single lift row: name · big e1RM (+ "est. 1RM") · gradient sparkline (donut endpoint; dots-only
 /// for <4 pts) · the mono DirTag (PHASE-1 §1 card 2). Tapping it opens the per-lift e1RM drill-down
 /// (`/progress/lift/:exerciseId`, Phase 2). Wrapped in an [InkWell] so the ripple and the
 /// dividers/padding inside the strip card stay intact.
+///
+/// Two construction paths so the SAME visual serves both the home top-3 glance (a [LiftDirection], all
+/// honesty-gated so always a trend) and the muscle-group filtered list (a [StrengthLift], which may be
+/// thin). The named `.lift` ctor is the legacy [LiftDirection] path (unchanged); `.fromStrength`
+/// adapts a [StrengthLift] and respects its `hasTrend` gate — a thin lift shows name + e1RM +
+/// "N sessions" with NO direction tag and NO sparkline (never a fabricated trend, WIRE CONTRACT).
 class _LiftRow extends StatelessWidget {
-  const _LiftRow({required this.lift});
-  final LiftDirection lift;
+  _LiftRow({required LiftDirection lift})
+      : exerciseId = lift.exerciseId,
+        exerciseName = lift.exerciseName,
+        currentE1rmKg = lift.currentE1rmKg,
+        direction = lift.direction,
+        stalled = lift.stalled,
+        stallSessions = lift.stallSessions,
+        sparkE1rmKg = lift.sparkE1rmKg,
+        // The home strip is honesty-gated server-side (≥4 sessions), so it always shows the trend.
+        hasTrend = true,
+        sessionCount = null;
+
+  _LiftRow.fromStrength(StrengthLift lift)
+      : exerciseId = lift.exerciseId,
+        exerciseName = lift.exerciseName,
+        currentE1rmKg = lift.currentE1rmKg,
+        direction = lift.direction,
+        stalled = lift.stalled,
+        stallSessions = lift.stallSessions,
+        sparkE1rmKg = lift.sparkE1rmKg,
+        hasTrend = lift.hasTrend,
+        sessionCount = lift.sessionCount;
+
+  final String exerciseId;
+  final String? exerciseName;
+  final double currentE1rmKg;
+  final LiftTrendDirection direction;
+  final bool stalled;
+  final int stallSessions;
+  final List<double> sparkE1rmKg;
+
+  /// When false (a thin lift), the row drops the direction tag + sparkline and shows the honest
+  /// "N sessions" caption instead — never a fabricated trend.
+  final bool hasTrend;
+
+  /// Session count for the no-trend caption; null on the legacy home-strip path (always a trend there).
+  final int? sessionCount;
 
   @override
   Widget build(BuildContext context) {
     final gb = context.gb;
-    final spark = lift.sparkE1rmKg;
-    final few = spark.length < 4;
+    final spark = sparkE1rmKg;
+    // On the legacy home-strip path (always-trend), a thin spark still degrades the *value* line to a
+    // "log a few more" hint (the original behavior). For the muscle-filtered path the honesty gate is
+    // explicit (`hasTrend`): a thin lift shows e1RM + "N sessions" and no spark/tag at all.
+    final fewSpark = spark.length < 4;
+    final showValueHint = hasTrend && sessionCount == null && fewSpark;
     return InkWell(
-      onTap: () => context.push('/progress/lift/${lift.exerciseId}'),
+      onTap: () => context.push('/progress/lift/$exerciseId'),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
         child: Row(
@@ -491,7 +1221,7 @@ class _LiftRow extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    lift.exerciseName ?? 'Exercise',
+                    exerciseName ?? 'Exercise',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -501,13 +1231,13 @@ class _LiftRow extends StatelessWidget {
                       color: gb.progInk,
                     ),
                   ),
-                  // Design: 4px above the thin-data label, 5px above the e1RM row.
-                  SizedBox(height: few ? 4 : 5),
-                  if (few)
+                  // Design: 4px above the thin-data hint, 5px above the e1RM row.
+                  SizedBox(height: showValueHint ? 4 : 5),
+                  if (showValueHint)
                     _MonoLabel('Log a few more to see trend',
                         color: gb.progInk3, fontSize: 10.5)
                   else
-                    // Big e1RM with a kg unit suffix + an "est. 1RM" micro-label.
+                    // Big e1RM with a kg unit suffix + an "est. 1RM" micro-label — always honest data.
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.baseline,
                       textBaseline: TextBaseline.alphabetic,
@@ -515,7 +1245,7 @@ class _LiftRow extends StatelessWidget {
                         Text.rich(
                           TextSpan(children: [
                             TextSpan(
-                              text: fmtKg(lift.currentE1rmKg),
+                              text: fmtKg(currentE1rmKg),
                               style: AppText.mono(const TextStyle(
                                 fontSize: 21,
                                 fontWeight: FontWeight.w800,
@@ -533,42 +1263,57 @@ class _LiftRow extends StatelessWidget {
                           ]),
                         ),
                         const SizedBox(width: 6),
-                        _MonoLabel('est. 1RM', color: gb.progInk4, fontSize: 9),
+                        _MonoLabel('est. 1RM',
+                            color: gb.progInk4, fontSize: 9),
+                        // A thin (no-trend) lift annotates the honest session count inline instead of
+                        // a (forbidden) fabricated direction tag.
+                        if (!hasTrend && sessionCount != null) ...[
+                          const SizedBox(width: 8),
+                          _MonoLabel(
+                            '${sessionCount!} ${sessionCount == 1 ? 'session' : 'sessions'}',
+                            color: gb.progInk3,
+                            fontSize: 9,
+                          ),
+                        ],
                       ],
                     ),
                 ],
               ),
             ),
-            const SizedBox(width: AppSpacing.sm),
-            // Gradient-filled sparkline (donut endpoint), or dots-only for thin data.
-            // Design `Sparkline width={92} height={36}`.
-            SizedBox(
-              width: 92,
-              height: 36,
-              child: _Sparkline(
-                points: spark,
-                color: sparkColor(gb, lift.direction),
-                cardColor: gb.card,
+            // Sparkline + DirTag ONLY when there's a real trend. A thin lift shows neither — name +
+            // e1RM + "N sessions" only (WIRE CONTRACT: never fabricate a direction for a thin lift).
+            if (hasTrend) ...[
+              const SizedBox(width: AppSpacing.sm),
+              // Gradient-filled sparkline (donut endpoint), or dots-only for thin spark data.
+              // Design `Sparkline width={92} height={36}`.
+              SizedBox(
+                width: 92,
+                height: 36,
+                child: _Sparkline(
+                  points: spark,
+                  color: sparkColor(gb, direction),
+                  cardColor: gb.card,
+                ),
               ),
-            ),
-            const SizedBox(width: AppSpacing.sm),
-            // Design right-aligns the DirTag in a ~78px trailing slot so the deltas line up. As the
-            // last row child it already trails; a 78px min-width box (right-aligned) reserves that
-            // column, and Flexible lets a longer tag shrink rather than overflow (the Expanded name
-            // absorbs the rest).
-            Flexible(
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(minWidth: 78),
-                  child: LiftDirectionTag(
-                    direction: lift.direction,
-                    stalled: lift.stalled,
-                    stallSessions: lift.stallSessions,
+              const SizedBox(width: AppSpacing.sm),
+              // Design right-aligns the DirTag in a ~78px trailing slot so the deltas line up. As the
+              // last row child it already trails; a 78px min-width box (right-aligned) reserves that
+              // column, and Flexible lets a longer tag shrink rather than overflow (the Expanded name
+              // absorbs the rest).
+              Flexible(
+                child: Align(
+                  alignment: Alignment.centerRight,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minWidth: 78),
+                    child: LiftDirectionTag(
+                      direction: direction,
+                      stalled: stalled,
+                      stallSessions: stallSessions,
+                    ),
                   ),
                 ),
               ),
-            ),
+            ],
           ],
         ),
       ),
@@ -610,11 +1355,13 @@ class _StallCallout extends StatelessWidget {
                         "$name hasn't moved in ${lift.stallSessions} sessions — "),
                 TextSpan(
                   text: 'time to change something',
-                  style: TextStyle(color: gb.progWarn, fontWeight: FontWeight.w700),
+                  style: TextStyle(
+                      color: gb.progWarn, fontWeight: FontWeight.w700),
                 ),
                 const TextSpan(text: '.'),
               ]),
-              style: TextStyle(fontSize: 12.5, height: 1.35, color: gb.progInk2),
+              style:
+                  TextStyle(fontSize: 12.5, height: 1.35, color: gb.progInk2),
             ),
           ),
         ],
@@ -645,7 +1392,8 @@ class _ConsistencySection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const _SectionTitle('Consistency'),
+        _SectionTitle('Consistency',
+            onInfo: () => _showHowSheet(context, _HowCounted.consistency)),
         const SizedBox(height: AppSpacing.sm),
         _ProgCard(
           padding: const EdgeInsets.all(18),
@@ -684,7 +1432,8 @@ class _ConsistencySection extends StatelessWidget {
                               ]),
                             ),
                             const SizedBox(height: 8),
-                            _MonoLabel('Hit goal · last 12 wks', color: gb.progInk3),
+                            _MonoLabel('Hit goal · last ${consistency.windowWeeks} wks',
+                                color: gb.progInk3),
                           ],
                         ),
                       )
@@ -788,8 +1537,8 @@ class _HeatLegend extends StatelessWidget {
           Container(
             width: 10,
             height: 10,
-            decoration:
-                BoxDecoration(color: c, borderRadius: BorderRadius.circular(2.5)),
+            decoration: BoxDecoration(
+                color: c, borderRadius: BorderRadius.circular(2.5)),
           ),
         ],
         const SizedBox(width: 5),
@@ -824,9 +1573,9 @@ class _PrSection extends StatelessWidget {
   }
 }
 
-/// A display-only PR teaser row (design) — a brand trophy IconTile (brand-soft fill), the lift name +
-/// a "New best" mono tag (top row only), and a mono caption "140 kg × 3 · est. 1RM 153 · 2d ago". No
-/// tap-through in Phase 1 (PHASE-1 §1 card 4).
+/// A PR teaser row (design) — a brand trophy IconTile (brand-soft fill), the lift name +
+/// a "New best" mono tag (top row only), and a mono caption "140 kg × 3 · est. 1RM 153 · 2d ago".
+/// Taps through to the per-lift e1RM drill-down (`/progress/lift/:exerciseId`), same as a strength row.
 class _PrRow extends StatelessWidget {
   const _PrRow({required this.pr, required this.isBest});
   final PersonalRecord pr;
@@ -841,62 +1590,70 @@ class _PrRow extends StatelessWidget {
     if (when.isNotEmpty) caption.write(' · $when');
 
     return _ProgCard(
-      padding: const EdgeInsets.all(15),
-      child: Row(
-        children: [
-          // Brand trophy tile (brand-soft fill, faint brand border, brand glyph).
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: gb.progBrandSoft,
-              borderRadius: BorderRadius.circular(AppRadius.sm - 1),
-              border: Border.all(color: gb.primary600.withValues(alpha: 0.22)),
-            ),
-            alignment: Alignment.center,
-            child: Icon(Icons.emoji_events, size: 22, color: gb.primary600),
-          ),
-          const SizedBox(width: AppSpacing.sm + 2),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
+      padding: EdgeInsets.zero,
+      child: InkWell(
+        onTap: () => context.push('/progress/lift/${pr.exerciseId}'),
+        child: Padding(
+          padding: const EdgeInsets.all(15),
+          child: Row(
+            children: [
+              // Brand trophy tile (brand-soft fill, faint brand border, brand glyph).
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: gb.progBrandSoft,
+                  borderRadius: BorderRadius.circular(AppRadius.sm - 1),
+                  border:
+                      Border.all(color: gb.primary600.withValues(alpha: 0.22)),
+                ),
+                alignment: Alignment.center,
+                child: Icon(Icons.emoji_events, size: 22, color: gb.primary600),
+              ),
+              const SizedBox(width: AppSpacing.sm + 2),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Flexible(
-                      child: Text(
-                        pr.exerciseName ?? 'Exercise',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.32,
-                          color: gb.progInk,
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            pr.exerciseName ?? 'Exercise',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -0.32,
+                              color: gb.progInk,
+                            ),
+                          ),
                         ),
-                      ),
+                        if (isBest) ...[
+                          const SizedBox(width: AppSpacing.xs + 1),
+                          _MonoLabel('New best',
+                              color: gb.progBrandInk, fontSize: 9),
+                        ],
+                      ],
                     ),
-                    if (isBest) ...[
-                      const SizedBox(width: AppSpacing.xs + 1),
-                      _MonoLabel('New best', color: gb.progBrandInk, fontSize: 9),
-                    ],
+                    const SizedBox(height: 5),
+                    Text(
+                      caption.toString(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.mono(const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w500,
+                      )).copyWith(color: gb.progInk3),
+                    ),
                   ],
                 ),
-                const SizedBox(height: 5),
-                Text(
-                  caption.toString(),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppText.mono(const TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w500,
-                  )).copyWith(color: gb.progInk3),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -951,8 +1708,9 @@ class _BodyTrendCard extends ConsumerWidget {
     // simply renders the "set a goal" affordance instead of the goal line.
     final goalKg = ref.watch(goalWeightProvider).valueOrNull;
     final latest = series.points.last.value;
-    final unitSuffix =
-        (series.unit != null && series.unit!.isNotEmpty) ? ' ${series.unit}' : '';
+    final unitSuffix = (series.unit != null && series.unit!.isNotEmpty)
+        ? ' ${series.unit}'
+        : '';
 
     return _ProgCard(
       child: Column(
@@ -985,13 +1743,15 @@ class _BodyTrendCard extends ConsumerWidget {
             // Distance-to-goal caption, e.g. "3.2 kg to go" / "At your goal weight".
             Text(
               _distanceCaption(latest, goalKg, unitSuffix),
-              style: AppText.mono(const TextStyle(fontSize: 12, fontWeight: FontWeight.w500))
+              style: AppText.mono(const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w500))
                   .copyWith(color: gb.progInk2),
             )
           else
             // No goal yet → the minimal set-a-goal affordance (Phase 3 §1 empty state).
             _SetGoalAffordance(
-              onTap: () => _showSetGoalWeightSheet(context, ref, initialKg: latest),
+              onTap: () =>
+                  _showSetGoalWeightSheet(context, ref, initialKg: latest),
             ),
         ],
       ),
@@ -1025,7 +1785,8 @@ class _GoalChip extends ConsumerWidget {
                   letterSpacing: 0,
                 )).copyWith(color: gb.progPos)),
             const SizedBox(width: AppSpacing.xxs),
-            Icon(Icons.edit_outlined, size: AppSizes.iconXs, color: gb.progInk4),
+            Icon(Icons.edit_outlined,
+                size: AppSizes.iconXs, color: gb.progInk4),
           ],
         ),
       ),
@@ -1049,10 +1810,12 @@ class _SetGoalAffordance extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.flag_outlined, size: AppSizes.iconMd, color: gb.primary600),
+            Icon(Icons.flag_outlined,
+                size: AppSizes.iconMd, color: gb.primary600),
             const SizedBox(width: AppSpacing.xs),
             Text('Set a goal weight',
-                style: AppText.label.copyWith(color: gb.primary600, fontSize: 13)),
+                style:
+                    AppText.label.copyWith(color: gb.primary600, fontSize: 13)),
           ],
         ),
       ),
@@ -1174,7 +1937,8 @@ class _BodyweightPainter extends CustomPainter {
     final plotLeft = leftGutter;
     final plotW = (size.width - plotLeft).clamp(1.0, double.infinity);
     final plotTop = topPad;
-    final plotH = (size.height - topPad - bottomPad).clamp(1.0, double.infinity);
+    final plotH =
+        (size.height - topPad - bottomPad).clamp(1.0, double.infinity);
 
     final n = points.length;
     double x(int i) =>
@@ -1317,9 +2081,7 @@ class _SetGoalWeightSheetState extends State<_SetGoalWeightSheet> {
       _error = null;
     });
     try {
-      await widget.parentRef
-          .read(progressRepositoryProvider)
-          .setGoalWeight(kg);
+      await widget.parentRef.read(progressRepositoryProvider).setGoalWeight(kg);
       // Refetch the goal so the new line shows immediately.
       widget.parentRef.invalidate(goalWeightProvider);
       if (mounted) Navigator.of(context).pop();
@@ -1357,15 +2119,13 @@ class _SetGoalWeightSheetState extends State<_SetGoalWeightSheet> {
             label: 'Goal weight (kg)',
             hint: '75',
             icon: Icons.flag_outlined,
-            keyboardType:
-                const TextInputType.numberWithOptions(decimal: true),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
             textInputAction: TextInputAction.done,
             onSubmitted: (_) => _save(),
           ),
           if (_error != null) ...[
             const SizedBox(height: AppSpacing.xs),
-            Text(_error!,
-                style: AppText.meta.copyWith(color: gb.danger)),
+            Text(_error!, style: AppText.meta.copyWith(color: gb.danger)),
           ],
           const SizedBox(height: AppSpacing.md),
           GbButton(
@@ -1380,15 +2140,16 @@ class _SetGoalWeightSheetState extends State<_SetGoalWeightSheet> {
   }
 }
 
-// ── Section 5b — Nutrition adherence (conditional) ───────────────────────────
+// ── Section 5b — Nutrition CALORIES TREND (conditional) ──────────────────────
 
-/// Recent nutrition adherence (MOBILE-DASHBOARD §5 / Decision **D13**). A `ConsumerWidget` watching
-/// its own `nutritionAdherenceProvider`, so it loads independently and **never blocks §1–4**. When
-/// `hasPlan` is false the trainee follows no meal plan → a "follow a meal plan" invite (never a 0%
-/// ring). With a plan + closed days it renders a compact current-week ring + a 7-day bar strip.
-/// **Quiet** on loading and error (collapses to nothing) — adherence is opt-in evidence, not a
-/// headline. Styled to the Graphite system: a surf-quiet invite, and a surf card for the populated
-/// state, consistent with the Body section.
+/// Recent nutrition as an honest **CALORIES TREND** (MOBILE-DASHBOARD §5 / Decision **D13**, rebuilt).
+/// A `ConsumerWidget` watching its own `nutritionAdherenceProvider`, so it loads independently and
+/// **never blocks §1–4**. The per-day payload now carries `consumedKcal` (all-source) and a plan-derived
+/// `targetKcal` (null when hidden), so the card draws consumed-kcal bars over the trailing window —
+/// the **same bars for plan and no-plan users** (the data is all-source). A faint dashed "Plan" target
+/// line is drawn only on days that actually have a target; bars are tinted deficit/surplus only against
+/// a present target, neutral otherwise. **Quiet** on loading and error (collapses to nothing) —
+/// nutrition is opt-in evidence, not a headline.
 class _NutritionSection extends ConsumerWidget {
   const _NutritionSection();
 
@@ -1399,27 +2160,43 @@ class _NutritionSection extends ConsumerWidget {
       loading: () => const SizedBox.shrink(),
       error: (_, __) => const SizedBox.shrink(),
       data: (a) {
+        // The all-source CALORIES-LOGGED LIST: every logged day (plan or ad-hoc) in the window. When
+        // present it ALWAYS renders, so an ad-hoc/no-plan logger (whose plan-only [recentDays] trend is
+        // empty) can still see what they logged.
+        final hasLog = a.caloriesByDay.isNotEmpty;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const _SectionTitle('Nutrition'),
+            _SectionTitle('Nutrition',
+                onInfo: () => _showHowSheet(context, _HowCounted.nutrition)),
             const SizedBox(height: AppSpacing.sm),
-            if (a.hasPlan)
-              if (a.isEmpty)
-                const _QuietCard(
-                  text: 'Close out a day to see your nutrition adherence.',
-                )
-              else
-                _NutritionAdherenceCard(adherence: a)
+            if (hasLog) ...[
+              // The plan-only consumed-kcal TREND is unchanged — shown only when there are plan days to
+              // chart. The list below stands in for ad-hoc/no-plan loggers (empty [recentDays]).
+              if (a.recentDays.isNotEmpty) ...[
+                _CaloriesTrendCard(adherence: a),
+                const SizedBox(height: AppSpacing.sm),
+              ],
+              // ALWAYS show the all-source list when there's anything logged.
+              _CaloriesLogCard(days: a.caloriesByDay),
+            ] else if (a.recentDays.isNotEmpty)
+              // No list field on the wire (older payload) but plan days exist → the trend, unchanged.
+              _CaloriesTrendCard(adherence: a)
+            else if (a.hasPlan)
+              // A plan, but no closed days yet → a "log a day" nudge, not an empty trend.
+              const _QuietCard(
+                text: 'Close out a day to see your calories trend.',
+              )
             else if (a.hasAnyLogging)
-              // No meal plan, but the trainee self-logs food → an honest ad-hoc tracking state.
-              // Self-training without a plan still counts: we surface the days-logged signal, NEVER a
-              // fabricated 100% adherence ring (ad-hoc days are 100% by convention and absent from %).
-              _NutritionAdHocCard(loggedDays: a.loggedDaysThisWeek)
+              // No plan and some self-logging, but nothing in the recent window to chart yet → the
+              // honest "keep logging" nudge (never a fabricated 100% ring / target).
+              const _QuietCard(
+                text: 'Keep logging to see your calories trend.',
+              )
             else
               // Genuinely nothing logged yet → the follow-a-meal-plan invite (never a 0% ring).
               const _QuietCard(
-                text: 'Follow a meal plan to track nutrition adherence.',
+                text: 'Log your food to see your calories trend.',
               ),
           ],
         );
@@ -1428,135 +2205,56 @@ class _NutritionSection extends ConsumerWidget {
   }
 }
 
-/// The populated nutrition card: a current-week adherence ring (when the server rolled one up) beside
-/// a compact 7-day bar strip + a caption. Graphite tokens, mono caption.
-class _NutritionAdherenceCard extends StatelessWidget {
-  const _NutritionAdherenceCard({required this.adherence});
+/// The CALORIES TREND card: per-day consumed-kcal bars over the trailing window (CustomPaint, no chart
+/// library — D11), a faint dashed "Plan" target line drawn only where a target exists, bars tinted
+/// cool/warm by deficit/surplus only against a present target (neutral otherwise), a small days-logged
+/// sub-caption, and an honest [_caloriesAdvice] line built only from real numbers. Graphite tokens,
+/// app font.
+class _CaloriesTrendCard extends StatelessWidget {
+  const _CaloriesTrendCard({required this.adherence});
   final NutritionAdherence adherence;
 
   @override
   Widget build(BuildContext context) {
     final gb = context.gb;
-    final weekPct = adherence.currentWeekAvgPct;
-    // Recent days, most-recent last; the strip shows the trailing 7.
+    // Recent days, oldest→newest; the trend shows the trailing 7.
     final recent = adherence.recentDays.length > 7
         ? adherence.recentDays.sublist(adherence.recentDays.length - 7)
         : adherence.recentDays;
-
-    return _ProgCard(
-      child: Row(
-        children: [
-          if (weekPct != null) ...[
-            GbRing(
-              value: (weekPct / 100).clamp(0.0, 1.0),
-              size: 64,
-              stroke: 7,
-              gradient: [gb.progRing, gb.primary700],
-              trackColor: gb.progLine,
-              child: Text(
-                '$weekPct%',
-                style: AppText.mono(const TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.w800))
-                    .copyWith(color: gb.progInk),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.md),
-          ],
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _MonoLabel('This week', color: gb.progInk3),
-                const SizedBox(height: AppSpacing.xs),
-                SizedBox(
-                  height: 36,
-                  width: double.infinity,
-                  child: _AdherenceStrip(
-                    days: recent,
-                    bar: gb.progRing,
-                    track: gb.progLine,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  _adherenceCaption(weekPct, recent, adherence.loggedDaysThisWeek),
-                  style: AppText.mono(const TextStyle(fontSize: 12, fontWeight: FontWeight.w500))
-                      .copyWith(color: gb.progInk2),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// The no-plan ad-hoc tracking card: the trainee follows no meal plan but self-logs food, so there is
-/// no adherence % to chart — yet self-training without a plan still **counts**. We surface the honest
-/// days-logged signal (a mono progress strip + "You logged N of 7 days this week"), NEVER a fabricated
-/// 100% ring (ad-hoc days are 100% adherence by convention and are deliberately absent from the %).
-/// Graphite styling, consistent with the populated card.
-class _NutritionAdHocCard extends StatelessWidget {
-  const _NutritionAdHocCard({required this.loggedDays});
-
-  /// Distinct local days logged this week (clamped 0–7 for display).
-  final int loggedDays;
-
-  @override
-  Widget build(BuildContext context) {
-    final gb = context.gb;
-    final logged = loggedDays.clamp(0, 7);
+    // Accurate current-week count for the "this week" caption (the trend bars span the trailing
+    // window, which can reach into last week — so don't label that day count "this week").
+    final loggedThisWeek = adherence.loggedDaysThisWeek;
+    final advice = _caloriesAdvice(recent);
 
     return _ProgCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Text.rich(
-                TextSpan(children: [
-                  TextSpan(
-                    text: '$logged',
-                    style: AppText.mono(const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w800,
-                      height: 0.9,
-                      letterSpacing: -0.8,
-                    )).copyWith(color: gb.progInk),
-                  ),
-                  TextSpan(
-                    text: '/7',
-                    style: AppText.mono(const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                    )).copyWith(color: gb.progInk3),
-                  ),
-                ]),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(child: _MonoLabel('Days logged · this week', color: gb.progInk3)),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.sm + 2),
-          // A 7-segment progress strip — one filled pip per logged day. CustomPaint, no chart lib (D11).
+          _MonoLabel('Calories trend', color: gb.progInk3),
+          const SizedBox(height: AppSpacing.sm),
           SizedBox(
-            height: 8,
+            height: 64,
             width: double.infinity,
-            child: _LoggedDaysStrip(
-              logged: logged,
-              total: 7,
-              fill: gb.progRing,
+            child: _CaloriesTrend(
+              days: recent,
+              neutral: gb.progRing, // cool / under / no-target
+              under: gb.progRing, // under plan → cool
+              over: gb.progWarn, // over plan → warm (attention, never red)
+              target: gb.progInk3, // dashed "Plan" line
               track: gb.progLine,
             ),
           ),
-          const SizedBox(height: AppSpacing.sm + 2),
+          const SizedBox(height: AppSpacing.sm),
+          // Days-logged sub-caption — the honest self-tracking signal, kept small.
+          _MonoLabel(
+            '$loggedThisWeek ${loggedThisWeek == 1 ? 'day' : 'days'} logged · this week',
+            color: gb.progInk4,
+            fontSize: 9.5,
+          ),
+          const SizedBox(height: AppSpacing.xs),
           Text(
-            'You logged $logged of 7 days this week — self-tracking counts.',
+            advice,
             style: TextStyle(fontSize: 12.5, height: 1.45, color: gb.progInk2),
           ),
         ],
@@ -1565,96 +2263,75 @@ class _NutritionAdHocCard extends StatelessWidget {
   }
 }
 
-/// A 7-pip "days logged this week" strip — `logged` filled pips out of `total`, the rest a faint track.
-/// CustomPaint, no chart library (D11); the honest self-logging signal for no-plan trainees.
-class _LoggedDaysStrip extends StatelessWidget {
-  const _LoggedDaysStrip({
-    required this.logged,
-    required this.total,
-    required this.fill,
-    required this.track,
-  });
-  final int logged;
-  final int total;
-  final Color fill;
-  final Color track;
+/// The honest advice line, built ONLY from real numbers — never a fabricated target, deficit, or %.
+///   • No targets anywhere in the window → describe the trend: the average kcal/day over the logged
+///     days (the trend's only honest summary without a target).
+///   • Sparse logging (fewer than 3 logged days) → a nudge: "only N day(s) logged — log more for a
+///     useful trend" (so we never over-read 1–2 points as a trend).
+///   • Targets present on most logged days → compare honestly against the target on **only the days
+///     that have one**: "averaging ~N kcal under/over plan on logged days".
+/// A day without a target NEVER contributes a deficit/surplus number.
+String _caloriesAdvice(List<DailyAdherence> days) {
+  if (days.isEmpty) return 'Log your food to see your calories trend.';
 
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: _LoggedDaysPainter(
-          logged: logged.clamp(0, total), total: total, fill: fill, track: track),
-      size: Size.infinite,
-    );
+  // Sparse logging guard — 1–2 points isn't a trend; nudge to keep logging.
+  if (days.length < 3) {
+    final n = days.length;
+    return 'Only $n ${n == 1 ? 'day' : 'days'} logged — log more for a useful trend.';
   }
-}
 
-class _LoggedDaysPainter extends CustomPainter {
-  _LoggedDaysPainter({
-    required this.logged,
-    required this.total,
-    required this.fill,
-    required this.track,
-  });
-  final int logged;
-  final int total;
-  final Color fill;
-  final Color track;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (total <= 0) return;
-    const gap = 5.0;
-    final pipW = ((size.width - gap * (total - 1)) / total).clamp(1.0, double.infinity);
-    final radius = Radius.circular(math.min(3.0, size.height / 2));
-    for (var i = 0; i < total; i++) {
-      final left = i * (pipW + gap);
-      final rect = RRect.fromRectAndRadius(
-        Rect.fromLTWH(left, 0, pipW, size.height),
-        radius,
-      );
-      canvas.drawRRect(rect, Paint()..color = i < logged ? fill : track);
+  final withTarget = days.where((d) => d.targetKcal != null).toList();
+  // Targets on most logged days → an honest under/over-plan comparison over ONLY those days.
+  if (withTarget.length * 2 >= days.length && withTarget.isNotEmpty) {
+    final avgDelta = withTarget
+            .map((d) => d.consumedKcal - d.targetKcal!)
+            .fold<int>(0, (a, b) => a + b) /
+        withTarget.length;
+    final mag = avgDelta.abs().round();
+    if (mag < 50) {
+      return 'Right around your plan target on logged days.';
     }
+    final dir = avgDelta < 0 ? 'under' : 'over';
+    return 'Averaging ~$mag kcal $dir plan on logged days.';
   }
 
-  @override
-  bool shouldRepaint(_LoggedDaysPainter old) =>
-      old.logged != logged ||
-      old.total != total ||
-      old.fill != fill ||
-      old.track != track;
+  // No (or too few) targets → describe the trend honestly: the average consumed kcal/day.
+  final avgConsumed =
+      days.map((d) => d.consumedKcal).fold<int>(0, (a, b) => a + b) /
+          days.length;
+  return 'Averaging ~${avgConsumed.round()} kcal/day over your logged days.';
 }
 
-/// "Avg 84% this week · logged 5/7 this week" / a recent-days fallback when there's no week roll-up.
-/// [loggedThisWeek] is the honest ad-hoc tracking count (planned + self-logged days this week); when
-/// it's positive we prefer the "logged N/7 this week" fragment over the bare recent-days count, so the
-/// plan card also acknowledges self-logging. Falls back to the recent-days count when it's 0.
-String _adherenceCaption(int? weekPct, List<DailyAdherence> recent, int loggedThisWeek) {
-  final logged = loggedThisWeek > 0
-      ? 'logged ${loggedThisWeek.clamp(0, 7)}/7 this week'
-      : '${recent.length} ${recent.length == 1 ? 'day' : 'days'} logged';
-  if (weekPct != null) return 'Avg $weekPct% this week · $logged';
-  return logged;
-}
-
-/// A compact 7-day adherence bar strip — one bar per recent day, height ∝ that day's %. CustomPaint,
-/// no chart library (D11). A track baseline keeps the strip legible on low-adherence days.
-class _AdherenceStrip extends StatelessWidget {
-  const _AdherenceStrip({
+/// The CALORIES TREND strip — one consumed-kcal bar per recent day, height ∝ consumed kcal (scaled to
+/// the window max). Bars tint cool (under) / warm (over) against a present `targetKcal`, neutral when a
+/// day has no target. A faint dashed "Plan" line/band is drawn at the target height ONLY over days that
+/// have a target. CustomPaint, no chart library (D11).
+class _CaloriesTrend extends StatelessWidget {
+  const _CaloriesTrend({
     required this.days,
-    required this.bar,
+    required this.neutral,
+    required this.under,
+    required this.over,
+    required this.target,
     required this.track,
   });
   final List<DailyAdherence> days;
-  final Color bar;
+  final Color neutral;
+  final Color under;
+  final Color over;
+  final Color target;
   final Color track;
 
   @override
   Widget build(BuildContext context) {
     return CustomPaint(
-      painter: _AdherenceStripPainter(
-        pcts: [for (final d in days) d.pct],
-        bar: bar,
+      painter: _CaloriesTrendPainter(
+        consumed: [for (final d in days) d.consumedKcal],
+        targets: [for (final d in days) d.targetKcal],
+        neutral: neutral,
+        under: under,
+        over: over,
+        target: target,
         track: track,
       ),
       size: Size.infinite,
@@ -1662,49 +2339,231 @@ class _AdherenceStrip extends StatelessWidget {
   }
 }
 
-class _AdherenceStripPainter extends CustomPainter {
-  _AdherenceStripPainter({
-    required this.pcts,
-    required this.bar,
+class _CaloriesTrendPainter extends CustomPainter {
+  _CaloriesTrendPainter({
+    required this.consumed,
+    required this.targets,
+    required this.neutral,
+    required this.under,
+    required this.over,
+    required this.target,
     required this.track,
   });
-  final List<int> pcts;
-  final Color bar;
+
+  /// Consumed kcal per day (all-source), oldest→newest.
+  final List<int> consumed;
+
+  /// Plan target kcal per day, null on days with no target (parallel to [consumed]).
+  final List<int?> targets;
+  final Color neutral;
+  final Color under;
+  final Color over;
+  final Color target;
   final Color track;
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (pcts.isEmpty) return;
+    final n = consumed.length;
+    if (n == 0) return;
+
+    // Scale bars to the largest of any consumed value OR any target — so a day over target still reads
+    // as a taller bar above the plan line, and the line sits inside the plot.
+    var maxV = 0;
+    for (final c in consumed) {
+      if (c > maxV) maxV = c;
+    }
+    for (final t in targets) {
+      if (t != null && t > maxV) maxV = t;
+    }
+    if (maxV <= 0) maxV = 1; // all-zero window → flat track only, no divide-by-zero
+
     const gap = 5.0;
-    final n = pcts.length;
     final barW = ((size.width - gap * (n - 1)) / n).clamp(2.0, double.infinity);
     final radius = Radius.circular(math.min(3.0, barW / 2));
+    double yOf(int kcal) => size.height - (kcal / maxV) * size.height;
 
     for (var i = 0; i < n; i++) {
       final left = i * (barW + gap);
-      // Faint full-height track so empty/low days still register as a column.
-      final trackRect = RRect.fromRectAndRadius(
-        Rect.fromLTWH(left, 0, barW, size.height),
-        radius,
-      );
-      canvas.drawRRect(trackRect, Paint()..color = track);
 
-      final frac = (pcts[i].clamp(0, 100)) / 100.0;
-      final h = (size.height * frac).clamp(0.0, size.height);
-      if (h <= 0) continue;
-      final barRect = RRect.fromRectAndRadius(
-        Rect.fromLTWH(left, size.height - h, barW, h),
-        radius,
+      // Faint full-height track so empty/zero days still register as a column.
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+            Rect.fromLTWH(left, 0, barW, size.height), radius),
+        Paint()..color = track,
       );
-      canvas.drawRRect(barRect, Paint()..color = bar);
+
+      final kcal = consumed[i];
+      final t = targets[i];
+      // Tint ONLY against a present target: under → cool, over → warm; neutral when no target.
+      final Color barColor;
+      if (t == null) {
+        barColor = neutral;
+      } else {
+        barColor = kcal > t ? over : under;
+      }
+
+      final h = ((kcal / maxV) * size.height).clamp(0.0, size.height);
+      if (h > 0) {
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+              Rect.fromLTWH(left, size.height - h, barW, h), radius),
+          Paint()..color = barColor,
+        );
+      }
+
+      // The dashed "Plan" target tick — drawn ONLY on days with a target, spanning that day's column.
+      if (t != null) {
+        final ty = yOf(t).clamp(0.0, size.height);
+        _drawDashedLine(
+          canvas,
+          Offset(left, ty),
+          Offset(left + barW, ty),
+          target.withValues(alpha: 0.7),
+        );
+      }
+    }
+  }
+
+  /// Hand-rolled dashed horizontal line (Canvas has no native dash) for the per-day "Plan" tick.
+  void _drawDashedLine(Canvas canvas, Offset a, Offset b, Color color) {
+    const dash = 4.0;
+    const gap = 3.0;
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.5
+      ..strokeCap = StrokeCap.round;
+    var startX = a.dx;
+    while (startX < b.dx) {
+      final endX = math.min(startX + dash, b.dx);
+      canvas.drawLine(Offset(startX, a.dy), Offset(endX, b.dy), paint);
+      startX += dash + gap;
     }
   }
 
   @override
-  bool shouldRepaint(_AdherenceStripPainter old) =>
-      old.bar != bar ||
+  bool shouldRepaint(_CaloriesTrendPainter old) =>
+      old.neutral != neutral ||
+      old.under != under ||
+      old.over != over ||
+      old.target != target ||
       old.track != track ||
-      !listEquals(old.pcts, pcts);
+      !listEquals(old.consumed, consumed) ||
+      !listEquals(old.targets, targets);
+}
+
+// ── Section 5c — CALORIES-LOGGED LIST (all-source companion to the trend) ─────
+
+/// The **CALORIES-LOGGED LIST** — a compact, most-recent-first list of every day the trainee logged
+/// food (plan OR ad-hoc, all-source), so a no-plan logger (whose plan-only [_CaloriesTrendCard] trend
+/// is empty) still sees what they actually logged. Each row pairs the relative day label
+/// ("Today"/"Yesterday"/"Jun 12") with that day's consumed kcal; on days that also carry a plan
+/// `targetKcal`, a small under/over delta is shown (cool when under, warm when over — NEVER red, and
+/// NEVER a fabricated target on a no-target day). Capped at ~8 rows. Graphite tokens, app font,
+/// tabular numerals.
+class _CaloriesLogCard extends StatelessWidget {
+  const _CaloriesLogCard({required this.days});
+
+  /// Logged days, date-ASCENDING off the wire (every day with ≥1 logged item, any source).
+  final List<DayCalories> days;
+
+  /// Cap the visible rows so the list stays a glance, not a ledger.
+  static const _maxRows = 8;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    // Most-recent-first (the wire is date-ascending), capped.
+    final rows = days.reversed.take(_maxRows).toList(growable: false);
+
+    return _ProgCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _MonoLabel('Calories logged', color: gb.progInk3),
+          const SizedBox(height: AppSpacing.sm),
+          for (var i = 0; i < rows.length; i++) ...[
+            if (i > 0) _RuleInset(color: gb.progLine2),
+            _CaloriesLogRow(day: rows[i]),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// One row of the CALORIES-LOGGED LIST: the relative day label on the left, "X kcal" on the right, and
+/// — only when the day carries a plan target — a small "/ Y" plus an under/over delta tinted
+/// cool/warm (never red). A day with no target shows kcal only (never a fabricated target).
+class _CaloriesLogRow extends StatelessWidget {
+  const _CaloriesLogRow({required this.day});
+  final DayCalories day;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    final target = day.targetKcal;
+    // Delta vs the plan target, only when present. Under → cool (progRing), over → warm (progWarn).
+    final delta = target == null ? null : day.consumedKcal - target;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs + 2),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              relativeDayLabel(day.localDate),
+              style: AppText.mono(const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0,
+              )).copyWith(color: gb.progInk2),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          // Consumed kcal — the always-present right-hand stat.
+          Text(
+            '${day.consumedKcal} kcal',
+            style: AppText.mono(const TextStyle(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0,
+            )).copyWith(color: gb.progInk),
+          ),
+          // Plan target + signed delta — ONLY when a real target exists for the day.
+          if (target != null && delta != null) ...[
+            const SizedBox(width: AppSpacing.xs + 2),
+            Text(
+              '/ $target',
+              style: AppText.mono(const TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0,
+              )).copyWith(color: gb.progInk4),
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Text(
+              delta == 0
+                  ? 'on target'
+                  : '${delta > 0 ? '+' : '−'}${delta.abs()}',
+              style: AppText.mono(const TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0,
+              )).copyWith(
+                // Warm when over, cool when under, muted when exactly on target — never red.
+                color: delta == 0
+                    ? gb.progInk4
+                    : (delta > 0 ? gb.progWarn : gb.progRing),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 }
 
 // ── Shared small pieces ─────────────────────────────────────────────────────
@@ -1722,8 +2581,7 @@ class _QuietCard extends StatelessWidget {
       quiet: true,
       // Design `tier=3` invite copy: 12.5px / ink3 / 1.45 line-height (not the 14px body default).
       child: Text(text,
-          style: TextStyle(
-              fontSize: 12.5, height: 1.45, color: gb.progInk3)),
+          style: TextStyle(fontSize: 12.5, height: 1.45, color: gb.progInk3)),
     );
   }
 }
@@ -1738,9 +2596,21 @@ class _NewUserHero extends StatelessWidget {
   const _NewUserHero();
 
   static const _previews = [
-    (icon: Icons.show_chart, title: 'Strength trend', subtitle: 'Each lift, week over week'),
-    (icon: Icons.calendar_today_outlined, title: 'Consistency', subtitle: 'A heatmap of every session'),
-    (icon: Icons.emoji_events_outlined, title: 'Personal records', subtitle: 'Every new best, by the lift'),
+    (
+      icon: Icons.show_chart,
+      title: 'Strength trend',
+      subtitle: 'Each lift, week over week'
+    ),
+    (
+      icon: Icons.calendar_today_outlined,
+      title: 'Consistency',
+      subtitle: 'A heatmap of every session'
+    ),
+    (
+      icon: Icons.emoji_events_outlined,
+      title: 'Personal records',
+      subtitle: 'Every new best, by the lift'
+    ),
   ];
 
   @override
@@ -1986,7 +2856,8 @@ class _LoadingBody extends StatelessWidget {
                       FractionallySizedBox(
                         widthFactor: 0.42,
                         alignment: Alignment.centerLeft,
-                        child: GbSkeleton(width: double.infinity, height: 28, radius: 7),
+                        child: GbSkeleton(
+                            width: double.infinity, height: 28, radius: 7),
                       ),
                       SizedBox(height: 18),
                       _LoadingHeatmapGrid(),
@@ -2011,7 +2882,8 @@ class _LoadingHero extends StatelessWidget {
   static const _ph1 = Color(0x1FFFFFFF); // ~0.12 white placeholder
   static const _ph2 = Color(0x1AFFFFFF); // ~0.10 white placeholder
 
-  Widget _bar(double widthFactor, double height, Color color) => FractionallySizedBox(
+  Widget _bar(double widthFactor, double height, Color color) =>
+      FractionallySizedBox(
         widthFactor: widthFactor,
         alignment: Alignment.centerLeft,
         child: Container(
@@ -2264,7 +3136,8 @@ class _RetryButton extends StatelessWidget {
 /// variant (hollow rings, neutral). The server gates lifts to ≥4 qualifying sessions, but we degrade
 /// safely for thin spark series too.
 class _Sparkline extends StatelessWidget {
-  const _Sparkline({required this.points, required this.color, required this.cardColor});
+  const _Sparkline(
+      {required this.points, required this.color, required this.cardColor});
   final List<double> points;
   final Color color;
 
@@ -2365,7 +3238,8 @@ class _SparklinePainter extends CustomPainter {
 
     // Crisp donut endpoint: a faint halo, then a card-filled core ringed in the trend colour.
     final last = pts.last;
-    canvas.drawCircle(last, 4.4, Paint()..color = color.withValues(alpha: 0.16));
+    canvas.drawCircle(
+        last, 4.4, Paint()..color = color.withValues(alpha: 0.16));
     canvas.drawCircle(last, 2.5, Paint()..color = card);
     canvas.drawCircle(
       last,
@@ -2393,8 +3267,10 @@ class _SparklinePainter extends CustomPainter {
       final p1 = pts[i];
       final p2 = pts[i + 1];
       final p3 = pts[i + 2 >= pts.length ? i + 1 : i + 2];
-      final c1 = Offset(p1.dx + (p2.dx - p0.dx) * t, p1.dy + (p2.dy - p0.dy) * t);
-      final c2 = Offset(p2.dx - (p3.dx - p1.dx) * t, p2.dy - (p3.dy - p1.dy) * t);
+      final c1 =
+          Offset(p1.dx + (p2.dx - p0.dx) * t, p1.dy + (p2.dy - p0.dy) * t);
+      final c2 =
+          Offset(p2.dx - (p3.dx - p1.dx) * t, p2.dy - (p3.dy - p1.dy) * t);
       path.cubicTo(c1.dx, c1.dy, c2.dx, c2.dy, p2.dx, p2.dy);
     }
     return path;
@@ -2566,8 +3442,7 @@ class _HeatmapPainter extends CustomPainter {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final mondayThisWeek = today.subtract(Duration(days: today.weekday - 1));
-    final firstMonday =
-        mondayThisWeek.subtract(Duration(days: 7 * (cols - 1)));
+    final firstMonday = mondayThisWeek.subtract(Duration(days: 7 * (cols - 1)));
 
     final radius = Radius.circular(cell * 0.24);
     final dashPaint = Paint()
