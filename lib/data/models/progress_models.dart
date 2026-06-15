@@ -501,6 +501,38 @@ class DailyAdherence {
       );
 }
 
+/// One logged day for the **CALORIES-LOGGED LIST** (the ad-hoc-friendly companion to the calories
+/// trend). Unlike [DailyAdherence] (the plan-only trend series under `days`), this row exists for
+/// EVERY day in the endpoint window that has ≥1 logged item from ANY source — plan or ad-hoc — so a
+/// no-plan logger (whose plan-only trend is empty) still sees what they actually logged.
+///
+/// `consumedKcal` is the all-source adherent-item kcal sum (same semantics as the per-day
+/// `DailyAdherence.consumedKcal`); `targetKcal` is the plan-meal kcal sum for that day, nullable
+/// (null when there's no plan / no planned energy / macro targets are hidden) — never fabricated.
+class DayCalories {
+  const DayCalories({
+    this.localDate,
+    required this.consumedKcal,
+    this.targetKcal,
+  });
+
+  /// The logged day's local calendar day. Null only on a malformed payload — dropped before rendering.
+  final DateTime? localDate;
+
+  /// Consumed kcal that day, all-source (ad-hoc self-logged + planned, adherent items only).
+  final int consumedKcal;
+
+  /// Plan-derived target kcal for that day, or null when there's no plan target (or it's hidden). The
+  /// list shows an under/over delta ONLY where this is present — never a fabricated target.
+  final int? targetKcal;
+
+  factory DayCalories.fromJson(Map<String, dynamic> j) => DayCalories(
+        localDate: asDate(j['localDate']),
+        consumedKcal: (asInt(j['consumedKcal']) ?? 0).clamp(0, 1 << 30),
+        targetKcal: asInt(j['targetKcal']),
+      );
+}
+
 /// Recent nutrition adherence for the home Body→nutrition card (MOBILE-DASHBOARD §5 / Decision
 /// **D13**). `hasPlan` gates the whole card: when false the trainee is following no meal plan, so the
 /// card shows a "follow a meal plan" invite instead of a (meaningless) 0%. `recentDays` is the
@@ -516,6 +548,7 @@ class NutritionAdherence {
     required this.recentDays,
     this.loggedDaysThisWeek = 0,
     this.hasAnyLogging = false,
+    this.caloriesByDay = const [],
   });
 
   /// Whether the trainee currently follows a meal plan. False → the card shows its invite, never a
@@ -540,15 +573,24 @@ class NutritionAdherence {
   /// true → the ad-hoc tracking state; false → the "follow a meal plan" invite (genuinely nothing yet).
   final bool hasAnyLogging;
 
+  /// Every day in the endpoint window with ≥1 logged item, ANY source (plan or ad-hoc), date-ASCENDING
+  /// — the **CALORIES-LOGGED LIST** source. This is the ad-hoc-friendly companion to [recentDays]: a
+  /// no-plan logger has an empty plan-only [recentDays] trend but still gets rows here. Empty on an
+  /// older payload that predates the field (the list then simply doesn't render).
+  final List<DayCalories> caloriesByDay;
+
   /// Wire shape is the **frozen** `NutritionAdherenceDto(HasPlan, Days, CurrentWeekAvgPct)`
   /// serialized camelCase, extended (D-self-train) with `loggedDaysThisWeek` (int) + `hasAnyLogging`
   /// (bool) so ad-hoc self-logging is recorded on Progress, so the recent series arrives under `days`
   /// (not `recentDays`). Both new fields parse defensively (default 0 / false on an older payload).
+  /// `caloriesByDay` (the all-source CALORIES-LOGGED LIST) parses defensively too: an older payload
+  /// missing the key degrades to an empty list rather than throwing.
   factory NutritionAdherence.fromJson(Map<String, dynamic> j) => NutritionAdherence(
         hasPlan: asBool(j['hasPlan']),
         currentWeekAvgPct: asInt(j['currentWeekAvgPct']),
         recentDays: asList(j['days'], DailyAdherence.fromJson),
         loggedDaysThisWeek: asInt(j['loggedDaysThisWeek']) ?? 0,
         hasAnyLogging: asBool(j['hasAnyLogging']),
+        caloriesByDay: asList(j['caloriesByDay'], DayCalories.fromJson),
       );
 }

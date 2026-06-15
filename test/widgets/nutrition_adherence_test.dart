@@ -42,6 +42,15 @@ void main() {
         targetKcal: target,
       );
 
+  /// One row of the CALORIES-LOGGED LIST. A fixed prior-year [date] makes the relative-day label
+  /// deterministic regardless of when the test runs ("Mon D, YYYY", never the run-relative
+  /// "Today"/"Yesterday").
+  DayCalories logDay(int consumed, {int? target, DateTime? date}) => DayCalories(
+        localDate: date ?? DateTime(2024, 6, 10),
+        consumedKcal: consumed,
+        targetKcal: target,
+      );
+
   Future<void> pump(
     WidgetTester tester,
     AsyncValue<NutritionAdherence> adherence,
@@ -364,6 +373,123 @@ void main() {
     expect(find.text('CALORIES TREND'), findsNothing);
   });
 
+  // ── CALORIES-LOGGED LIST (all-source companion to the trend) ─────────────────
+  //
+  // The list renders for EVERY day with ≥1 logged item, any source, so an ad-hoc/no-plan logger
+  // (empty plan-only `recentDays` trend) still sees what they logged. The trend card stays exactly
+  // as-is — shown only when `recentDays` is non-empty.
+
+  testWidgets('ad-hoc logger (empty recentDays) → calories-logged LIST with kcal, NO trend, NO target',
+      (tester) async {
+    await pump(
+      tester,
+      AsyncData(NutritionAdherence(
+        hasPlan: false,
+        hasAnyLogging: true,
+        loggedDaysThisWeek: 3,
+        // The plan-only trend series is EMPTY for a no-plan logger…
+        recentDays: const [],
+        // …but the all-source list carries the logged days (no targets → kcal only).
+        caloriesByDay: [
+          logDay(2100, date: DateTime(2024, 6, 10)),
+          logDay(2300, date: DateTime(2024, 6, 11)),
+          logDay(1900, date: DateTime(2024, 6, 12)),
+        ],
+      )),
+    );
+    await scrollTo(tester, find.text('CALORIES LOGGED'));
+
+    // The list header + per-day kcal render.
+    expect(find.text('CALORIES LOGGED'), findsOneWidget);
+    expect(find.text('2100 kcal'), findsOneWidget);
+    expect(find.text('2300 kcal'), findsOneWidget);
+    expect(find.text('1900 kcal'), findsOneWidget);
+    // Relative day label is reused (deterministic prior-year date).
+    expect(find.text('Jun 12, 2024'), findsWidgets);
+
+    // NO plan trend card (empty recentDays) and NO fabricated target / delta / ring / %.
+    expect(find.text('CALORIES TREND'), findsNothing);
+    expect(find.byType(GbRing), findsNothing);
+    expect(find.textContaining('%'), findsNothing);
+    expect(find.textContaining('/ '), findsNothing); // no "/ target" without a real target
+  });
+
+  testWidgets('plan user → BOTH the trend card AND the calories-logged list render', (tester) async {
+    await pump(
+      tester,
+      AsyncData(NutritionAdherence(
+        hasPlan: true,
+        currentWeekAvgPct: 84,
+        loggedDaysThisWeek: 3,
+        // Plan trend series present…
+        recentDays: [
+          day(2000, target: 2200),
+          day(2100, target: 2200),
+          day(2300, target: 2200),
+        ],
+        // …and the all-source list present too.
+        caloriesByDay: [
+          logDay(2000, target: 2200, date: DateTime(2024, 6, 10)),
+          logDay(2100, target: 2200, date: DateTime(2024, 6, 11)),
+          logDay(2300, target: 2200, date: DateTime(2024, 6, 12)),
+        ],
+      )),
+    );
+    await scrollTo(tester, find.text('CALORIES LOGGED'));
+
+    // BOTH surfaces render — the trend is unchanged, the list is additive.
+    expect(find.text('CALORIES TREND'), findsOneWidget);
+    expect(find.text('CALORIES LOGGED'), findsOneWidget);
+    // Still no fabricated ring / %.
+    expect(find.byType(GbRing), findsNothing);
+    expect(find.textContaining('%'), findsNothing);
+  });
+
+  testWidgets('list row WITH targetKcal shows the target + delta; row WITHOUT shows kcal only',
+      (tester) async {
+    await pump(
+      tester,
+      AsyncData(NutritionAdherence(
+        hasPlan: false,
+        hasAnyLogging: true,
+        loggedDaysThisWeek: 2,
+        recentDays: const [],
+        caloriesByDay: [
+          // Over target by 250 → warm "+250", with the "/ 2200" target.
+          logDay(2450, target: 2200, date: DateTime(2024, 6, 10)),
+          // No target → kcal only, never a fabricated "/ Y" or delta.
+          logDay(1800, date: DateTime(2024, 6, 11)),
+        ],
+      )),
+    );
+    await scrollTo(tester, find.text('CALORIES LOGGED'));
+
+    // Targeted row: kcal + "/ 2200" target + the over delta (warm, never red).
+    expect(find.text('2450 kcal'), findsOneWidget);
+    expect(find.text('/ 2200'), findsOneWidget);
+    expect(find.text('+250'), findsOneWidget);
+    // No-target row: kcal only, and exactly ONE "/ Y" exists in the whole list.
+    expect(find.text('1800 kcal'), findsOneWidget);
+    expect(find.textContaining('/ '), findsOneWidget);
+  });
+
+  testWidgets('list row UNDER target shows a cool minus delta (never red)', (tester) async {
+    await pump(
+      tester,
+      AsyncData(NutritionAdherence(
+        hasPlan: true,
+        loggedDaysThisWeek: 1,
+        recentDays: [day(2000, target: 2200)],
+        caloriesByDay: [logDay(2000, target: 2200, date: DateTime(2024, 6, 10))],
+      )),
+    );
+    await scrollTo(tester, find.text('CALORIES LOGGED'));
+
+    // Under target by 200 → "−200" (a real minus glyph), with the target shown.
+    expect(find.text('/ 2200'), findsOneWidget);
+    expect(find.text('−200'), findsOneWidget);
+  });
+
   // ── Parse-level coverage against the wire contract (API-CONTRACTS §5) ─────────
   //
   // The widget tests above build models via constructors and never exercise `fromJson`, so a key-name
@@ -394,6 +520,11 @@ void main() {
           'targetKcal': 2200,
         },
       ],
+      // The all-source CALORIES-LOGGED LIST — every logged day, date-ascending, plan or ad-hoc.
+      'caloriesByDay': [
+        {'localDate': '2026-06-10', 'consumedKcal': 2100, 'targetKcal': 2200},
+        {'localDate': '2026-06-11', 'consumedKcal': 2400, 'targetKcal': null},
+      ],
     };
 
     test('reads consumedKcal/targetKcal alongside the frozen keys', () {
@@ -412,6 +543,28 @@ void main() {
       expect(first.targetKcal, 2200);
       expect(a.recentDays.last.consumedKcal, 2400);
       expect(a.recentDays.last.targetKcal, 2200);
+
+      // The all-source CALORIES-LOGGED LIST is parsed alongside the trend series.
+      expect(a.caloriesByDay, hasLength(2));
+      expect(a.caloriesByDay.first.localDate, DateTime(2026, 6, 10));
+      expect(a.caloriesByDay.first.consumedKcal, 2100);
+      expect(a.caloriesByDay.first.targetKcal, 2200);
+      // A null targetKcal stays null (never fabricated).
+      expect(a.caloriesByDay.last.consumedKcal, 2400);
+      expect(a.caloriesByDay.last.targetKcal, isNull);
+    });
+
+    test('older payload without caloriesByDay → empty list (defensive)', () {
+      final a = NutritionAdherence.fromJson(const {
+        'hasPlan': true,
+        'currentWeekAvgPct': 80,
+        'days': [
+          {'localDate': '2026-06-10', 'adherencePct': 90, 'consumedKcal': 2000},
+        ],
+      });
+
+      // Missing key → empty list (the list simply doesn't render), never a throw.
+      expect(a.caloriesByDay, isEmpty);
     });
 
     test('day with NO targetKcal parses to null (never fabricated) and keeps consumed', () {

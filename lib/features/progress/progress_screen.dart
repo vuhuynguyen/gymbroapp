@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/time/relative_day.dart';
 import '../../data/models/progress_models.dart';
 import '../../data/repositories/progress_repository.dart';
 import '../../shared/widgets/widgets.dart';
@@ -2159,14 +2160,27 @@ class _NutritionSection extends ConsumerWidget {
       loading: () => const SizedBox.shrink(),
       error: (_, __) => const SizedBox.shrink(),
       data: (a) {
+        // The all-source CALORIES-LOGGED LIST: every logged day (plan or ad-hoc) in the window. When
+        // present it ALWAYS renders, so an ad-hoc/no-plan logger (whose plan-only [recentDays] trend is
+        // empty) can still see what they logged.
+        final hasLog = a.caloriesByDay.isNotEmpty;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _SectionTitle('Nutrition',
                 onInfo: () => _showHowSheet(context, _HowCounted.nutrition)),
             const SizedBox(height: AppSpacing.sm),
-            if (a.recentDays.isNotEmpty)
-              // Any logged days (planned or ad-hoc, all-source) → the consumed-kcal trend.
+            if (hasLog) ...[
+              // The plan-only consumed-kcal TREND is unchanged — shown only when there are plan days to
+              // chart. The list below stands in for ad-hoc/no-plan loggers (empty [recentDays]).
+              if (a.recentDays.isNotEmpty) ...[
+                _CaloriesTrendCard(adherence: a),
+                const SizedBox(height: AppSpacing.sm),
+              ],
+              // ALWAYS show the all-source list when there's anything logged.
+              _CaloriesLogCard(days: a.caloriesByDay),
+            ] else if (a.recentDays.isNotEmpty)
+              // No list field on the wire (older payload) but plan days exist → the trend, unchanged.
               _CaloriesTrendCard(adherence: a)
             else if (a.hasPlan)
               // A plan, but no closed days yet → a "log a day" nudge, not an empty trend.
@@ -2435,6 +2449,121 @@ class _CaloriesTrendPainter extends CustomPainter {
       old.track != track ||
       !listEquals(old.consumed, consumed) ||
       !listEquals(old.targets, targets);
+}
+
+// ── Section 5c — CALORIES-LOGGED LIST (all-source companion to the trend) ─────
+
+/// The **CALORIES-LOGGED LIST** — a compact, most-recent-first list of every day the trainee logged
+/// food (plan OR ad-hoc, all-source), so a no-plan logger (whose plan-only [_CaloriesTrendCard] trend
+/// is empty) still sees what they actually logged. Each row pairs the relative day label
+/// ("Today"/"Yesterday"/"Jun 12") with that day's consumed kcal; on days that also carry a plan
+/// `targetKcal`, a small under/over delta is shown (cool when under, warm when over — NEVER red, and
+/// NEVER a fabricated target on a no-target day). Capped at ~8 rows. Graphite tokens, app font,
+/// tabular numerals.
+class _CaloriesLogCard extends StatelessWidget {
+  const _CaloriesLogCard({required this.days});
+
+  /// Logged days, date-ASCENDING off the wire (every day with ≥1 logged item, any source).
+  final List<DayCalories> days;
+
+  /// Cap the visible rows so the list stays a glance, not a ledger.
+  static const _maxRows = 8;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    // Most-recent-first (the wire is date-ascending), capped.
+    final rows = days.reversed.take(_maxRows).toList(growable: false);
+
+    return _ProgCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _MonoLabel('Calories logged', color: gb.progInk3),
+          const SizedBox(height: AppSpacing.sm),
+          for (var i = 0; i < rows.length; i++) ...[
+            if (i > 0) _RuleInset(color: gb.progLine2),
+            _CaloriesLogRow(day: rows[i]),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// One row of the CALORIES-LOGGED LIST: the relative day label on the left, "X kcal" on the right, and
+/// — only when the day carries a plan target — a small "/ Y" plus an under/over delta tinted
+/// cool/warm (never red). A day with no target shows kcal only (never a fabricated target).
+class _CaloriesLogRow extends StatelessWidget {
+  const _CaloriesLogRow({required this.day});
+  final DayCalories day;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    final target = day.targetKcal;
+    // Delta vs the plan target, only when present. Under → cool (progRing), over → warm (progWarn).
+    final delta = target == null ? null : day.consumedKcal - target;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs + 2),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              relativeDayLabel(day.localDate),
+              style: AppText.mono(const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0,
+              )).copyWith(color: gb.progInk2),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          // Consumed kcal — the always-present right-hand stat.
+          Text(
+            '${day.consumedKcal} kcal',
+            style: AppText.mono(const TextStyle(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0,
+            )).copyWith(color: gb.progInk),
+          ),
+          // Plan target + signed delta — ONLY when a real target exists for the day.
+          if (target != null && delta != null) ...[
+            const SizedBox(width: AppSpacing.xs + 2),
+            Text(
+              '/ $target',
+              style: AppText.mono(const TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0,
+              )).copyWith(color: gb.progInk4),
+            ),
+            const SizedBox(width: AppSpacing.xs),
+            Text(
+              delta == 0
+                  ? 'on target'
+                  : '${delta > 0 ? '+' : '−'}${delta.abs()}',
+              style: AppText.mono(const TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0,
+              )).copyWith(
+                // Warm when over, cool when under, muted when exactly on target — never red.
+                color: delta == 0
+                    ? gb.progInk4
+                    : (delta > 0 ? gb.progWarn : gb.progRing),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 }
 
 // ── Shared small pieces ─────────────────────────────────────────────────────
