@@ -163,6 +163,8 @@ class DailyNutritionLog {
     this.serverAdherencePct,
     this.serverPlannedCount,
     this.serverCompletedCount,
+    this.consumedKcal = 0,
+    this.targetKcal,
   });
 
   final String id;
@@ -174,6 +176,15 @@ class DailyNutritionLog {
   final SessionSource source;
   final List<NutritionMeal> meals;
   final String? traineeId;
+
+  /// Calories consumed today, all-source (planned + ad-hoc self-logged). Server-computed; defaults to
+  /// 0 on an older payload that predates the field. This is the *display* total the Log tab shows —
+  /// distinct from [loggedKcal], which the ring card recomputes locally from adherent items only.
+  final int consumedKcal;
+
+  /// Plan-derived calorie target for today, or null when there's no plan target (a self-logger / no
+  /// plan). Null means "no target" — never fabricate a goal; the Log tab then shows consumed-only.
+  final int? targetKcal;
 
   // Server-computed roll-ups. We prefer these on first load, but recompute locally after an optimistic
   // mutation (see [adherencePct]) so the ring moves the instant the user taps.
@@ -232,6 +243,8 @@ class DailyNutritionLog {
         serverAdherencePct: serverAdherencePct,
         serverPlannedCount: serverPlannedCount,
         serverCompletedCount: serverCompletedCount,
+        consumedKcal: consumedKcal,
+        targetKcal: targetKcal,
       );
 
   /// Replace one item (by id) across whatever meal holds it — the optimistic-update primitive.
@@ -256,6 +269,9 @@ class DailyNutritionLog {
       serverAdherencePct: asInt(j['adherencePct']),
       serverPlannedCount: asInt(j['plannedCount']),
       serverCompletedCount: asInt(j['completedCount']),
+      // Defensive for older payloads: consumed defaults to 0, target stays null when absent.
+      consumedKcal: (asInt(j['consumedKcal']) ?? 0).clamp(0, 1 << 30),
+      targetKcal: asInt(j['targetKcal']),
     );
   }
 }

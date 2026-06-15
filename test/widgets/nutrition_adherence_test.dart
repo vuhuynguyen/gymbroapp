@@ -6,10 +6,15 @@ import 'package:gymbroapp/features/progress/progress_providers.dart';
 import 'package:gymbroapp/features/progress/progress_screen.dart';
 import 'package:gymbroapp/shared/widgets/widgets.dart';
 
-/// Widget tests for the Phase-3 conditional Nutrition-adherence card on the trainee Progress home
-/// (MOBILE-DASHBOARD §5 / Decision **D13**). The card is private, so we drive it through
-/// [ProgressScreen]: a non-new-user overview renders the data ListView, the Body provider is kept
-/// quiet (empty weigh-ins), and [nutritionAdherenceProvider] carries the fixture under test.
+/// Widget tests for the rebuilt conditional Nutrition **CALORIES TREND** card on the trainee Progress
+/// home (MOBILE-DASHBOARD §5 / Decision **D13**, rebuilt). The card is private, so we drive it through
+/// [ProgressScreen]: a non-new-user overview renders the data ListView, the Body provider is kept quiet
+/// (empty weigh-ins), and [nutritionAdherenceProvider] carries the fixture under test.
+///
+/// Honesty contract under test: consumed-kcal bars render for both plan AND no-plan users (data is
+/// all-source); the dashed "Plan" target line appears ONLY where `targetKcal` is present; a day without
+/// a target never gets a fabricated target/deficit/surplus/%; and the advice line is built only from
+/// real numbers.
 void main() {
   // A non-empty overview that is NOT the new-user hero (it has a PR), so §1–5 render.
   ProgressOverview nonEmptyOverview() => const ProgressOverview(
@@ -28,7 +33,14 @@ void main() {
         ],
       );
 
-  DailyAdherence day(int pct) => DailyAdherence(pct: pct, date: DateTime(2026, 6, 10));
+  /// One day in the trend: consumed kcal (all-source) and an optional plan target.
+  DailyAdherence day(int consumed, {int? target, int pct = 100}) =>
+      DailyAdherence(
+        pct: pct,
+        date: DateTime(2026, 6, 10),
+        consumedKcal: consumed,
+        targetKcal: target,
+      );
 
   Future<void> pump(
     WidgetTester tester,
@@ -72,7 +84,9 @@ void main() {
         scrollable: find.byType(Scrollable).first);
   }
 
-  testWidgets('hasPlan=false + no logging → "follow a meal plan" invite, no ring', (tester) async {
+  // ── Empty / nudge / invite states ───────────────────────────────────────────
+
+  testWidgets('no logging at all → "log your food" invite, no ring/%', (tester) async {
     await pump(
       tester,
       const AsyncData(NutritionAdherence(
@@ -86,51 +100,15 @@ void main() {
 
     expect(find.text('NUTRITION'), findsOneWidget); // section title renders
     expect(
-      find.text('Follow a meal plan to track nutrition adherence.'),
+      find.text('Log your food to see your calories trend.'),
       findsOneWidget,
     );
-    // No adherence ring on the no-plan state (a 0% ring would read as failure).
-    expect(find.byType(GbRing), findsNothing);
-    expect(find.textContaining('%'), findsNothing);
-    // No ad-hoc tracking copy when nothing has been logged.
-    expect(find.textContaining('You logged'), findsNothing);
-  });
-
-  testWidgets('hasPlan=false + ad-hoc logging → "You logged N of 7" state, no invite, no 100% ring',
-      (tester) async {
-    // Self-training/eating without a plan: ad-hoc days are 100% by convention so they're absent from
-    // the %, but the days-logged signal must still COUNT on Progress — never a fabricated 100% ring.
-    await pump(
-      tester,
-      const AsyncData(NutritionAdherence(
-        hasPlan: false,
-        recentDays: [],
-        hasAnyLogging: true,
-        loggedDaysThisWeek: 4,
-      )),
-    );
-    await scrollTo(tester, find.text('You logged 4 of 7 days this week — self-tracking counts.'));
-
-    // The honest ad-hoc tracking copy renders…
-    expect(
-      find.text('You logged 4 of 7 days this week — self-tracking counts.'),
-      findsOneWidget,
-    );
-    expect(find.text('DAYS LOGGED · THIS WEEK'), findsOneWidget); // mono sub-label (uppercased)
-    // The big number is a Text.rich ("4" + "/7" spans) → match the rendered "4/7".
-    expect(find.textContaining('4/7'), findsOneWidget); // big days-logged number
-    // …and NOT the follow-a-meal-plan invite.
-    expect(
-      find.text('Follow a meal plan to track nutrition adherence.'),
-      findsNothing,
-    );
-    // Never a fabricated 100% adherence ring on the no-plan ad-hoc state.
+    // No ring / no fabricated % on the no-data state.
     expect(find.byType(GbRing), findsNothing);
     expect(find.textContaining('%'), findsNothing);
   });
 
-  testWidgets('hasPlan=true but no closed days → "close out a day" nudge, no invite',
-      (tester) async {
+  testWidgets('hasPlan=true but no closed days → "close out a day" nudge', (tester) async {
     await pump(
       tester,
       const AsyncData(NutritionAdherence(hasPlan: true, recentDays: [])),
@@ -139,54 +117,235 @@ void main() {
 
     expect(find.text('NUTRITION'), findsOneWidget);
     expect(
-      find.text('Close out a day to see your nutrition adherence.'),
+      find.text('Close out a day to see your calories trend.'),
       findsOneWidget,
     );
-    // NOT the no-plan invite.
     expect(
-      find.text('Follow a meal plan to track nutrition adherence.'),
+      find.text('Log your food to see your calories trend.'),
       findsNothing,
     );
   });
 
-  testWidgets('hasPlan=true with data → week ring + caption, no invite', (tester) async {
+  testWidgets('no plan + ad-hoc logging but empty window → keep-logging nudge', (tester) async {
+    await pump(
+      tester,
+      const AsyncData(NutritionAdherence(
+        hasPlan: false,
+        recentDays: [],
+        hasAnyLogging: true,
+        loggedDaysThisWeek: 2,
+      )),
+    );
+    await scrollTo(tester, find.text('NUTRITION'));
+
+    expect(
+      find.text('Keep logging to see your calories trend.'),
+      findsOneWidget,
+    );
+    expect(find.byType(GbRing), findsNothing);
+    expect(find.textContaining('%'), findsNothing);
+  });
+
+  // ── Bars render from consumedKcal (both plan and no-plan, all-source) ─────────
+
+  testWidgets('no-plan ad-hoc days → consumed-kcal bars render, no ring/%', (tester) async {
+    // Self-logging without a plan now gets the SAME consumed-kcal bars (data is all-source); the days
+    // carry no target, so there is NO dashed plan line and NO deficit/surplus claim.
+    await pump(
+      tester,
+      AsyncData(NutritionAdherence(
+        hasPlan: false,
+        hasAnyLogging: true,
+        loggedDaysThisWeek: 4,
+        recentDays: [day(2100), day(2300), day(1900), day(2200)],
+      )),
+    );
+    await scrollTo(tester, find.text('CALORIES TREND'));
+
+    // The trend card renders (the consumed-kcal bar painter, CustomPaint — no chart lib).
+    expect(find.text('CALORIES TREND'), findsOneWidget);
+    expect(find.byType(CustomPaint), findsWidgets);
+    // The honest days-logged sub-caption.
+    expect(find.text('4 DAYS LOGGED · THIS WEEK'), findsOneWidget);
+    // Never a fabricated ring / % / target on a no-target ad-hoc window.
+    expect(find.byType(GbRing), findsNothing);
+    expect(find.textContaining('%'), findsNothing);
+    expect(find.textContaining('under plan'), findsNothing);
+    expect(find.textContaining('over plan'), findsNothing);
+  });
+
+  testWidgets('plan days with targets → trend card + a target painter, no % ring', (tester) async {
     await pump(
       tester,
       AsyncData(NutritionAdherence(
         hasPlan: true,
         currentWeekAvgPct: 84,
-        recentDays: [day(90), day(70), day(100), day(80), day(80)],
+        loggedDaysThisWeek: 5,
+        recentDays: [
+          day(2000, target: 2200),
+          day(2400, target: 2200),
+          day(2100, target: 2200),
+          day(2300, target: 2200),
+          day(2050, target: 2200),
+        ],
       )),
     );
-    await scrollTo(tester, find.text('Avg 84% this week · 5 days logged'));
+    await scrollTo(tester, find.text('CALORIES TREND'));
 
-    // The current-week ring shows the rolled-up average…
-    expect(find.byType(GbRing), findsOneWidget);
-    expect(find.text('84%'), findsOneWidget);
-    // …and the caption restates avg + days logged.
-    expect(find.text('Avg 84% this week · 5 days logged'), findsOneWidget);
-    // No invite copy when there's data.
-    expect(
-      find.text('Follow a meal plan to track nutrition adherence.'),
-      findsNothing,
-    );
+    expect(find.text('CALORIES TREND'), findsOneWidget);
+    expect(find.byType(CustomPaint), findsWidgets);
+    expect(find.text('5 DAYS LOGGED · THIS WEEK'), findsOneWidget);
+    // The rebuilt card is calories-first: NO adherence ring, NO % readout (D13 vs-target honesty).
+    expect(find.byType(GbRing), findsNothing);
+    expect(find.textContaining('%'), findsNothing);
   });
 
-  testWidgets('data but no week roll-up → strip + days-logged caption, no ring', (tester) async {
+  // ── Advice text matches the data ──────────────────────────────────────────────
+
+  testWidgets('no targets in window → advice describes avg kcal/day over logged days', (tester) async {
+    // 2000, 2100, 2200 → avg 2100; no targets anywhere → describe the trend, never a deficit/surplus.
+    await pump(
+      tester,
+      AsyncData(NutritionAdherence(
+        hasPlan: false,
+        hasAnyLogging: true,
+        loggedDaysThisWeek: 3,
+        recentDays: [day(2000), day(2100), day(2200)],
+      )),
+    );
+    await scrollTo(
+        tester, find.text('Averaging ~2100 kcal/day over your logged days.'));
+
+    expect(
+      find.text('Averaging ~2100 kcal/day over your logged days.'),
+      findsOneWidget,
+    );
+    // No fabricated under/over-plan claim without targets.
+    expect(find.textContaining('under plan'), findsNothing);
+    expect(find.textContaining('over plan'), findsNothing);
+  });
+
+  testWidgets('targets on most days → honest "~N kcal under plan on logged days"', (tester) async {
+    // Consumed under target by 200 each on the targeted days → "~200 kcal under plan".
     await pump(
       tester,
       AsyncData(NutritionAdherence(
         hasPlan: true,
-        currentWeekAvgPct: null,
-        recentDays: [day(60), day(75)],
+        currentWeekAvgPct: 90,
+        loggedDaysThisWeek: 4,
+        recentDays: [
+          day(2000, target: 2200),
+          day(2000, target: 2200),
+          day(2000, target: 2200),
+          day(2000, target: 2200),
+        ],
       )),
     );
-    await scrollTo(tester, find.text('2 days logged'));
+    await scrollTo(
+        tester, find.text('Averaging ~200 kcal under plan on logged days.'));
 
-    // No ring without a week average, but the strip + a days-logged caption still render.
-    expect(find.byType(GbRing), findsNothing);
-    expect(find.text('2 days logged'), findsOneWidget);
-    expect(find.byType(CustomPaint), findsWidgets); // the bar strip painter
+    expect(
+      find.text('Averaging ~200 kcal under plan on logged days.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('targets on most days, over → "~N kcal over plan on logged days"', (tester) async {
+    // Consumed over target by 300 each → "~300 kcal over plan".
+    await pump(
+      tester,
+      AsyncData(NutritionAdherence(
+        hasPlan: true,
+        loggedDaysThisWeek: 3,
+        recentDays: [
+          day(2500, target: 2200),
+          day(2500, target: 2200),
+          day(2500, target: 2200),
+        ],
+      )),
+    );
+    await scrollTo(
+        tester, find.text('Averaging ~300 kcal over plan on logged days.'));
+
+    expect(
+      find.text('Averaging ~300 kcal over plan on logged days.'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('target present on SOME days only → advice never invents a target for the others', (tester) async {
+    // 4 logged days, only 1 has a target (< half) → advice MUST fall back to the avg-kcal trend, never
+    // claim a deficit/surplus from the days that have no target. avg(2000,2100,2200,2300)=2150.
+    await pump(
+      tester,
+      AsyncData(NutritionAdherence(
+        hasPlan: false,
+        hasAnyLogging: true,
+        loggedDaysThisWeek: 4,
+        recentDays: [
+          day(2000, target: 2200),
+          day(2100),
+          day(2200),
+          day(2300),
+        ],
+      )),
+    );
+    await scrollTo(
+        tester, find.text('Averaging ~2150 kcal/day over your logged days.'));
+
+    expect(
+      find.text('Averaging ~2150 kcal/day over your logged days.'),
+      findsOneWidget,
+    );
+    // No fabricated deficit/surplus, even though one day happens to carry a target.
+    expect(find.textContaining('under plan'), findsNothing);
+    expect(find.textContaining('over plan'), findsNothing);
+  });
+
+  testWidgets('sparse logging (<3 days) → "log more for a useful trend" nudge', (tester) async {
+    await pump(
+      tester,
+      AsyncData(NutritionAdherence(
+        hasPlan: false,
+        hasAnyLogging: true,
+        loggedDaysThisWeek: 2,
+        recentDays: [day(2000), day(2100)],
+      )),
+    );
+    await scrollTo(
+        tester, find.text('Only 2 days logged — log more for a useful trend.'));
+
+    expect(
+      find.text('Only 2 days logged — log more for a useful trend.'),
+      findsOneWidget,
+    );
+    // Sub-caption matches the count.
+    expect(find.text('2 DAYS LOGGED · THIS WEEK'), findsOneWidget);
+  });
+
+  testWidgets('roughly on target → "right around your plan target" (no false deficit/surplus)', (tester) async {
+    // Avg delta < 50 kcal in magnitude → neither under nor over; an honest "right around".
+    await pump(
+      tester,
+      AsyncData(NutritionAdherence(
+        hasPlan: true,
+        loggedDaysThisWeek: 3,
+        recentDays: [
+          day(2210, target: 2200),
+          day(2190, target: 2200),
+          day(2200, target: 2200),
+        ],
+      )),
+    );
+    await scrollTo(
+        tester, find.text('Right around your plan target on logged days.'));
+
+    expect(
+      find.text('Right around your plan target on logged days.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('under plan'), findsNothing);
+    expect(find.textContaining('over plan'), findsNothing);
   });
 
   testWidgets('nutrition provider errors → card stays quiet, page unblocked', (tester) async {
@@ -200,22 +359,18 @@ void main() {
     expect(find.text('PERSONAL RECORDS'), findsOneWidget);
     expect(find.text('Deadlift'), findsOneWidget);
     expect(find.byType(ErrorRetry), findsNothing);
-    // The Nutrition section collapses entirely on error (no title, no invite).
+    // The Nutrition section collapses entirely on error (no title, no trend).
     expect(find.text('NUTRITION'), findsNothing);
-    expect(
-      find.text('Follow a meal plan to track nutrition adherence.'),
-      findsNothing,
-    );
+    expect(find.text('CALORIES TREND'), findsNothing);
   });
 
-  // Parse-level coverage against the FROZEN wire contract (API-CONTRACTS §5,
-  // `NutritionAdherenceDto`/`DailyAdherenceDto` serialized camelCase). The widget tests above build
-  // models via constructors and never exercise `fromJson`, so a key-name mismatch (e.g. reading
-  // `recentDays`/`date`/`pct` instead of `days`/`localDate`/`adherencePct`) would slip past them and
-  // silently empty the card on a real 200. These guard that exact regression.
-  group('NutritionAdherence.fromJson — frozen wire keys', () {
-    // The literal frozen payload: NutritionAdherenceDto(HasPlan, Days, CurrentWeekAvgPct) with
-    // DailyAdherenceDto(LocalDate, AdherencePct, PlannedCount, CompletedCount), camelCase.
+  // ── Parse-level coverage against the wire contract (API-CONTRACTS §5) ─────────
+  //
+  // The widget tests above build models via constructors and never exercise `fromJson`, so a key-name
+  // mismatch (e.g. reading `recentDays`/`date`/`pct` instead of `days`/`localDate`/`adherencePct`, or
+  // missing the new `consumedKcal`/`targetKcal`) would slip past them. These guard those regressions.
+  group('NutritionAdherence.fromJson — frozen wire keys + calories fields', () {
+    // The frozen payload now carries per-day consumedKcal (all-source) + targetKcal (plan-derived).
     final frozenPayload = <String, dynamic>{
       'hasPlan': true,
       'currentWeekAvgPct': 84,
@@ -227,35 +382,70 @@ void main() {
           'adherencePct': 90,
           'plannedCount': 5,
           'completedCount': 5,
+          'consumedKcal': 2100,
+          'targetKcal': 2200,
         },
         {
           'localDate': '2026-06-11',
           'adherencePct': 70,
           'plannedCount': 5,
           'completedCount': 3,
+          'consumedKcal': 2400,
+          'targetKcal': 2200,
         },
       ],
     };
 
-    test('reads days/localDate/adherencePct + loggedDaysThisWeek/hasAnyLogging from the frozen payload', () {
+    test('reads consumedKcal/targetKcal alongside the frozen keys', () {
       final a = NutritionAdherence.fromJson(frozenPayload);
 
       expect(a.hasPlan, isTrue);
       expect(a.currentWeekAvgPct, 84);
-      // The extended self-train signal parses.
       expect(a.loggedDaysThisWeek, 5);
       expect(a.hasAnyLogging, isTrue);
-      // The series must NOT be empty — this is the bug class the field-name fix closes.
       expect(a.recentDays, hasLength(2));
-      expect(a.isEmpty, isFalse);
 
       final first = a.recentDays.first;
       expect(first.date, DateTime(2026, 6, 10));
       expect(first.pct, 90);
-      expect(a.recentDays.last.pct, 70);
+      expect(first.consumedKcal, 2100);
+      expect(first.targetKcal, 2200);
+      expect(a.recentDays.last.consumedKcal, 2400);
+      expect(a.recentDays.last.targetKcal, 2200);
     });
 
-    test('ad-hoc-only payload parses to hasPlan:false + hasAnyLogging:true + loggedDaysThisWeek', () {
+    test('day with NO targetKcal parses to null (never fabricated) and keeps consumed', () {
+      final a = NutritionAdherence.fromJson(const {
+        'hasPlan': false,
+        'days': [
+          {'localDate': '2026-06-10', 'adherencePct': 100, 'consumedKcal': 1950},
+        ],
+        'hasAnyLogging': true,
+        'loggedDaysThisWeek': 1,
+      });
+
+      final d = a.recentDays.single;
+      expect(d.consumedKcal, 1950);
+      expect(d.targetKcal, isNull); // no target on the wire → null, not a guess
+    });
+
+    test('older payload without consumedKcal/targetKcal defaults to 0 / null (defensive)', () {
+      final a = NutritionAdherence.fromJson(const {
+        'hasPlan': true,
+        'currentWeekAvgPct': 80,
+        'days': [
+          {'localDate': '2026-06-10', 'adherencePct': 90},
+        ],
+      });
+
+      final d = a.recentDays.single;
+      expect(d.consumedKcal, 0); // missing consumed → 0
+      expect(d.targetKcal, isNull); // missing target → null
+      expect(a.loggedDaysThisWeek, 0);
+      expect(a.hasAnyLogging, isFalse);
+    });
+
+    test('ad-hoc-only payload parses to hasPlan:false + hasAnyLogging:true', () {
       final a = NutritionAdherence.fromJson(const {
         'hasPlan': false,
         'days': <dynamic>[],
@@ -265,44 +455,17 @@ void main() {
       });
 
       expect(a.hasPlan, isFalse);
-      expect(a.recentDays, isEmpty); // no planned days to chart
+      expect(a.recentDays, isEmpty);
       expect(a.hasAnyLogging, isTrue);
       expect(a.loggedDaysThisWeek, 3);
-    });
-
-    test('older payload without the new fields defaults to 0 / false (defensive)', () {
-      final a = NutritionAdherence.fromJson(const {
-        'hasPlan': true,
-        'currentWeekAvgPct': 80,
-        'days': <dynamic>[],
-      });
-
-      expect(a.loggedDaysThisWeek, 0);
-      expect(a.hasAnyLogging, isFalse);
-    });
-
-    test('never-planned empty-invite shape parses to hasPlan:false, empty', () {
-      final a = NutritionAdherence.fromJson(const {
-        'hasPlan': false,
-        'days': <dynamic>[],
-        'currentWeekAvgPct': null,
-      });
-
-      expect(a.hasPlan, isFalse);
-      expect(a.recentDays, isEmpty);
-      expect(a.isEmpty, isTrue);
-      expect(a.currentWeekAvgPct, isNull);
-      // Defensive defaults on the legacy never-planned shape.
-      expect(a.loggedDaysThisWeek, 0);
-      expect(a.hasAnyLogging, isFalse);
     });
 
     test('clamps out-of-range adherencePct to 0–100', () {
       final a = NutritionAdherence.fromJson(const {
         'hasPlan': true,
         'days': [
-          {'localDate': '2026-06-10', 'adherencePct': 140},
-          {'localDate': '2026-06-11', 'adherencePct': -5},
+          {'localDate': '2026-06-10', 'adherencePct': 140, 'consumedKcal': 2000},
+          {'localDate': '2026-06-11', 'adherencePct': -5, 'consumedKcal': 1800},
         ],
       });
 

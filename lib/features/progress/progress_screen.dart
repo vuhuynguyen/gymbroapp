@@ -1401,15 +1401,16 @@ class _SetGoalWeightSheetState extends State<_SetGoalWeightSheet> {
   }
 }
 
-// ── Section 5b — Nutrition adherence (conditional) ───────────────────────────
+// ── Section 5b — Nutrition CALORIES TREND (conditional) ──────────────────────
 
-/// Recent nutrition adherence (MOBILE-DASHBOARD §5 / Decision **D13**). A `ConsumerWidget` watching
-/// its own `nutritionAdherenceProvider`, so it loads independently and **never blocks §1–4**. When
-/// `hasPlan` is false the trainee follows no meal plan → a "follow a meal plan" invite (never a 0%
-/// ring). With a plan + closed days it renders a compact current-week ring + a 7-day bar strip.
-/// **Quiet** on loading and error (collapses to nothing) — adherence is opt-in evidence, not a
-/// headline. Styled to the Graphite system: a surf-quiet invite, and a surf card for the populated
-/// state, consistent with the Body section.
+/// Recent nutrition as an honest **CALORIES TREND** (MOBILE-DASHBOARD §5 / Decision **D13**, rebuilt).
+/// A `ConsumerWidget` watching its own `nutritionAdherenceProvider`, so it loads independently and
+/// **never blocks §1–4**. The per-day payload now carries `consumedKcal` (all-source) and a plan-derived
+/// `targetKcal` (null when hidden), so the card draws consumed-kcal bars over the trailing window —
+/// the **same bars for plan and no-plan users** (the data is all-source). A faint dashed "Plan" target
+/// line is drawn only on days that actually have a target; bars are tinted deficit/surplus only against
+/// a present target, neutral otherwise. **Quiet** on loading and error (collapses to nothing) —
+/// nutrition is opt-in evidence, not a headline.
 class _NutritionSection extends ConsumerWidget {
   const _NutritionSection();
 
@@ -1425,22 +1426,24 @@ class _NutritionSection extends ConsumerWidget {
           children: [
             const _SectionTitle('Nutrition'),
             const SizedBox(height: AppSpacing.sm),
-            if (a.hasPlan)
-              if (a.isEmpty)
-                const _QuietCard(
-                  text: 'Close out a day to see your nutrition adherence.',
-                )
-              else
-                _NutritionAdherenceCard(adherence: a)
+            if (a.recentDays.isNotEmpty)
+              // Any logged days (planned or ad-hoc, all-source) → the consumed-kcal trend.
+              _CaloriesTrendCard(adherence: a)
+            else if (a.hasPlan)
+              // A plan, but no closed days yet → a "log a day" nudge, not an empty trend.
+              const _QuietCard(
+                text: 'Close out a day to see your calories trend.',
+              )
             else if (a.hasAnyLogging)
-              // No meal plan, but the trainee self-logs food → an honest ad-hoc tracking state.
-              // Self-training without a plan still counts: we surface the days-logged signal, NEVER a
-              // fabricated 100% adherence ring (ad-hoc days are 100% by convention and absent from %).
-              _NutritionAdHocCard(loggedDays: a.loggedDaysThisWeek)
+              // No plan and some self-logging, but nothing in the recent window to chart yet → the
+              // honest "keep logging" nudge (never a fabricated 100% ring / target).
+              const _QuietCard(
+                text: 'Keep logging to see your calories trend.',
+              )
             else
               // Genuinely nothing logged yet → the follow-a-meal-plan invite (never a 0% ring).
               const _QuietCard(
-                text: 'Follow a meal plan to track nutrition adherence.',
+                text: 'Log your food to see your calories trend.',
               ),
           ],
         );
@@ -1449,139 +1452,56 @@ class _NutritionSection extends ConsumerWidget {
   }
 }
 
-/// The populated nutrition card: a current-week adherence ring (when the server rolled one up) beside
-/// a compact 7-day bar strip + a caption. Graphite tokens, mono caption.
-class _NutritionAdherenceCard extends StatelessWidget {
-  const _NutritionAdherenceCard({required this.adherence});
+/// The CALORIES TREND card: per-day consumed-kcal bars over the trailing window (CustomPaint, no chart
+/// library — D11), a faint dashed "Plan" target line drawn only where a target exists, bars tinted
+/// cool/warm by deficit/surplus only against a present target (neutral otherwise), a small days-logged
+/// sub-caption, and an honest [_caloriesAdvice] line built only from real numbers. Graphite tokens,
+/// app font.
+class _CaloriesTrendCard extends StatelessWidget {
+  const _CaloriesTrendCard({required this.adherence});
   final NutritionAdherence adherence;
 
   @override
   Widget build(BuildContext context) {
     final gb = context.gb;
-    final weekPct = adherence.currentWeekAvgPct;
-    // Recent days, most-recent last; the strip shows the trailing 7.
+    // Recent days, oldest→newest; the trend shows the trailing 7.
     final recent = adherence.recentDays.length > 7
         ? adherence.recentDays.sublist(adherence.recentDays.length - 7)
         : adherence.recentDays;
-
-    return _ProgCard(
-      child: Row(
-        children: [
-          if (weekPct != null) ...[
-            GbRing(
-              value: (weekPct / 100).clamp(0.0, 1.0),
-              size: 64,
-              stroke: 7,
-              gradient: [gb.progRing, gb.primary700],
-              trackColor: gb.progLine,
-              child: Text(
-                '$weekPct%',
-                style: AppText.mono(const TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.w800))
-                    .copyWith(color: gb.progInk),
-              ),
-            ),
-            const SizedBox(width: AppSpacing.md),
-          ],
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _MonoLabel('This week', color: gb.progInk3),
-                const SizedBox(height: AppSpacing.xs),
-                SizedBox(
-                  height: 36,
-                  width: double.infinity,
-                  child: _AdherenceStrip(
-                    days: recent,
-                    bar: gb.progRing,
-                    track: gb.progLine,
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.xs),
-                Text(
-                  _adherenceCaption(
-                      weekPct, recent, adherence.loggedDaysThisWeek),
-                  style: AppText.mono(const TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.w500))
-                      .copyWith(color: gb.progInk2),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// The no-plan ad-hoc tracking card: the trainee follows no meal plan but self-logs food, so there is
-/// no adherence % to chart — yet self-training without a plan still **counts**. We surface the honest
-/// days-logged signal (a mono progress strip + "You logged N of 7 days this week"), NEVER a fabricated
-/// 100% ring (ad-hoc days are 100% adherence by convention and are deliberately absent from the %).
-/// Graphite styling, consistent with the populated card.
-class _NutritionAdHocCard extends StatelessWidget {
-  const _NutritionAdHocCard({required this.loggedDays});
-
-  /// Distinct local days logged this week (clamped 0–7 for display).
-  final int loggedDays;
-
-  @override
-  Widget build(BuildContext context) {
-    final gb = context.gb;
-    final logged = loggedDays.clamp(0, 7);
+    // Accurate current-week count for the "this week" caption (the trend bars span the trailing
+    // window, which can reach into last week — so don't label that day count "this week").
+    final loggedThisWeek = adherence.loggedDaysThisWeek;
+    final advice = _caloriesAdvice(recent);
 
     return _ProgCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Text.rich(
-                TextSpan(children: [
-                  TextSpan(
-                    text: '$logged',
-                    style: AppText.mono(const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w800,
-                      height: 0.9,
-                      letterSpacing: -0.8,
-                    )).copyWith(color: gb.progInk),
-                  ),
-                  TextSpan(
-                    text: '/7',
-                    style: AppText.mono(const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                    )).copyWith(color: gb.progInk3),
-                  ),
-                ]),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                  child: _MonoLabel('Days logged · this week',
-                      color: gb.progInk3)),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.sm + 2),
-          // A 7-segment progress strip — one filled pip per logged day. CustomPaint, no chart lib (D11).
+          _MonoLabel('Calories trend', color: gb.progInk3),
+          const SizedBox(height: AppSpacing.sm),
           SizedBox(
-            height: 8,
+            height: 64,
             width: double.infinity,
-            child: _LoggedDaysStrip(
-              logged: logged,
-              total: 7,
-              fill: gb.progRing,
+            child: _CaloriesTrend(
+              days: recent,
+              neutral: gb.progRing, // cool / under / no-target
+              under: gb.progRing, // under plan → cool
+              over: gb.progWarn, // over plan → warm (attention, never red)
+              target: gb.progInk3, // dashed "Plan" line
               track: gb.progLine,
             ),
           ),
-          const SizedBox(height: AppSpacing.sm + 2),
+          const SizedBox(height: AppSpacing.sm),
+          // Days-logged sub-caption — the honest self-tracking signal, kept small.
+          _MonoLabel(
+            '$loggedThisWeek ${loggedThisWeek == 1 ? 'day' : 'days'} logged · this week',
+            color: gb.progInk4,
+            fontSize: 9.5,
+          ),
+          const SizedBox(height: AppSpacing.xs),
           Text(
-            'You logged $logged of 7 days this week — self-tracking counts.',
+            advice,
             style: TextStyle(fontSize: 12.5, height: 1.45, color: gb.progInk2),
           ),
         ],
@@ -1590,101 +1510,75 @@ class _NutritionAdHocCard extends StatelessWidget {
   }
 }
 
-/// A 7-pip "days logged this week" strip — `logged` filled pips out of `total`, the rest a faint track.
-/// CustomPaint, no chart library (D11); the honest self-logging signal for no-plan trainees.
-class _LoggedDaysStrip extends StatelessWidget {
-  const _LoggedDaysStrip({
-    required this.logged,
-    required this.total,
-    required this.fill,
-    required this.track,
-  });
-  final int logged;
-  final int total;
-  final Color fill;
-  final Color track;
+/// The honest advice line, built ONLY from real numbers — never a fabricated target, deficit, or %.
+///   • No targets anywhere in the window → describe the trend: the average kcal/day over the logged
+///     days (the trend's only honest summary without a target).
+///   • Sparse logging (fewer than 3 logged days) → a nudge: "only N day(s) logged — log more for a
+///     useful trend" (so we never over-read 1–2 points as a trend).
+///   • Targets present on most logged days → compare honestly against the target on **only the days
+///     that have one**: "averaging ~N kcal under/over plan on logged days".
+/// A day without a target NEVER contributes a deficit/surplus number.
+String _caloriesAdvice(List<DailyAdherence> days) {
+  if (days.isEmpty) return 'Log your food to see your calories trend.';
 
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: _LoggedDaysPainter(
-          logged: logged.clamp(0, total),
-          total: total,
-          fill: fill,
-          track: track),
-      size: Size.infinite,
-    );
+  // Sparse logging guard — 1–2 points isn't a trend; nudge to keep logging.
+  if (days.length < 3) {
+    final n = days.length;
+    return 'Only $n ${n == 1 ? 'day' : 'days'} logged — log more for a useful trend.';
   }
-}
 
-class _LoggedDaysPainter extends CustomPainter {
-  _LoggedDaysPainter({
-    required this.logged,
-    required this.total,
-    required this.fill,
-    required this.track,
-  });
-  final int logged;
-  final int total;
-  final Color fill;
-  final Color track;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (total <= 0) return;
-    const gap = 5.0;
-    final pipW =
-        ((size.width - gap * (total - 1)) / total).clamp(1.0, double.infinity);
-    final radius = Radius.circular(math.min(3.0, size.height / 2));
-    for (var i = 0; i < total; i++) {
-      final left = i * (pipW + gap);
-      final rect = RRect.fromRectAndRadius(
-        Rect.fromLTWH(left, 0, pipW, size.height),
-        radius,
-      );
-      canvas.drawRRect(rect, Paint()..color = i < logged ? fill : track);
+  final withTarget = days.where((d) => d.targetKcal != null).toList();
+  // Targets on most logged days → an honest under/over-plan comparison over ONLY those days.
+  if (withTarget.length * 2 >= days.length && withTarget.isNotEmpty) {
+    final avgDelta = withTarget
+            .map((d) => d.consumedKcal - d.targetKcal!)
+            .fold<int>(0, (a, b) => a + b) /
+        withTarget.length;
+    final mag = avgDelta.abs().round();
+    if (mag < 50) {
+      return 'Right around your plan target on logged days.';
     }
+    final dir = avgDelta < 0 ? 'under' : 'over';
+    return 'Averaging ~$mag kcal $dir plan on logged days.';
   }
 
-  @override
-  bool shouldRepaint(_LoggedDaysPainter old) =>
-      old.logged != logged ||
-      old.total != total ||
-      old.fill != fill ||
-      old.track != track;
+  // No (or too few) targets → describe the trend honestly: the average consumed kcal/day.
+  final avgConsumed =
+      days.map((d) => d.consumedKcal).fold<int>(0, (a, b) => a + b) /
+          days.length;
+  return 'Averaging ~${avgConsumed.round()} kcal/day over your logged days.';
 }
 
-/// "Avg 84% this week · logged 5/7 this week" / a recent-days fallback when there's no week roll-up.
-/// [loggedThisWeek] is the honest ad-hoc tracking count (planned + self-logged days this week); when
-/// it's positive we prefer the "logged N/7 this week" fragment over the bare recent-days count, so the
-/// plan card also acknowledges self-logging. Falls back to the recent-days count when it's 0.
-String _adherenceCaption(
-    int? weekPct, List<DailyAdherence> recent, int loggedThisWeek) {
-  final logged = loggedThisWeek > 0
-      ? 'logged ${loggedThisWeek.clamp(0, 7)}/7 this week'
-      : '${recent.length} ${recent.length == 1 ? 'day' : 'days'} logged';
-  if (weekPct != null) return 'Avg $weekPct% this week · $logged';
-  return logged;
-}
-
-/// A compact 7-day adherence bar strip — one bar per recent day, height ∝ that day's %. CustomPaint,
-/// no chart library (D11). A track baseline keeps the strip legible on low-adherence days.
-class _AdherenceStrip extends StatelessWidget {
-  const _AdherenceStrip({
+/// The CALORIES TREND strip — one consumed-kcal bar per recent day, height ∝ consumed kcal (scaled to
+/// the window max). Bars tint cool (under) / warm (over) against a present `targetKcal`, neutral when a
+/// day has no target. A faint dashed "Plan" line/band is drawn at the target height ONLY over days that
+/// have a target. CustomPaint, no chart library (D11).
+class _CaloriesTrend extends StatelessWidget {
+  const _CaloriesTrend({
     required this.days,
-    required this.bar,
+    required this.neutral,
+    required this.under,
+    required this.over,
+    required this.target,
     required this.track,
   });
   final List<DailyAdherence> days;
-  final Color bar;
+  final Color neutral;
+  final Color under;
+  final Color over;
+  final Color target;
   final Color track;
 
   @override
   Widget build(BuildContext context) {
     return CustomPaint(
-      painter: _AdherenceStripPainter(
-        pcts: [for (final d in days) d.pct],
-        bar: bar,
+      painter: _CaloriesTrendPainter(
+        consumed: [for (final d in days) d.consumedKcal],
+        targets: [for (final d in days) d.targetKcal],
+        neutral: neutral,
+        under: under,
+        over: over,
+        target: target,
         track: track,
       ),
       size: Size.infinite,
@@ -1692,47 +1586,116 @@ class _AdherenceStrip extends StatelessWidget {
   }
 }
 
-class _AdherenceStripPainter extends CustomPainter {
-  _AdherenceStripPainter({
-    required this.pcts,
-    required this.bar,
+class _CaloriesTrendPainter extends CustomPainter {
+  _CaloriesTrendPainter({
+    required this.consumed,
+    required this.targets,
+    required this.neutral,
+    required this.under,
+    required this.over,
+    required this.target,
     required this.track,
   });
-  final List<int> pcts;
-  final Color bar;
+
+  /// Consumed kcal per day (all-source), oldest→newest.
+  final List<int> consumed;
+
+  /// Plan target kcal per day, null on days with no target (parallel to [consumed]).
+  final List<int?> targets;
+  final Color neutral;
+  final Color under;
+  final Color over;
+  final Color target;
   final Color track;
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (pcts.isEmpty) return;
+    final n = consumed.length;
+    if (n == 0) return;
+
+    // Scale bars to the largest of any consumed value OR any target — so a day over target still reads
+    // as a taller bar above the plan line, and the line sits inside the plot.
+    var maxV = 0;
+    for (final c in consumed) {
+      if (c > maxV) maxV = c;
+    }
+    for (final t in targets) {
+      if (t != null && t > maxV) maxV = t;
+    }
+    if (maxV <= 0) maxV = 1; // all-zero window → flat track only, no divide-by-zero
+
     const gap = 5.0;
-    final n = pcts.length;
     final barW = ((size.width - gap * (n - 1)) / n).clamp(2.0, double.infinity);
     final radius = Radius.circular(math.min(3.0, barW / 2));
+    double yOf(int kcal) => size.height - (kcal / maxV) * size.height;
 
     for (var i = 0; i < n; i++) {
       final left = i * (barW + gap);
-      // Faint full-height track so empty/low days still register as a column.
-      final trackRect = RRect.fromRectAndRadius(
-        Rect.fromLTWH(left, 0, barW, size.height),
-        radius,
-      );
-      canvas.drawRRect(trackRect, Paint()..color = track);
 
-      final frac = (pcts[i].clamp(0, 100)) / 100.0;
-      final h = (size.height * frac).clamp(0.0, size.height);
-      if (h <= 0) continue;
-      final barRect = RRect.fromRectAndRadius(
-        Rect.fromLTWH(left, size.height - h, barW, h),
-        radius,
+      // Faint full-height track so empty/zero days still register as a column.
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+            Rect.fromLTWH(left, 0, barW, size.height), radius),
+        Paint()..color = track,
       );
-      canvas.drawRRect(barRect, Paint()..color = bar);
+
+      final kcal = consumed[i];
+      final t = targets[i];
+      // Tint ONLY against a present target: under → cool, over → warm; neutral when no target.
+      final Color barColor;
+      if (t == null) {
+        barColor = neutral;
+      } else {
+        barColor = kcal > t ? over : under;
+      }
+
+      final h = ((kcal / maxV) * size.height).clamp(0.0, size.height);
+      if (h > 0) {
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+              Rect.fromLTWH(left, size.height - h, barW, h), radius),
+          Paint()..color = barColor,
+        );
+      }
+
+      // The dashed "Plan" target tick — drawn ONLY on days with a target, spanning that day's column.
+      if (t != null) {
+        final ty = yOf(t).clamp(0.0, size.height);
+        _drawDashedLine(
+          canvas,
+          Offset(left, ty),
+          Offset(left + barW, ty),
+          target.withValues(alpha: 0.7),
+        );
+      }
+    }
+  }
+
+  /// Hand-rolled dashed horizontal line (Canvas has no native dash) for the per-day "Plan" tick.
+  void _drawDashedLine(Canvas canvas, Offset a, Offset b, Color color) {
+    const dash = 4.0;
+    const gap = 3.0;
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.5
+      ..strokeCap = StrokeCap.round;
+    var startX = a.dx;
+    while (startX < b.dx) {
+      final endX = math.min(startX + dash, b.dx);
+      canvas.drawLine(Offset(startX, a.dy), Offset(endX, b.dy), paint);
+      startX += dash + gap;
     }
   }
 
   @override
-  bool shouldRepaint(_AdherenceStripPainter old) =>
-      old.bar != bar || old.track != track || !listEquals(old.pcts, pcts);
+  bool shouldRepaint(_CaloriesTrendPainter old) =>
+      old.neutral != neutral ||
+      old.under != under ||
+      old.over != over ||
+      old.target != target ||
+      old.track != track ||
+      !listEquals(old.consumed, consumed) ||
+      !listEquals(old.targets, targets);
 }
 
 // ── Shared small pieces ─────────────────────────────────────────────────────

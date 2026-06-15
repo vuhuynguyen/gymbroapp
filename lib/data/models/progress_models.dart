@@ -367,9 +367,17 @@ class MetricSeries {
 ///
 /// Wire shape is the **frozen** `DailyAdherenceDto(LocalDate, AdherencePct, PlannedCount,
 /// CompletedCount)` serialized camelCase (`localDate`, `adherencePct`, …), so `fromJson` reads those
-/// exact keys — not the Dart field names.
+/// exact keys — not the Dart field names. The per-day payload now also carries the **calories** the
+/// CALORIES TREND renders: `consumedKcal` (all-source, ad-hoc + planned) and the plan-derived
+/// `targetKcal` (null when no plan target / hidden) — both parsed defensively so an older payload that
+/// omits them degrades to consumed=0 / no-target rather than throwing.
 class DailyAdherence {
-  const DailyAdherence({this.date, required this.pct});
+  const DailyAdherence({
+    this.date,
+    required this.pct,
+    this.consumedKcal = 0,
+    this.targetKcal,
+  });
 
   /// The log's local calendar day. Null only on a malformed payload — dropped before plotting.
   final DateTime? date;
@@ -377,9 +385,21 @@ class DailyAdherence {
   /// Finalized adherence percent (0–100): completed/substituted planned items ÷ planned items.
   final int pct;
 
+  /// Calories consumed that day, all-source (ad-hoc self-logged + planned). Defaults to 0 on an older
+  /// payload that predates the field — the trend then simply draws a zero-height bar for that day.
+  final int consumedKcal;
+
+  /// Plan-derived target calories for that day, or null when there's no plan target (or it's hidden).
+  /// The trend draws the dashed "Plan" line and the deficit/surplus tint ONLY on days where this is
+  /// present — never a fabricated target on a no-target day.
+  final int? targetKcal;
+
   factory DailyAdherence.fromJson(Map<String, dynamic> j) => DailyAdherence(
         date: asDate(j['localDate']),
         pct: (asInt(j['adherencePct']) ?? 0).clamp(0, 100),
+        // Defensive for older payloads: consumed defaults to 0, target stays null when absent.
+        consumedKcal: (asInt(j['consumedKcal']) ?? 0).clamp(0, 1 << 30),
+        targetKcal: asInt(j['targetKcal']),
       );
 }
 
@@ -408,13 +428,14 @@ class NutritionAdherence {
   /// closed days this week (the card then leans on the recent strip / invite instead of a ring).
   final int? currentWeekAvgPct;
 
-  /// Recent finalized days, oldest→newest (typically the trailing ~7), for the compact bar strip.
+  /// Recent finalized days, oldest→newest (typically the trailing ~7), for the CALORIES TREND bars
+  /// (each carries `consumedKcal` + optional `targetKcal`).
   final List<DailyAdherence> recentDays;
 
   /// Count of distinct local days the trainee logged nutrition this week — the **honest ad-hoc
   /// tracking signal**. Ad-hoc (no-plan) days are 100% adherence by convention so they're absent from
   /// the adherence %; this count instead makes self-logging *count* on Progress without fabricating a
-  /// 100% ring. Drives the no-plan "You logged N of 7 days this week" state.
+  /// 100% ring. Surfaced as the trend's small days-logged sub-caption.
   final int loggedDaysThisWeek;
 
   /// Whether the trainee has logged any nutrition at all (planned or ad-hoc). Gates the no-plan card:

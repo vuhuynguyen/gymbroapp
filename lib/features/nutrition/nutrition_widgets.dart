@@ -485,6 +485,129 @@ class NutriAdherenceCard extends StatelessWidget {
   }
 }
 
+// ── Calories today (target vs logged) ────────────────────────────────────────
+
+/// The honest "calories logged today" card on Log's Today surface. Two modes, never a fabricated goal:
+///   • [targetKcal] != null → "Logged Y / Target X kcal" with a thin progress bar (neutral grey until
+///     ~90% of target, amber at/over target — a calm nudge, never alarm-red).
+///   • [targetKcal] == null → "Logged Y kcal today" only: no target, no bar, no ring (a self-logger /
+///     no-plan trainee has nothing to be measured against, so we never invent one).
+class CaloriesTodayCard extends StatelessWidget {
+  const CaloriesTodayCard(
+      {required this.consumedKcal, this.targetKcal, super.key});
+
+  /// Calories consumed today, all-source (planned + ad-hoc). Display-only, server-computed.
+  final int consumedKcal;
+
+  /// Plan-derived target, or null for no target (self-logger / no plan).
+  final int? targetKcal;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    final target = targetKcal;
+    final hasTarget = target != null && target > 0;
+    // "Near or over" the target → amber tint; otherwise neutral grey. No alarm-red (honest, calm).
+    final near = hasTarget && consumedKcal >= target * 0.9;
+    final fillColor = near ? gb.amber : gb.grey400;
+
+    return GbCard(
+      padding: const EdgeInsets.all(AppSpacing.heroPad),
+      child: Row(
+        children: [
+          GbIconTile(
+              size: 38,
+              background: near ? gb.amberSoft : gb.grey25,
+              child: Icon(Icons.local_fire_department_outlined,
+                  size: AppSizes.iconLg,
+                  color: near ? gb.amberInk : gb.grey600)),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Eyebrow('Calories today'),
+                const SizedBox(height: 3),
+                if (hasTarget) ...[
+                  Text.rich(
+                    TextSpan(children: [
+                      TextSpan(
+                          text: 'Logged $consumedKcal',
+                          style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w800,
+                                  color: gb.ink)
+                              .tabular),
+                      TextSpan(
+                          text: ' / Target $target kcal',
+                          style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: gb.grey500)),
+                    ]),
+                  ),
+                  const SizedBox(height: 8),
+                  _ThinBar(
+                      value: (consumedKcal / target).clamp(0.0, 1.0),
+                      color: fillColor,
+                      track: gb.grey25),
+                ] else
+                  // No plan target → consumed-only, no bar, no fabricated goal.
+                  Text.rich(
+                    TextSpan(children: [
+                      TextSpan(
+                          text: 'Logged $consumedKcal',
+                          style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w800,
+                                  color: gb.ink)
+                              .tabular),
+                      TextSpan(
+                          text: ' kcal today',
+                          style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: gb.grey500)),
+                    ]),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Thin pill-shaped progress bar — a calm, non-ring calorie meter (neutral track, tinted fill).
+class _ThinBar extends StatelessWidget {
+  const _ThinBar(
+      {required this.value, required this.color, required this.track});
+  final double value;
+  final Color color;
+  final Color track;
+
+  @override
+  Widget build(BuildContext context) => ClipRRect(
+        borderRadius: BorderRadius.circular(AppRadius.pill),
+        child: SizedBox(
+          height: 6,
+          width: double.infinity,
+          child: Stack(
+            children: [
+              ColoredBox(color: track),
+              FractionallySizedBox(
+                alignment: Alignment.centerLeft,
+                widthFactor: value,
+                child: ColoredBox(color: color),
+              ),
+            ],
+          ),
+        ),
+      );
+}
+
 // ── Day summary card (history / coach list) ──────────────────────────────────
 
 class NutriDayCard extends StatelessWidget {
