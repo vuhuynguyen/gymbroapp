@@ -92,8 +92,8 @@ class ProgressScreen extends ConsumerWidget {
 
 // ── Shared Graphite primitives (screen-local) ───────────────────────────────
 
-/// A mono uppercase micro-label (design `.gb-label`) — JetBrains Mono, 10px / 600 / +0.12em, tracked.
-/// The Progress tab's tracked caption channel (eyebrows, hero sub-labels, heatmap legend).
+/// An uppercase micro-label (design `.gb-label`) — app font (Inter Tight), 10px / 600 / zero tracking.
+/// The Progress tab's caption channel (eyebrows, hero sub-labels, heatmap legend).
 class _MonoLabel extends StatelessWidget {
   const _MonoLabel(this.text, {this.color, this.fontSize});
   final String text;
@@ -133,9 +133,11 @@ class _SectionTitle extends StatelessWidget {
         Text(
           text.toUpperCase(),
           style: TextStyle(
+            // App font, zero tracking — uppercase section titles read tight on real hardware
+            // (the design's +0.05em mono tracking was dropped with the JetBrains Mono channel).
             fontSize: 12.5,
             fontWeight: FontWeight.w800,
-            letterSpacing: 0.6,
+            letterSpacing: 0,
             color: gb.progInk,
           ),
         ),
@@ -499,7 +501,8 @@ class _LiftRow extends StatelessWidget {
                       color: gb.progInk,
                     ),
                   ),
-                  const SizedBox(height: 5),
+                  // Design: 4px above the thin-data label, 5px above the e1RM row.
+                  SizedBox(height: few ? 4 : 5),
                   if (few)
                     _MonoLabel('Log a few more to see trend',
                         color: gb.progInk3, fontSize: 10.5)
@@ -538,9 +541,10 @@ class _LiftRow extends StatelessWidget {
             ),
             const SizedBox(width: AppSpacing.sm),
             // Gradient-filled sparkline (donut endpoint), or dots-only for thin data.
+            // Design `Sparkline width={92} height={36}`.
             SizedBox(
-              width: 64,
-              height: 28,
+              width: 92,
+              height: 36,
               child: _Sparkline(
                 points: spark,
                 color: sparkColor(gb, lift.direction),
@@ -548,10 +552,22 @@ class _LiftRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: AppSpacing.sm),
-            LiftDirectionTag(
-              direction: lift.direction,
-              stalled: lift.stalled,
-              stallSessions: lift.stallSessions,
+            // Design right-aligns the DirTag in a ~78px trailing slot so the deltas line up. As the
+            // last row child it already trails; a 78px min-width box (right-aligned) reserves that
+            // column, and Flexible lets a longer tag shrink rather than overflow (the Expanded name
+            // absorbs the rest).
+            Flexible(
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minWidth: 78),
+                  child: LiftDirectionTag(
+                    direction: lift.direction,
+                    stalled: lift.stalled,
+                    stallSessions: lift.stallSessions,
+                  ),
+                ),
+              ),
             ),
           ],
         ),
@@ -618,6 +634,13 @@ class _ConsistencySection extends StatelessWidget {
     final gb = context.gb;
     final pct = consistency.consistencyPct;
     final streak = consistency.currentStreakWeeks;
+    // No goal (no plan) → there's no "% hit goal", but every completed ad-hoc session is already in
+    // `days`. Self-training without a plan still counts: derive the total session count and headline it
+    // instead of leaving an empty "% hit goal". The streak chip is goal-relative, so it's dropped here.
+    final hasGoal = pct != null;
+    final totalSessions = hasGoal
+        ? 0
+        : consistency.days.fold<int>(0, (sum, d) => sum + d.sessionCount);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -630,7 +653,7 @@ class _ConsistencySection extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Big % + flame streak header — only the parts the data honestly supports.
-              if (pct != null || streak > 0) ...[
+              if (hasGoal || streak > 0) ...[
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -671,16 +694,41 @@ class _ConsistencySection extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 18),
-              ],
-              SizedBox(
-                height: 92,
-                width: double.infinity,
-                child: _Heatmap(
-                  days: consistency.days,
-                  windowWeeks: consistency.windowWeeks,
-                  ramp: gb.progHeatRamp,
-                  nullCell: gb.progLine,
+              ]
+              // No goal, but completed (ad-hoc) sessions exist → headline the raw session count so
+              // self-training counts, with no fabricated "% hit goal" and no goal-relative streak chip.
+              else if (totalSessions > 0) ...[
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '$totalSessions',
+                      style: AppText.mono(const TextStyle(
+                        fontSize: 40,
+                        fontWeight: FontWeight.w800,
+                        height: 0.86,
+                        letterSpacing: -1.8,
+                      )).copyWith(color: gb.progInk),
+                    ),
+                    const SizedBox(height: 8),
+                    _MonoLabel(
+                      'Sessions · last ${consistency.windowWeeks} wks',
+                      color: gb.progInk3,
+                    ),
+                  ],
                 ),
+                const SizedBox(height: 18),
+              ],
+              // Override: the heatmap sizes its cells off the available card WIDTH (cell ≈
+              // gridWidth/12), so the grid fills the card with visibly larger ~square cells and
+              // the card height follows — instead of the prior fixed 92px cap that squeezed the
+              // grid to ~9px cells centred in a half-empty card.
+              _Heatmap(
+                days: consistency.days,
+                windowWeeks: consistency.windowWeeks,
+                ramp: gb.progHeatRamp,
+                nullCell: gb.progLine,
               ),
               const SizedBox(height: 14),
               Align(
@@ -710,10 +758,11 @@ class _StreakChip extends StatelessWidget {
         const SizedBox(width: 5),
         Text(
           '$streak wk streak'.toUpperCase(),
+          // App font + tabular figures, zero tracking — the flame streak caption reads tight.
           style: AppText.mono(const TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w600,
-            letterSpacing: 0.4,
+            letterSpacing: 0,
           )).copyWith(color: gb.progInk2),
         ),
       ],
@@ -732,18 +781,18 @@ class _HeatLegend extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        // Design `HeatLegend`: a uniform inline-flex gap:5 between "Less", each swatch, and "More".
         _MonoLabel('Less', color: label, fontSize: 8.5),
-        const SizedBox(width: 5),
         for (final c in ramp) ...[
+          const SizedBox(width: 5),
           Container(
             width: 10,
             height: 10,
             decoration:
                 BoxDecoration(color: c, borderRadius: BorderRadius.circular(2.5)),
           ),
-          const SizedBox(width: 3),
         ],
-        const SizedBox(width: 2),
+        const SizedBox(width: 5),
         _MonoLabel('More', color: label, fontSize: 8.5),
       ],
     );
@@ -969,10 +1018,11 @@ class _GoalChip extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text('Goal ${fmtKg(goalKg)}$unitSuffix',
+                // App font + tabular figures, zero tracking — the goal chip reads tight.
                 style: AppText.mono(const TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
-                  letterSpacing: 0.2,
+                  letterSpacing: 0,
                 )).copyWith(color: gb.progPos)),
             const SizedBox(width: AppSpacing.xxs),
             Icon(Icons.edit_outlined, size: AppSizes.iconXs, color: gb.progInk4),
@@ -1354,17 +1404,23 @@ class _NutritionSection extends ConsumerWidget {
           children: [
             const _SectionTitle('Nutrition'),
             const SizedBox(height: AppSpacing.sm),
-            if (!a.hasPlan)
-              // Empty-state invite — no plan, so no adherence to chart (never a 0% ring).
+            if (a.hasPlan)
+              if (a.isEmpty)
+                const _QuietCard(
+                  text: 'Close out a day to see your nutrition adherence.',
+                )
+              else
+                _NutritionAdherenceCard(adherence: a)
+            else if (a.hasAnyLogging)
+              // No meal plan, but the trainee self-logs food → an honest ad-hoc tracking state.
+              // Self-training without a plan still counts: we surface the days-logged signal, NEVER a
+              // fabricated 100% adherence ring (ad-hoc days are 100% by convention and absent from %).
+              _NutritionAdHocCard(loggedDays: a.loggedDaysThisWeek)
+            else
+              // Genuinely nothing logged yet → the follow-a-meal-plan invite (never a 0% ring).
               const _QuietCard(
                 text: 'Follow a meal plan to track nutrition adherence.',
-              )
-            else if (a.isEmpty)
-              const _QuietCard(
-                text: 'Close out a day to see your nutrition adherence.',
-              )
-            else
-              _NutritionAdherenceCard(adherence: a),
+              ),
           ],
         );
       },
@@ -1424,7 +1480,7 @@ class _NutritionAdherenceCard extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.xs),
                 Text(
-                  _adherenceCaption(weekPct, recent),
+                  _adherenceCaption(weekPct, recent, adherence.loggedDaysThisWeek),
                   style: AppText.mono(const TextStyle(fontSize: 12, fontWeight: FontWeight.w500))
                       .copyWith(color: gb.progInk2),
                 ),
@@ -1437,10 +1493,146 @@ class _NutritionAdherenceCard extends StatelessWidget {
   }
 }
 
-/// "Avg 84% this week · 5 days logged" / a recent-days fallback when there's no week roll-up.
-String _adherenceCaption(int? weekPct, List<DailyAdherence> recent) {
-  final n = recent.length;
-  final logged = '$n ${n == 1 ? 'day' : 'days'} logged';
+/// The no-plan ad-hoc tracking card: the trainee follows no meal plan but self-logs food, so there is
+/// no adherence % to chart — yet self-training without a plan still **counts**. We surface the honest
+/// days-logged signal (a mono progress strip + "You logged N of 7 days this week"), NEVER a fabricated
+/// 100% ring (ad-hoc days are 100% adherence by convention and are deliberately absent from the %).
+/// Graphite styling, consistent with the populated card.
+class _NutritionAdHocCard extends StatelessWidget {
+  const _NutritionAdHocCard({required this.loggedDays});
+
+  /// Distinct local days logged this week (clamped 0–7 for display).
+  final int loggedDays;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    final logged = loggedDays.clamp(0, 7);
+
+    return _ProgCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text.rich(
+                TextSpan(children: [
+                  TextSpan(
+                    text: '$logged',
+                    style: AppText.mono(const TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.w800,
+                      height: 0.9,
+                      letterSpacing: -0.8,
+                    )).copyWith(color: gb.progInk),
+                  ),
+                  TextSpan(
+                    text: '/7',
+                    style: AppText.mono(const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    )).copyWith(color: gb.progInk3),
+                  ),
+                ]),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(child: _MonoLabel('Days logged · this week', color: gb.progInk3)),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm + 2),
+          // A 7-segment progress strip — one filled pip per logged day. CustomPaint, no chart lib (D11).
+          SizedBox(
+            height: 8,
+            width: double.infinity,
+            child: _LoggedDaysStrip(
+              logged: logged,
+              total: 7,
+              fill: gb.progRing,
+              track: gb.progLine,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm + 2),
+          Text(
+            'You logged $logged of 7 days this week — self-tracking counts.',
+            style: TextStyle(fontSize: 12.5, height: 1.45, color: gb.progInk2),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A 7-pip "days logged this week" strip — `logged` filled pips out of `total`, the rest a faint track.
+/// CustomPaint, no chart library (D11); the honest self-logging signal for no-plan trainees.
+class _LoggedDaysStrip extends StatelessWidget {
+  const _LoggedDaysStrip({
+    required this.logged,
+    required this.total,
+    required this.fill,
+    required this.track,
+  });
+  final int logged;
+  final int total;
+  final Color fill;
+  final Color track;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: _LoggedDaysPainter(
+          logged: logged.clamp(0, total), total: total, fill: fill, track: track),
+      size: Size.infinite,
+    );
+  }
+}
+
+class _LoggedDaysPainter extends CustomPainter {
+  _LoggedDaysPainter({
+    required this.logged,
+    required this.total,
+    required this.fill,
+    required this.track,
+  });
+  final int logged;
+  final int total;
+  final Color fill;
+  final Color track;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (total <= 0) return;
+    const gap = 5.0;
+    final pipW = ((size.width - gap * (total - 1)) / total).clamp(1.0, double.infinity);
+    final radius = Radius.circular(math.min(3.0, size.height / 2));
+    for (var i = 0; i < total; i++) {
+      final left = i * (pipW + gap);
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(left, 0, pipW, size.height),
+        radius,
+      );
+      canvas.drawRRect(rect, Paint()..color = i < logged ? fill : track);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_LoggedDaysPainter old) =>
+      old.logged != logged ||
+      old.total != total ||
+      old.fill != fill ||
+      old.track != track;
+}
+
+/// "Avg 84% this week · logged 5/7 this week" / a recent-days fallback when there's no week roll-up.
+/// [loggedThisWeek] is the honest ad-hoc tracking count (planned + self-logged days this week); when
+/// it's positive we prefer the "logged N/7 this week" fragment over the bare recent-days count, so the
+/// plan card also acknowledges self-logging. Falls back to the recent-days count when it's 0.
+String _adherenceCaption(int? weekPct, List<DailyAdherence> recent, int loggedThisWeek) {
+  final logged = loggedThisWeek > 0
+      ? 'logged ${loggedThisWeek.clamp(0, 7)}/7 this week'
+      : '${recent.length} ${recent.length == 1 ? 'day' : 'days'} logged';
   if (weekPct != null) return 'Avg $weekPct% this week · $logged';
   return logged;
 }
@@ -1528,8 +1720,10 @@ class _QuietCard extends StatelessWidget {
     final gb = context.gb;
     return _ProgCard(
       quiet: true,
+      // Design `tier=3` invite copy: 12.5px / ink3 / 1.45 line-height (not the 14px body default).
       child: Text(text,
-          style: AppText.body.copyWith(color: gb.progInk3, height: 1.45)),
+          style: TextStyle(
+              fontSize: 12.5, height: 1.45, color: gb.progInk3)),
     );
   }
 }
@@ -1783,12 +1977,17 @@ class _LoadingBody extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.lg),
                 // Consistency card skeleton — a big bar + a 12×7 heatmap grid.
+                // Design `LoadingBody`: pad 17, a 42%-wide / 28px bar, grid 18px below.
                 const _ProgCard(
-                  padding: EdgeInsets.all(18),
+                  padding: EdgeInsets.all(17),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      GbSkeleton(width: 120, height: 28, radius: 7),
+                      FractionallySizedBox(
+                        widthFactor: 0.42,
+                        alignment: Alignment.centerLeft,
+                        child: GbSkeleton(width: double.infinity, height: 28, radius: 7),
+                      ),
                       SizedBox(height: 18),
                       _LoadingHeatmapGrid(),
                     ],
@@ -1926,6 +2125,8 @@ class _LoadingHeatmapGrid extends StatelessWidget {
         const cols = 12;
         const rows = 7;
         const gap = 4.5;
+        // Match the loaded heatmap: width-derived cells (≈ gridWidth/12) that fill the card, capped
+        // at 24 so the skeleton grid tracks the real one and doesn't balloon on a wide surface.
         final cell =
             ((constraints.maxWidth - gap * (cols - 1)) / cols).clamp(2.0, 24.0);
         return Column(
@@ -2229,33 +2430,58 @@ class _Heatmap extends StatelessWidget {
   /// The dashed-outline colour for null (future) cells.
   final Color nullCell;
 
+  /// Label column width + the gap to the grid (design `width:8` glyph in a flex column + `gap:7`).
+  static const double _labelCol = 9;
+  static const double _labelGap = 7;
+  static const double _cellGap = 4.5;
+  static const int _rows = 7; // Mon..Sun
+
   @override
   Widget build(BuildContext context) {
     final gb = context.gb;
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Day-label column (M / · / W / · / F / · / ·).
-        SizedBox(
-          width: 9,
-          child: CustomPaint(
-            size: const Size(9, 92),
-            painter: _HeatLabelPainter(color: gb.progInk4),
+    final cols = windowWeeks <= 0 ? 12 : windowWeeks;
+    // Override: derive the cell size from the GRID width (cell ≈ gridWidth/12), so the grid fills
+    // the card with large ~square cells and the card height follows — rather than capping height and
+    // letting tiny cells float centred in a half-empty card. The whole heatmap height is then exactly
+    // the 7-row grid height, which the label column matches.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final gridW = constraints.maxWidth - _labelCol - _labelGap;
+        // Cell ≈ gridWidth/12 (fills a phone card at ~21px). Capped at 24 so the grid can't balloon
+        // on a wide/desktop/test surface — on a phone the width-derived size is well under the cap.
+        final cell = ((gridW - _cellGap * (cols - 1)) / cols).clamp(2.0, 24.0);
+        final gridH = cell * _rows + _cellGap * (_rows - 1);
+        return SizedBox(
+          height: gridH,
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Day-label column (M / · / W / · / F / · / ·), aligned to the grid rows.
+              SizedBox(
+                width: _labelCol,
+                height: gridH,
+                child: CustomPaint(
+                  size: Size(_labelCol, gridH),
+                  painter: _HeatLabelPainter(color: gb.progInk4),
+                ),
+              ),
+              const SizedBox(width: _labelGap),
+              Expanded(
+                child: CustomPaint(
+                  painter: _HeatmapPainter(
+                    counts: _countsByDay(days),
+                    weeks: cols,
+                    cell: cell,
+                    ramp: ramp,
+                    nullCell: nullCell,
+                  ),
+                  size: Size.infinite,
+                ),
+              ),
+            ],
           ),
-        ),
-        const SizedBox(width: 7),
-        Expanded(
-          child: CustomPaint(
-            painter: _HeatmapPainter(
-              counts: _countsByDay(days),
-              weeks: windowWeeks <= 0 ? 12 : windowWeeks,
-              ramp: ramp,
-              nullCell: nullCell,
-            ),
-            size: Size.infinite,
-          ),
-        ),
-      ],
+        );
+      },
     );
   }
 
@@ -2313,11 +2539,16 @@ class _HeatmapPainter extends CustomPainter {
   _HeatmapPainter({
     required this.counts,
     required this.weeks,
+    required this.cell,
     required this.ramp,
     required this.nullCell,
   });
   final Map<DateTime, int> counts;
   final int weeks;
+
+  /// The width-derived square cell size (≈ gridWidth/12), computed by [_Heatmap] so the grid fills
+  /// the card. The painter no longer mins against its own height — the grid IS its full height.
+  final double cell;
   final List<Color> ramp;
   final Color nullCell;
 
@@ -2326,12 +2557,10 @@ class _HeatmapPainter extends CustomPainter {
     const rows = 7; // Mon..Sun
     const gap = 4.5;
     final cols = weeks;
-    final cell = math.min((size.width - gap * (cols - 1)) / cols,
-        (size.height - gap * (rows - 1)) / rows);
     if (cell <= 0) return;
 
-    final gridW = cell * cols + gap * (cols - 1);
-    final startX = (size.width - gridW) / 2;
+    // Left-aligned (no centring) — the width-derived cells already fill the available width.
+    const startX = 0.0;
 
     // Monday of the current week, in local time.
     final now = DateTime.now();
@@ -2387,6 +2616,7 @@ class _HeatmapPainter extends CustomPainter {
   @override
   bool shouldRepaint(_HeatmapPainter old) =>
       old.weeks != weeks ||
+      old.cell != cell ||
       old.nullCell != nullCell ||
       !listEquals(old.ramp, ramp) ||
       !mapEquals(old.counts, counts);

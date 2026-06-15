@@ -72,10 +72,15 @@ void main() {
         scrollable: find.byType(Scrollable).first);
   }
 
-  testWidgets('hasPlan=false → "follow a meal plan" invite, no ring', (tester) async {
+  testWidgets('hasPlan=false + no logging → "follow a meal plan" invite, no ring', (tester) async {
     await pump(
       tester,
-      const AsyncData(NutritionAdherence(hasPlan: false, recentDays: [])),
+      const AsyncData(NutritionAdherence(
+        hasPlan: false,
+        recentDays: [],
+        hasAnyLogging: false,
+        loggedDaysThisWeek: 0,
+      )),
     );
     await scrollTo(tester, find.text('NUTRITION'));
 
@@ -85,6 +90,41 @@ void main() {
       findsOneWidget,
     );
     // No adherence ring on the no-plan state (a 0% ring would read as failure).
+    expect(find.byType(GbRing), findsNothing);
+    expect(find.textContaining('%'), findsNothing);
+    // No ad-hoc tracking copy when nothing has been logged.
+    expect(find.textContaining('You logged'), findsNothing);
+  });
+
+  testWidgets('hasPlan=false + ad-hoc logging → "You logged N of 7" state, no invite, no 100% ring',
+      (tester) async {
+    // Self-training/eating without a plan: ad-hoc days are 100% by convention so they're absent from
+    // the %, but the days-logged signal must still COUNT on Progress — never a fabricated 100% ring.
+    await pump(
+      tester,
+      const AsyncData(NutritionAdherence(
+        hasPlan: false,
+        recentDays: [],
+        hasAnyLogging: true,
+        loggedDaysThisWeek: 4,
+      )),
+    );
+    await scrollTo(tester, find.text('You logged 4 of 7 days this week — self-tracking counts.'));
+
+    // The honest ad-hoc tracking copy renders…
+    expect(
+      find.text('You logged 4 of 7 days this week — self-tracking counts.'),
+      findsOneWidget,
+    );
+    expect(find.text('DAYS LOGGED · THIS WEEK'), findsOneWidget); // mono sub-label (uppercased)
+    // The big number is a Text.rich ("4" + "/7" spans) → match the rendered "4/7".
+    expect(find.textContaining('4/7'), findsOneWidget); // big days-logged number
+    // …and NOT the follow-a-meal-plan invite.
+    expect(
+      find.text('Follow a meal plan to track nutrition adherence.'),
+      findsNothing,
+    );
+    // Never a fabricated 100% adherence ring on the no-plan ad-hoc state.
     expect(find.byType(GbRing), findsNothing);
     expect(find.textContaining('%'), findsNothing);
   });
@@ -179,6 +219,8 @@ void main() {
     final frozenPayload = <String, dynamic>{
       'hasPlan': true,
       'currentWeekAvgPct': 84,
+      'loggedDaysThisWeek': 5,
+      'hasAnyLogging': true,
       'days': [
         {
           'localDate': '2026-06-10',
@@ -195,11 +237,14 @@ void main() {
       ],
     };
 
-    test('reads days/localDate/adherencePct from the frozen payload', () {
+    test('reads days/localDate/adherencePct + loggedDaysThisWeek/hasAnyLogging from the frozen payload', () {
       final a = NutritionAdherence.fromJson(frozenPayload);
 
       expect(a.hasPlan, isTrue);
       expect(a.currentWeekAvgPct, 84);
+      // The extended self-train signal parses.
+      expect(a.loggedDaysThisWeek, 5);
+      expect(a.hasAnyLogging, isTrue);
       // The series must NOT be empty — this is the bug class the field-name fix closes.
       expect(a.recentDays, hasLength(2));
       expect(a.isEmpty, isFalse);
@@ -208,6 +253,32 @@ void main() {
       expect(first.date, DateTime(2026, 6, 10));
       expect(first.pct, 90);
       expect(a.recentDays.last.pct, 70);
+    });
+
+    test('ad-hoc-only payload parses to hasPlan:false + hasAnyLogging:true + loggedDaysThisWeek', () {
+      final a = NutritionAdherence.fromJson(const {
+        'hasPlan': false,
+        'days': <dynamic>[],
+        'currentWeekAvgPct': null,
+        'loggedDaysThisWeek': 3,
+        'hasAnyLogging': true,
+      });
+
+      expect(a.hasPlan, isFalse);
+      expect(a.recentDays, isEmpty); // no planned days to chart
+      expect(a.hasAnyLogging, isTrue);
+      expect(a.loggedDaysThisWeek, 3);
+    });
+
+    test('older payload without the new fields defaults to 0 / false (defensive)', () {
+      final a = NutritionAdherence.fromJson(const {
+        'hasPlan': true,
+        'currentWeekAvgPct': 80,
+        'days': <dynamic>[],
+      });
+
+      expect(a.loggedDaysThisWeek, 0);
+      expect(a.hasAnyLogging, isFalse);
     });
 
     test('never-planned empty-invite shape parses to hasPlan:false, empty', () {
@@ -221,6 +292,9 @@ void main() {
       expect(a.recentDays, isEmpty);
       expect(a.isEmpty, isTrue);
       expect(a.currentWeekAvgPct, isNull);
+      // Defensive defaults on the legacy never-planned shape.
+      expect(a.loggedDaysThisWeek, 0);
+      expect(a.hasAnyLogging, isFalse);
     });
 
     test('clamps out-of-range adherencePct to 0–100', () {

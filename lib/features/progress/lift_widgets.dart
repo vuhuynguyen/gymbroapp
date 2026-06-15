@@ -48,8 +48,10 @@ class LiftDirectionTag extends StatelessWidget {
         const SizedBox(width: AppSpacing.xxs),
         Text(
           label,
+          // App font (Inter Tight) + tabular figures, zero tracking — the "Flat N×" / "Up" /
+          // "Slipping" tag reads tight and clean on real hardware (no monospace, no caps tracking).
           style: AppText.mono(
-            const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0.12),
+            const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, letterSpacing: 0),
           ).copyWith(color: color),
         ),
       ],
