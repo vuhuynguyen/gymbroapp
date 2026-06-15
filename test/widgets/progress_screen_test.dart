@@ -36,9 +36,10 @@ void main() {
     List<ConsistencyDay> days = const [],
     int? pct,
     int streak = 0,
+    int windowWeeks = 12,
   }) =>
       Consistency(
-        windowWeeks: 12,
+        windowWeeks: windowWeeks,
         days: days,
         consistencyPct: pct,
         currentStreakWeeks: streak,
@@ -369,6 +370,28 @@ void main() {
     expect(find.byIcon(Icons.local_fire_department), findsOneWidget);
     // The no-goal sessions caption must NOT appear when there is a goal.
     expect(find.text('SESSIONS · LAST 12 WKS'), findsNothing);
+  });
+
+  testWidgets('consistency "% hit goal" caption reflects the selected window (not a frozen 12)',
+      (tester) async {
+    await pumpData(
+      tester,
+      overview(
+        thisWeek: week(completed: 3, goal: 4, hasPlan: true, start: DateTime.now()),
+        cons: consistency(
+          windowWeeks: 8,
+          pct: 78,
+          streak: 5,
+          days: const [ConsistencyDay(date: null, sessionCount: 1)],
+        ),
+        prs: [pr(id: 'p1', name: 'Row')],
+      ),
+    );
+    await scrollTo(tester, find.text('HIT GOAL · LAST 8 WKS'));
+
+    // The subtitle must track the effective window from the period selector, never a hardcoded 12.
+    expect(find.text('HIT GOAL · LAST 8 WKS'), findsOneWidget);
+    expect(find.text('HIT GOAL · LAST 12 WKS'), findsNothing);
   });
 
   // ── §1 red discipline + direction tags ──────────────────────────────────────

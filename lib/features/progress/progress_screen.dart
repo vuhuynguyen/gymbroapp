@@ -1431,7 +1431,7 @@ class _ConsistencySection extends StatelessWidget {
                               ]),
                             ),
                             const SizedBox(height: 8),
-                            _MonoLabel('Hit goal · last 12 wks',
+                            _MonoLabel('Hit goal · last ${consistency.windowWeeks} wks',
                                 color: gb.progInk3),
                           ],
                         ),

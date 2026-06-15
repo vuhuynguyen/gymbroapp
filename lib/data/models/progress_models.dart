@@ -540,9 +540,6 @@ class NutritionAdherence {
   /// true → the ad-hoc tracking state; false → the "follow a meal plan" invite (genuinely nothing yet).
   final bool hasAnyLogging;
 
-  /// No closed days to chart yet (but a plan exists) → render a "log a day" nudge, not an empty strip.
-  bool get isEmpty => recentDays.isEmpty;
-
   /// Wire shape is the **frozen** `NutritionAdherenceDto(HasPlan, Days, CurrentWeekAvgPct)`
   /// serialized camelCase, extended (D-self-train) with `loggedDaysThisWeek` (int) + `hasAnyLogging`
   /// (bool) so ad-hoc self-logging is recorded on Progress, so the recent series arrives under `days`
