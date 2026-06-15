@@ -458,13 +458,9 @@ class NutriAdherenceCard extends StatelessWidget {
                         color: gb.ink,
                         letterSpacing: -0.15)),
                 const SizedBox(height: AppSpacing.sm),
-                Row(
-                  children: [
-                    _stat(context, '${log.loggedKcal.round()}', 'kcal'),
-                    const SizedBox(width: 22),
-                    _stat(context, '${log.loggedProtein.round()}', 'protein g'),
-                  ],
-                ),
+                // Calories live in the dedicated "Calories today" card (logged / target); keep only
+                // protein here so the two cards don't both report kcal.
+                _stat(context, '${log.loggedProtein.round()}', 'protein g'),
               ],
             ),
           ),
