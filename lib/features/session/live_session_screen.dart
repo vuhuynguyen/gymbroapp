@@ -918,17 +918,15 @@ class _ExerciseCard extends StatelessWidget {
             padding: const EdgeInsets.symmetric(vertical: 6),
             child: Column(
               children: [
-                // Rest is stored as "rest before this set"; show it as the rest taken *after* a set
-                // (= the next set's stored value) so it reads naturally and the first set isn't mislabelled.
+                // Show each set's OWN logged rest on that set (the rest you took before logging it), so the
+                // value lands on the set you entered it with — not the previous set.
                 // Reorder arrows act on lead sets only (a drop cluster moves as a unit); `_leads` gives
                 // each lead's position so the up/down affordances disable at the ends.
                 for (var i = 0; i < exercise.sets.length; i++)
                   _LoggedSetRow(
                     key: ValueKey('set-${exercise.sets[i].id}'),
                     set: exercise.sets[i],
-                    restAfter: i + 1 < exercise.sets.length
-                        ? exercise.sets[i + 1].restSeconds
-                        : null,
+                    rest: exercise.sets[i].restSeconds,
                     onDelete: () => onDeleteSet(exercise.sets[i]),
                     onEdit: () => onEditSet(exercise.sets[i]),
                     onMoveUp: _leadIndex(exercise.sets[i]) > 0
@@ -992,7 +990,7 @@ class _LoggedSetRow extends StatelessWidget {
   const _LoggedSetRow({
     super.key,
     required this.set,
-    this.restAfter,
+    this.rest,
     required this.onDelete,
     this.onEdit,
     this.onMoveUp,
@@ -1000,8 +998,8 @@ class _LoggedSetRow extends StatelessWidget {
   });
   final PerformedSet set;
 
-  /// Rest taken *after* this set (derived from the next set's stored "rest before"); null for the last set.
-  final int? restAfter;
+  /// This set's own logged rest (the rest taken before it was logged), shown on the set itself.
+  final int? rest;
 
   /// Confirms + deletes the set; resolves to true when the set was removed.
   final Future<bool> Function() onDelete;
@@ -1030,12 +1028,12 @@ class _LoggedSetRow extends StatelessWidget {
     final gb = context.gb;
     final e1rm =
         set.estimatedOneRepMaxKg ?? epleyOneRepMax(set.weightKg, set.reps);
-    // Sub-line: e1RM (working strength sets) and/or the rest taken after the set.
+    // Sub-line: e1RM (working strength sets), RPE, and this set's own logged rest.
     final subParts = <String>[
       if (set.setType == PerformedSetType.working && e1rm != null)
         'e1RM ${e1rm.toStringAsFixed(1)}kg',
       if ((set.rpe ?? 0) > 0) 'RPE ${set.rpe}',
-      if ((restAfter ?? 0) > 0) 'rest ${formatRestClock(restAfter!)}',
+      if ((rest ?? 0) > 0) 'rest ${formatRestClock(rest!)}',
     ];
     // Swipe-left reveals a red "delete" panel and runs the confirm flow; long-press
     // is kept as a secondary affordance. confirmDismiss only lets the row animate
