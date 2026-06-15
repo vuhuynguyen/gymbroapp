@@ -7,7 +7,8 @@
 .buildlog/
 .history
 
-
+# IDE — IntelliJ / Android Studio (do not track editor config)
+.idea/
 
 # Flutter repo-specific
 /bin/cache/
