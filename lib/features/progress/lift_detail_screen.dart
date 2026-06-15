@@ -185,19 +185,37 @@ class _StallNote extends StatelessWidget {
 
 // ── Trend card: the e1RM CustomPaint chart ───────────────────────────────────
 
-/// The primary visualization — a bold e1RM line over faint raw session points with amber PR markers,
+/// The primary visualization — a bold line over faint raw session points with amber PR markers,
 /// min/max y labels, and a "log N more" gate below 4 points (DRILL-DOWNS §1, D11: no chart lib).
-class _TrendCard extends StatelessWidget {
+/// A toggle switches the plotted metric between estimated 1RM and the actual top-set weight logged.
+class _TrendCard extends StatefulWidget {
   const _TrendCard({required this.series});
   final ExerciseE1rmSeries series;
 
   @override
+  State<_TrendCard> createState() => _TrendCardState();
+}
+
+class _TrendCardState extends State<_TrendCard> {
+  bool _weight = false; // false = e1RM, true = top-set weight
+
+  @override
   Widget build(BuildContext context) {
     final gb = context.gb;
+    final series = widget.series;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const GbSectionTitle('e1RM trend'),
+        Row(
+          children: [
+            GbSectionTitle(_weight ? 'Weight trend' : 'e1RM trend'),
+            const Spacer(),
+            _MetricToggle(
+              weight: _weight,
+              onChanged: (w) => setState(() => _weight = w),
+            ),
+          ],
+        ),
         const SizedBox(height: AppSpacing.sm),
         GbCard(
           child: Column(
@@ -213,6 +231,8 @@ class _TrendCard extends StatelessWidget {
                   raw: gb.grey400,
                   pr: gb.amber,
                   label: gb.grey500,
+                  valueOf: _weight ? weightValue : e1rmValue,
+                  metricId: _weight ? 'weight' : 'e1rm',
                 ),
               ),
               if (!series.hasTrend) ...[
@@ -225,7 +245,11 @@ class _TrendCard extends StatelessWidget {
                 ),
               ] else ...[
                 const SizedBox(height: AppSpacing.sm),
-                _Legend(line: tagColor(gb, series.direction), pr: gb.amber),
+                _Legend(
+                  line: tagColor(gb, series.direction),
+                  pr: gb.amber,
+                  lineLabel: _weight ? 'Weight' : 'e1RM',
+                ),
               ],
             ],
           ),
@@ -237,18 +261,58 @@ class _TrendCard extends StatelessWidget {
   static int _needMore(int n) => math.max(1, 4 - n);
 }
 
+/// Two-pill segmented toggle to switch the trend metric between e1RM and logged weight.
+class _MetricToggle extends StatelessWidget {
+  const _MetricToggle({required this.weight, required this.onChanged});
+  final bool weight;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    Widget pill(String text, bool selected, VoidCallback onTap) => InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: selected ? gb.primary600 : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(text,
+                style: AppText.meta.copyWith(
+                    color: selected ? Colors.white : gb.grey500,
+                    fontWeight: FontWeight.w700)),
+          ),
+        );
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: gb.grey0,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: gb.borderCard),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        pill('e1RM', !weight, () => onChanged(false)),
+        pill('Weight', weight, () => onChanged(true)),
+      ]),
+    );
+  }
+}
+
 /// A tiny inline legend so the amber PR markers and the trend line read unambiguously.
 class _Legend extends StatelessWidget {
-  const _Legend({required this.line, required this.pr});
+  const _Legend({required this.line, required this.pr, this.lineLabel = 'e1RM'});
   final Color line;
   final Color pr;
+  final String lineLabel;
 
   @override
   Widget build(BuildContext context) {
     final gb = context.gb;
     return Row(
       children: [
-        _swatch(line, 'e1RM', gb),
+        _swatch(line, lineLabel, gb),
         const SizedBox(width: AppSpacing.md),
         _swatch(pr, 'PR', gb, dot: true),
       ],
