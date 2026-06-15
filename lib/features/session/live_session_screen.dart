@@ -840,8 +840,10 @@ class _ExerciseCard extends StatelessWidget {
     final name = exercise.exerciseName ?? 'Exercise ${exercise.order}';
     final isSkipped = exercise.status == ExercisePerformStatus.skipped;
     final targets = _metaTargets();
-    // Per-exercise set count (logged vs planned). Drop stages roll up into their lead, so count leads only.
-    final loggedCount = exercise.leadSetCount;
+    // Per-exercise set count (logged vs planned). Count EVERY logged set incl. drop stages, so it matches
+    // the prescription walk below (which indexes prescribed sets by total logged count) and the rows shown —
+    // otherwise a plan with prescribed drop sets sticks at e.g. "4/7" and never completes.
+    final loggedCount = exercise.sets.length;
     final plannedCount = snapshotSets.length;
     final setsLabel = plannedCount > 0
         ? '$loggedCount/$plannedCount sets'
@@ -951,9 +953,9 @@ class _ExerciseCard extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
                     child: _EntryRow(
-                      setNumber: exercise.leadSetCount + 1,
-                      target: snapshotSets.length >= exercise.leadSetCount + 1
-                          ? snapshotSets[exercise.leadSetCount]
+                      setNumber: exercise.sets.length + 1,
+                      target: snapshotSets.length >= exercise.sets.length + 1
+                          ? snapshotSets[exercise.sets.length]
                           : null,
                       profile: profile,
                       entry: entry,
@@ -969,9 +971,9 @@ class _ExerciseCard extends StatelessWidget {
                   ),
                 // Upcoming planned sets (beyond the one being logged) — a greyed preview so the whole
                 // prescription is visible at a glance: each remaining set's type, target weight × reps
-                // and RPE. The entry above covers the current set (planned index leadSetCount).
+                // and RPE. The entry above covers the current set (planned index = sets.length).
                 if (!isSkipped)
-                  for (var i = exercise.leadSetCount + 1;
+                  for (var i = exercise.sets.length + 1;
                       i < snapshotSets.length;
                       i++)
                     _PlannedSetRow(setNumber: i + 1, target: snapshotSets[i]),
