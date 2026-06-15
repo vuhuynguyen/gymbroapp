@@ -139,6 +139,11 @@ class _HeaderStrip extends StatelessWidget {
                 const SizedBox(height: AppSpacing.xs),
                 Text(_deltaCaption(series),
                     style: AppText.meta.copyWith(color: gb.grey500).tabular),
+                if (_lastTopSet(series) != null) ...[
+                  const SizedBox(height: 2),
+                  Text(_lastTopSet(series)!,
+                      style: AppText.meta.copyWith(color: gb.grey500).tabular),
+                ],
               ],
             ),
           ),
@@ -363,6 +368,15 @@ class _ScrollableCenter extends StatelessWidget {
 
 /// "+4.2 kg vs your trailing 4 weeks" / "−1.0 kg …" / "No change …". Never red copy — the tag carries
 /// the direction color; this caption stays neutral.
+/// "Last top set: 22.5 kg × 6" from the most recent point — the actual weight lifted, beside the e1RM.
+String? _lastTopSet(ExerciseE1rmSeries s) {
+  if (s.points.isEmpty) return null;
+  final p = s.points.last;
+  if (p.topSetWeightKg == null) return null;
+  final reps = p.topSetReps != null ? ' × ${p.topSetReps}' : '';
+  return 'Last top set: ${fmtKg(p.topSetWeightKg!)} kg$reps';
+}
+
 String _deltaCaption(ExerciseE1rmSeries s) {
   final d = s.deltaKgVsTrailing4w;
   if (d.abs() < 0.05) return 'No change vs your trailing 4 weeks';

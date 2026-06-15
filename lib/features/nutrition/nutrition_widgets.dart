@@ -405,6 +405,10 @@ class NutriAdherenceCard extends StatelessWidget {
     final total = log.plannedCount;
     final done = log.completedCount;
     final remaining = (total - done).clamp(0, total);
+    // No plan → adherence % is meaningless (it'd read a vacuous 100%). Show the count of logged items
+    // instead, with an empty ring, so an ad-hoc day reads honestly.
+    final noPlan = total == 0 && !log.isClosed;
+    final loggedCount = log.allItems.length;
     final headline = log.isClosed
         ? (log.adherencePct >= 80 ? 'Solid day — plan followed' : 'Day closed')
         : (total == 0
@@ -418,20 +422,20 @@ class NutriAdherenceCard extends StatelessWidget {
       child: Row(
         children: [
           GbRing(
-            value: log.adherenceFraction,
+            value: noPlan ? 0 : log.adherenceFraction,
             size: 74,
             stroke: 8,
             gradient: const [AppPalette.primary200, AppPalette.primary700],
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('${log.adherencePct}%',
+                Text(noPlan ? '$loggedCount' : '${log.adherencePct}%',
                     style: const TextStyle(
                             fontSize: 19,
                             fontWeight: FontWeight.w800,
                             height: 1)
                         .tabular),
-                Text('$done of $total',
+                Text(noPlan ? 'logged' : '$done of $total',
                     style: TextStyle(
                             fontSize: 10,
                             color: gb.grey400,
@@ -513,6 +517,9 @@ class CaloriesTodayCard extends StatelessWidget {
 
     return GbCard(
       padding: const EdgeInsets.all(AppSpacing.heroPad),
+      // Highlighted as a key daily readout — primary-tinted with an accent border so it stands out.
+      color: gb.primary0,
+      border: gb.primary50,
       child: Row(
         children: [
           GbIconTile(

@@ -165,8 +165,10 @@ class _NextWorkoutPrompt extends StatelessWidget {
     return GbTappableRow(
       dashed: true,
       onTap: onStart,
+      // Highlighted as the day's primary CTA — a primary-tinted fill behind the dashed border.
+      color: gb.primary0,
       leading: GbIconTile(
-          background: gb.primary0,
+          background: gb.primary50,
           child: Icon(Icons.bolt, size: 21, color: gb.primary600)),
       title: 'Start today’s workout',
       subtitle: 'Tap to pick a plan or log an ad-hoc session',
