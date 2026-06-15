@@ -102,17 +102,11 @@ class NutritionTodaySection extends ConsumerWidget {
           _ClosedBanner(),
           const SizedBox(height: AppSpacing.xs),
         ],
-        // The adherence ring is plan-relative; with no plan there's nothing to be adherent to.
-        if (log.hasPlan) ...[
-          NutriAdherenceCard(log: log),
-          const SizedBox(height: AppSpacing.gap),
-        ],
-        const DailyCheckinCard(),
+        // One nutrition summary: adherence ring + items + all-source calories (logged / target) and
+        // protein. Shown always — with no plan it reads the logged-item count + logged calories.
+        NutriAdherenceCard(log: log),
         const SizedBox(height: AppSpacing.gap),
-        // Honest calories-today readout: "Logged Y / Target X" with a thin bar when the plan sets a
-        // target, "Logged Y today" with NO target / bar otherwise. Always shown (plan or self-logger).
-        CaloriesTodayCard(
-            consumedKcal: log.consumedKcal, targetKcal: log.targetKcal),
+        const DailyCheckinCard(),
         const SizedBox(height: AppSpacing.gap),
         // Off-plan logging leads the food section (an "add" affordance belongs at the top, not buried
         // under the meal list) — always available on an open day, even with no assigned plan.
