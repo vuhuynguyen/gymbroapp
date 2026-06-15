@@ -102,9 +102,11 @@ class _MonoLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    var style = AppText.monoLabel().copyWith(color: color ?? context.gb.progInk3);
+    var style =
+        AppText.monoLabel().copyWith(color: color ?? context.gb.progInk3);
     if (fontSize != null) style = style.copyWith(fontSize: fontSize);
-    return Text(text.toUpperCase(), style: style, maxLines: 1, overflow: TextOverflow.ellipsis);
+    return Text(text.toUpperCase(),
+        style: style, maxLines: 1, overflow: TextOverflow.ellipsis);
   }
 }
 
@@ -202,7 +204,8 @@ class _ThisWeekSection extends StatelessWidget {
     const heroFg = Colors.white;
     const heroMut = Color(0xBDDFE9FF); // --hero-mut (rgba(223,233,255,0.74))
     const heroLine = Color(0x2EFFFFFF); // --hero-line (rgba(255,255,255,0.18))
-    const heroTrack = Color(0x38FFFFFF); // --hero-track (rgba(255,255,255,0.22))
+    const heroTrack =
+        Color(0x38FFFFFF); // --hero-track (rgba(255,255,255,0.22))
     const heroRing = Color(0xFFCFE0FF); // --hero-ring
     const heroShadow = [
       BoxShadow(
@@ -228,7 +231,8 @@ class _ThisWeekSection extends StatelessWidget {
             const _MonoLabel('This week', color: heroMut),
             const SizedBox(height: AppSpacing.sm),
             // The verdict headline — green (hero-pos) or neutral white, NEVER red (PHASE-1 §1 card 1a).
-            _HeadlineText(overview: overview, fg: heroFg, pos: const Color(0xFF74E6B0)),
+            _HeadlineText(
+                overview: overview, fg: heroFg, pos: const Color(0xFF74E6B0)),
             const SizedBox(height: AppSpacing.md + 2),
             Container(height: 1, color: heroLine),
             const SizedBox(height: AppSpacing.md + 2),
@@ -335,7 +339,8 @@ class _ThisWeekSection extends StatelessWidget {
 /// in hero-pos green, the rest white. Never red (PHASE-1 §1). The composition logic is unchanged from
 /// the prior screen ([_headline]); only the per-fragment colouring is new.
 class _HeadlineText extends StatelessWidget {
-  const _HeadlineText({required this.overview, required this.fg, required this.pos});
+  const _HeadlineText(
+      {required this.overview, required this.fg, required this.pos});
   final ProgressOverview overview;
   final Color fg;
   final Color pos;
@@ -386,7 +391,9 @@ String _goalCaption(WeekAdherence week) {
   final goal = week.goal ?? 0;
   final remaining = goal - week.completedSessions;
   if (remaining <= 0) return 'Goal reached this week';
-  return remaining == 1 ? '1 session to your goal' : '$remaining sessions to your goal';
+  return remaining == 1
+      ? '1 session to your goal'
+      : '$remaining sessions to your goal';
 }
 
 /// "2 days left · rest days count" / "Last day · rest days count" — a forgiving nudge, only with a plan.
@@ -395,12 +402,11 @@ String _daysLeftCaption(WeekAdherence week) {
   if (start == null) return 'Rest days count';
   final now = DateTime.now();
   final today = DateTime(now.year, now.month, now.day);
-  final weekEnd = DateTime(start.year, start.month, start.day)
-      .add(const Duration(days: 6));
+  final weekEnd =
+      DateTime(start.year, start.month, start.day).add(const Duration(days: 6));
   final left = weekEnd.difference(today).inDays;
-  final leftPart = left <= 0
-      ? 'Last day'
-      : (left == 1 ? '1 day left' : '$left days left');
+  final leftPart =
+      left <= 0 ? 'Last day' : (left == 1 ? '1 day left' : '$left days left');
   return '$leftPart · rest days count';
 }
 
@@ -462,8 +468,9 @@ class _RuleInset extends StatelessWidget {
   const _RuleInset({required this.color});
   final Color color;
   @override
-  Widget build(BuildContext context) =>
-      Padding(padding: const EdgeInsets.symmetric(horizontal: 14), child: Container(height: 1, color: color));
+  Widget build(BuildContext context) => Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      child: Container(height: 1, color: color));
 }
 
 /// A single lift row: name · big e1RM (+ "est. 1RM") · gradient sparkline (donut endpoint; dots-only
@@ -610,11 +617,13 @@ class _StallCallout extends StatelessWidget {
                         "$name hasn't moved in ${lift.stallSessions} sessions — "),
                 TextSpan(
                   text: 'time to change something',
-                  style: TextStyle(color: gb.progWarn, fontWeight: FontWeight.w700),
+                  style: TextStyle(
+                      color: gb.progWarn, fontWeight: FontWeight.w700),
                 ),
                 const TextSpan(text: '.'),
               ]),
-              style: TextStyle(fontSize: 12.5, height: 1.35, color: gb.progInk2),
+              style:
+                  TextStyle(fontSize: 12.5, height: 1.35, color: gb.progInk2),
             ),
           ),
         ],
@@ -684,7 +693,8 @@ class _ConsistencySection extends StatelessWidget {
                               ]),
                             ),
                             const SizedBox(height: 8),
-                            _MonoLabel('Hit goal · last 12 wks', color: gb.progInk3),
+                            _MonoLabel('Hit goal · last 12 wks',
+                                color: gb.progInk3),
                           ],
                         ),
                       )
@@ -788,8 +798,8 @@ class _HeatLegend extends StatelessWidget {
           Container(
             width: 10,
             height: 10,
-            decoration:
-                BoxDecoration(color: c, borderRadius: BorderRadius.circular(2.5)),
+            decoration: BoxDecoration(
+                color: c, borderRadius: BorderRadius.circular(2.5)),
           ),
         ],
         const SizedBox(width: 5),
@@ -824,9 +834,9 @@ class _PrSection extends StatelessWidget {
   }
 }
 
-/// A display-only PR teaser row (design) — a brand trophy IconTile (brand-soft fill), the lift name +
-/// a "New best" mono tag (top row only), and a mono caption "140 kg × 3 · est. 1RM 153 · 2d ago". No
-/// tap-through in Phase 1 (PHASE-1 §1 card 4).
+/// A PR teaser row (design) — a brand trophy IconTile (brand-soft fill), the lift name +
+/// a "New best" mono tag (top row only), and a mono caption "140 kg × 3 · est. 1RM 153 · 2d ago".
+/// Taps through to the per-lift e1RM drill-down (`/progress/lift/:exerciseId`), same as a strength row.
 class _PrRow extends StatelessWidget {
   const _PrRow({required this.pr, required this.isBest});
   final PersonalRecord pr;
@@ -841,62 +851,70 @@ class _PrRow extends StatelessWidget {
     if (when.isNotEmpty) caption.write(' · $when');
 
     return _ProgCard(
-      padding: const EdgeInsets.all(15),
-      child: Row(
-        children: [
-          // Brand trophy tile (brand-soft fill, faint brand border, brand glyph).
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: gb.progBrandSoft,
-              borderRadius: BorderRadius.circular(AppRadius.sm - 1),
-              border: Border.all(color: gb.primary600.withValues(alpha: 0.22)),
-            ),
-            alignment: Alignment.center,
-            child: Icon(Icons.emoji_events, size: 22, color: gb.primary600),
-          ),
-          const SizedBox(width: AppSpacing.sm + 2),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
+      padding: EdgeInsets.zero,
+      child: InkWell(
+        onTap: () => context.push('/progress/lift/${pr.exerciseId}'),
+        child: Padding(
+          padding: const EdgeInsets.all(15),
+          child: Row(
+            children: [
+              // Brand trophy tile (brand-soft fill, faint brand border, brand glyph).
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: gb.progBrandSoft,
+                  borderRadius: BorderRadius.circular(AppRadius.sm - 1),
+                  border:
+                      Border.all(color: gb.primary600.withValues(alpha: 0.22)),
+                ),
+                alignment: Alignment.center,
+                child: Icon(Icons.emoji_events, size: 22, color: gb.primary600),
+              ),
+              const SizedBox(width: AppSpacing.sm + 2),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Flexible(
-                      child: Text(
-                        pr.exerciseName ?? 'Exercise',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -0.32,
-                          color: gb.progInk,
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            pr.exerciseName ?? 'Exercise',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -0.32,
+                              color: gb.progInk,
+                            ),
+                          ),
                         ),
-                      ),
+                        if (isBest) ...[
+                          const SizedBox(width: AppSpacing.xs + 1),
+                          _MonoLabel('New best',
+                              color: gb.progBrandInk, fontSize: 9),
+                        ],
+                      ],
                     ),
-                    if (isBest) ...[
-                      const SizedBox(width: AppSpacing.xs + 1),
-                      _MonoLabel('New best', color: gb.progBrandInk, fontSize: 9),
-                    ],
+                    const SizedBox(height: 5),
+                    Text(
+                      caption.toString(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppText.mono(const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w500,
+                      )).copyWith(color: gb.progInk3),
+                    ),
                   ],
                 ),
-                const SizedBox(height: 5),
-                Text(
-                  caption.toString(),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppText.mono(const TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w500,
-                  )).copyWith(color: gb.progInk3),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -951,8 +969,9 @@ class _BodyTrendCard extends ConsumerWidget {
     // simply renders the "set a goal" affordance instead of the goal line.
     final goalKg = ref.watch(goalWeightProvider).valueOrNull;
     final latest = series.points.last.value;
-    final unitSuffix =
-        (series.unit != null && series.unit!.isNotEmpty) ? ' ${series.unit}' : '';
+    final unitSuffix = (series.unit != null && series.unit!.isNotEmpty)
+        ? ' ${series.unit}'
+        : '';
 
     return _ProgCard(
       child: Column(
@@ -985,13 +1004,15 @@ class _BodyTrendCard extends ConsumerWidget {
             // Distance-to-goal caption, e.g. "3.2 kg to go" / "At your goal weight".
             Text(
               _distanceCaption(latest, goalKg, unitSuffix),
-              style: AppText.mono(const TextStyle(fontSize: 12, fontWeight: FontWeight.w500))
+              style: AppText.mono(const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w500))
                   .copyWith(color: gb.progInk2),
             )
           else
             // No goal yet → the minimal set-a-goal affordance (Phase 3 §1 empty state).
             _SetGoalAffordance(
-              onTap: () => _showSetGoalWeightSheet(context, ref, initialKg: latest),
+              onTap: () =>
+                  _showSetGoalWeightSheet(context, ref, initialKg: latest),
             ),
         ],
       ),
@@ -1025,7 +1046,8 @@ class _GoalChip extends ConsumerWidget {
                   letterSpacing: 0,
                 )).copyWith(color: gb.progPos)),
             const SizedBox(width: AppSpacing.xxs),
-            Icon(Icons.edit_outlined, size: AppSizes.iconXs, color: gb.progInk4),
+            Icon(Icons.edit_outlined,
+                size: AppSizes.iconXs, color: gb.progInk4),
           ],
         ),
       ),
@@ -1049,10 +1071,12 @@ class _SetGoalAffordance extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.flag_outlined, size: AppSizes.iconMd, color: gb.primary600),
+            Icon(Icons.flag_outlined,
+                size: AppSizes.iconMd, color: gb.primary600),
             const SizedBox(width: AppSpacing.xs),
             Text('Set a goal weight',
-                style: AppText.label.copyWith(color: gb.primary600, fontSize: 13)),
+                style:
+                    AppText.label.copyWith(color: gb.primary600, fontSize: 13)),
           ],
         ),
       ),
@@ -1174,7 +1198,8 @@ class _BodyweightPainter extends CustomPainter {
     final plotLeft = leftGutter;
     final plotW = (size.width - plotLeft).clamp(1.0, double.infinity);
     final plotTop = topPad;
-    final plotH = (size.height - topPad - bottomPad).clamp(1.0, double.infinity);
+    final plotH =
+        (size.height - topPad - bottomPad).clamp(1.0, double.infinity);
 
     final n = points.length;
     double x(int i) =>
@@ -1317,9 +1342,7 @@ class _SetGoalWeightSheetState extends State<_SetGoalWeightSheet> {
       _error = null;
     });
     try {
-      await widget.parentRef
-          .read(progressRepositoryProvider)
-          .setGoalWeight(kg);
+      await widget.parentRef.read(progressRepositoryProvider).setGoalWeight(kg);
       // Refetch the goal so the new line shows immediately.
       widget.parentRef.invalidate(goalWeightProvider);
       if (mounted) Navigator.of(context).pop();
@@ -1357,15 +1380,13 @@ class _SetGoalWeightSheetState extends State<_SetGoalWeightSheet> {
             label: 'Goal weight (kg)',
             hint: '75',
             icon: Icons.flag_outlined,
-            keyboardType:
-                const TextInputType.numberWithOptions(decimal: true),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
             textInputAction: TextInputAction.done,
             onSubmitted: (_) => _save(),
           ),
           if (_error != null) ...[
             const SizedBox(height: AppSpacing.xs),
-            Text(_error!,
-                style: AppText.meta.copyWith(color: gb.danger)),
+            Text(_error!, style: AppText.meta.copyWith(color: gb.danger)),
           ],
           const SizedBox(height: AppSpacing.md),
           GbButton(
@@ -1480,8 +1501,10 @@ class _NutritionAdherenceCard extends StatelessWidget {
                 ),
                 const SizedBox(height: AppSpacing.xs),
                 Text(
-                  _adherenceCaption(weekPct, recent, adherence.loggedDaysThisWeek),
-                  style: AppText.mono(const TextStyle(fontSize: 12, fontWeight: FontWeight.w500))
+                  _adherenceCaption(
+                      weekPct, recent, adherence.loggedDaysThisWeek),
+                  style: AppText.mono(const TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w500))
                       .copyWith(color: gb.progInk2),
                 ),
               ],
@@ -1539,7 +1562,9 @@ class _NutritionAdHocCard extends StatelessWidget {
                 ]),
               ),
               const SizedBox(width: AppSpacing.sm),
-              Expanded(child: _MonoLabel('Days logged · this week', color: gb.progInk3)),
+              Expanded(
+                  child: _MonoLabel('Days logged · this week',
+                      color: gb.progInk3)),
             ],
           ),
           const SizedBox(height: AppSpacing.sm + 2),
@@ -1583,7 +1608,10 @@ class _LoggedDaysStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     return CustomPaint(
       painter: _LoggedDaysPainter(
-          logged: logged.clamp(0, total), total: total, fill: fill, track: track),
+          logged: logged.clamp(0, total),
+          total: total,
+          fill: fill,
+          track: track),
       size: Size.infinite,
     );
   }
@@ -1605,7 +1633,8 @@ class _LoggedDaysPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (total <= 0) return;
     const gap = 5.0;
-    final pipW = ((size.width - gap * (total - 1)) / total).clamp(1.0, double.infinity);
+    final pipW =
+        ((size.width - gap * (total - 1)) / total).clamp(1.0, double.infinity);
     final radius = Radius.circular(math.min(3.0, size.height / 2));
     for (var i = 0; i < total; i++) {
       final left = i * (pipW + gap);
@@ -1629,7 +1658,8 @@ class _LoggedDaysPainter extends CustomPainter {
 /// [loggedThisWeek] is the honest ad-hoc tracking count (planned + self-logged days this week); when
 /// it's positive we prefer the "logged N/7 this week" fragment over the bare recent-days count, so the
 /// plan card also acknowledges self-logging. Falls back to the recent-days count when it's 0.
-String _adherenceCaption(int? weekPct, List<DailyAdherence> recent, int loggedThisWeek) {
+String _adherenceCaption(
+    int? weekPct, List<DailyAdherence> recent, int loggedThisWeek) {
   final logged = loggedThisWeek > 0
       ? 'logged ${loggedThisWeek.clamp(0, 7)}/7 this week'
       : '${recent.length} ${recent.length == 1 ? 'day' : 'days'} logged';
@@ -1702,9 +1732,7 @@ class _AdherenceStripPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_AdherenceStripPainter old) =>
-      old.bar != bar ||
-      old.track != track ||
-      !listEquals(old.pcts, pcts);
+      old.bar != bar || old.track != track || !listEquals(old.pcts, pcts);
 }
 
 // ── Shared small pieces ─────────────────────────────────────────────────────
@@ -1722,8 +1750,7 @@ class _QuietCard extends StatelessWidget {
       quiet: true,
       // Design `tier=3` invite copy: 12.5px / ink3 / 1.45 line-height (not the 14px body default).
       child: Text(text,
-          style: TextStyle(
-              fontSize: 12.5, height: 1.45, color: gb.progInk3)),
+          style: TextStyle(fontSize: 12.5, height: 1.45, color: gb.progInk3)),
     );
   }
 }
@@ -1738,9 +1765,21 @@ class _NewUserHero extends StatelessWidget {
   const _NewUserHero();
 
   static const _previews = [
-    (icon: Icons.show_chart, title: 'Strength trend', subtitle: 'Each lift, week over week'),
-    (icon: Icons.calendar_today_outlined, title: 'Consistency', subtitle: 'A heatmap of every session'),
-    (icon: Icons.emoji_events_outlined, title: 'Personal records', subtitle: 'Every new best, by the lift'),
+    (
+      icon: Icons.show_chart,
+      title: 'Strength trend',
+      subtitle: 'Each lift, week over week'
+    ),
+    (
+      icon: Icons.calendar_today_outlined,
+      title: 'Consistency',
+      subtitle: 'A heatmap of every session'
+    ),
+    (
+      icon: Icons.emoji_events_outlined,
+      title: 'Personal records',
+      subtitle: 'Every new best, by the lift'
+    ),
   ];
 
   @override
@@ -1986,7 +2025,8 @@ class _LoadingBody extends StatelessWidget {
                       FractionallySizedBox(
                         widthFactor: 0.42,
                         alignment: Alignment.centerLeft,
-                        child: GbSkeleton(width: double.infinity, height: 28, radius: 7),
+                        child: GbSkeleton(
+                            width: double.infinity, height: 28, radius: 7),
                       ),
                       SizedBox(height: 18),
                       _LoadingHeatmapGrid(),
@@ -2011,7 +2051,8 @@ class _LoadingHero extends StatelessWidget {
   static const _ph1 = Color(0x1FFFFFFF); // ~0.12 white placeholder
   static const _ph2 = Color(0x1AFFFFFF); // ~0.10 white placeholder
 
-  Widget _bar(double widthFactor, double height, Color color) => FractionallySizedBox(
+  Widget _bar(double widthFactor, double height, Color color) =>
+      FractionallySizedBox(
         widthFactor: widthFactor,
         alignment: Alignment.centerLeft,
         child: Container(
@@ -2264,7 +2305,8 @@ class _RetryButton extends StatelessWidget {
 /// variant (hollow rings, neutral). The server gates lifts to ≥4 qualifying sessions, but we degrade
 /// safely for thin spark series too.
 class _Sparkline extends StatelessWidget {
-  const _Sparkline({required this.points, required this.color, required this.cardColor});
+  const _Sparkline(
+      {required this.points, required this.color, required this.cardColor});
   final List<double> points;
   final Color color;
 
@@ -2365,7 +2407,8 @@ class _SparklinePainter extends CustomPainter {
 
     // Crisp donut endpoint: a faint halo, then a card-filled core ringed in the trend colour.
     final last = pts.last;
-    canvas.drawCircle(last, 4.4, Paint()..color = color.withValues(alpha: 0.16));
+    canvas.drawCircle(
+        last, 4.4, Paint()..color = color.withValues(alpha: 0.16));
     canvas.drawCircle(last, 2.5, Paint()..color = card);
     canvas.drawCircle(
       last,
@@ -2393,8 +2436,10 @@ class _SparklinePainter extends CustomPainter {
       final p1 = pts[i];
       final p2 = pts[i + 1];
       final p3 = pts[i + 2 >= pts.length ? i + 1 : i + 2];
-      final c1 = Offset(p1.dx + (p2.dx - p0.dx) * t, p1.dy + (p2.dy - p0.dy) * t);
-      final c2 = Offset(p2.dx - (p3.dx - p1.dx) * t, p2.dy - (p3.dy - p1.dy) * t);
+      final c1 =
+          Offset(p1.dx + (p2.dx - p0.dx) * t, p1.dy + (p2.dy - p0.dy) * t);
+      final c2 =
+          Offset(p2.dx - (p3.dx - p1.dx) * t, p2.dy - (p3.dy - p1.dy) * t);
       path.cubicTo(c1.dx, c1.dy, c2.dx, c2.dy, p2.dx, p2.dy);
     }
     return path;
@@ -2566,8 +2611,7 @@ class _HeatmapPainter extends CustomPainter {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final mondayThisWeek = today.subtract(Duration(days: today.weekday - 1));
-    final firstMonday =
-        mondayThisWeek.subtract(Duration(days: 7 * (cols - 1)));
+    final firstMonday = mondayThisWeek.subtract(Duration(days: 7 * (cols - 1)));
 
     final radius = Radius.circular(cell * 0.24);
     final dashPaint = Paint()

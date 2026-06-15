@@ -145,7 +145,7 @@ class LiftDirection {
 }
 
 /// Section 4 — a PR teaser row reusing the existing `/api/me/records` shape (current best per lift,
-/// e1RM-sorted). Display-only in Phase 1.
+/// e1RM-sorted). Taps through to the per-lift e1RM drill-down via `exerciseId`.
 class PersonalRecord {
   const PersonalRecord({
     required this.exerciseId,
