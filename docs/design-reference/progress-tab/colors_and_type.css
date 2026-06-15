@@ -1,0 +1,167 @@
+/* =========================================================================
+   GymBro Portal — Design Tokens (mirror of GymBroPortal/src/styles.scss :root)
+   ALL feature code MUST use these tokens, NOT raw hex. See README.md.
+   ========================================================================= */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter+Tight:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
+
+:root {
+  /* ─── Typography ──────────────────────────────────────────────────────── */
+  --inv-font-sans: 'Inter Tight', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  --inv-text-h1: 3rem;          /* 48px — rare, marketing-scale only */
+  --inv-text-h2: 2.5rem;        /* 40px */
+  --inv-text-h3: 2rem;          /* 32px — hero page header (md+) */
+  --inv-text-h4: 1.5rem;        /* 24px — default page title (md+) */
+  --inv-text-h5: 1.25rem;       /* 20px — default page title (mobile) */
+  --inv-text-h6: 1rem;          /* 16px */
+  --inv-text-body-lg: 1.125rem; /* 18px — panel card titles */
+  --inv-text-body-md: 1rem;     /* 16px — body */
+  --inv-text-body-sm: 0.875rem; /* 14px — labels, table cells, subtitles */
+  --inv-text-body-mini: 0.75rem;/* 12px — captions, chips, errors */
+
+  /* ─── Spacing (8px rhythm) ────────────────────────────────────────────── */
+  --inv-space-1:  0.25rem;  /*  4px */
+  --inv-space-2:  0.5rem;   /*  8px */
+  --inv-space-3:  0.75rem;  /* 12px */
+  --inv-space-4:  1rem;     /* 16px */
+  --inv-space-5:  1.5rem;   /* 24px */
+  --inv-space-6:  2rem;     /* 32px */
+  --inv-space-7:  2.5rem;   /* 40px */
+  --inv-space-8:  3rem;     /* 48px */
+  --inv-space-10: 4rem;     /* 64px */
+  --inv-space-12: 5rem;     /* 80px */
+
+  /* ─── Layout ──────────────────────────────────────────────────────────── */
+  --inv-page-max-width: 80rem;        /* page container */
+  --inv-app-sidebar-width: 15rem;     /* desktop sidebar; rail = 4.5rem */
+
+  /* ─── Radii ───────────────────────────────────────────────────────────── */
+  --inv-radius-sm: 8px;               /* inputs, small controls */
+  --inv-radius-md: 12px;              /* panel cards */
+  --inv-radius-lg: 16px;              /* data table card shell */
+  --inv-catalog-chip-radius: 4px;     /* tags & chips — NOT pills */
+
+  /* ─── Shadows ─────────────────────────────────────────────────────────── */
+  --inv-shadow-card: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --inv-shadow-md:   0 4px 6px -1px rgba(0,0,0,0.07), 0 2px 4px -2px rgba(0,0,0,0.04);
+  --inv-shadow-lg:   0 10px 15px -3px rgba(0,0,0,0.08), 0 4px 6px -4px rgba(0,0,0,0.03);
+
+  /* ─── Primary — BLUE ONLY (no purple as brand) ───────────────────────── */
+  --inv-primary-0:   #eff6ff;
+  --inv-primary-25:  #dbeafe;
+  --inv-primary-50:  #bfdbfe;
+  --inv-primary-100: #93c5fd;
+  --inv-primary-200: #60a5fa;
+  --inv-primary-300: #1e3a8a;   /* NOTE: known scale debt — darker than 400/500 */
+  --inv-primary-400: #38bdf8;
+  --inv-primary-500: #3b82f6;   /* canonical interactive — solid buttons, focus */
+  --inv-primary-600: #2563eb;   /* hover */
+  --inv-primary-700: #1d4ed8;
+  --inv-primary-800: #1e40af;
+  --inv-primary-900: #172554;
+
+  --inv-surface-base: #ffffff;
+
+  /* ─── Secondary blues (supporting; never primary) ─────────────────────── */
+  --inv-secondary-0:   #eff6ff;
+  --inv-secondary-25:  #e0f2fe;
+  --inv-secondary-50:  #bae6fd;
+  --inv-secondary-100: #7dd3fc;
+  --inv-secondary-200: #38bdf8;
+  --inv-secondary-300: #0284c7;
+
+  /* ─── Neutrals / grey ─────────────────────────────────────────────────── */
+  --inv-grey-0:   #f7f8f9;   /* page background */
+  --inv-grey-25:  #eceff2;
+  --inv-grey-50:  #d0d5dd;
+  --inv-grey-100: #c8ccd4;
+  --inv-grey-200: #b5bac5;
+  --inv-grey-300: #98a1b0;
+  --inv-grey-400: #858c9d;
+  --inv-grey-500: #667085;   /* muted copy, table headers */
+  --inv-grey-600: #475467;   /* nav labels */
+  --inv-grey-700: #344054;   /* labels */
+  --inv-grey-800: #1a2230;
+  --inv-grey-900: #000000;   /* body */
+
+  /* ─── Semantic accents (KPI tiles, tags, banners) ─────────────────────── */
+  --inv-sky-0:     #e0f5ff;  --inv-sky-25:  #b8e8fc;  --inv-sky-50:  #7ed4f2;
+  --inv-sky-100:   #3db8e0;  --inv-sky-200: #1a8fb8;  --inv-sky-300: #0084b3;
+
+  --inv-success-0:   #e6f9f4; --inv-success-25:  #c5efe3; --inv-success-50:  #7fd9c1;
+  --inv-success-100: #3fbf9a; --inv-success-200: #259e7c; --inv-success-300: #178265;
+
+  --inv-warning-0:   #fff9e6; --inv-warning-25:  #ffeec2; --inv-warning-50:  #fbd582;
+  --inv-warning-100: #ffb040; --inv-warning-200: #996021; --inv-warning-300: #5d3e1c;
+
+  --inv-error-0:   #ffe6e6;   --inv-error-25:  #ffc8c8; --inv-error-50:  #f28e8e;
+  --inv-error-100: #e02424;   --inv-error-200: #a32020; --inv-error-300: #802626;
+
+  /* ─── Borders ─────────────────────────────────────────────────────────── */
+  --inv-border-card:  #e5e7eb;   /* card / panel / table chrome */
+  --inv-border-field: #d1d5db;   /* form controls — stronger than card */
+
+  /* ─── Aliases ─────────────────────────────────────────────────────────── */
+  --dashboard-page-bg:      var(--inv-grey-0);
+  --dashboard-card-border:  var(--inv-border-card);
+  --dashboard-table-header: var(--inv-grey-500);
+}
+
+/* =========================================================================
+   Base body — matches GymBro Portal
+   ========================================================================= */
+body {
+  font-family: var(--inv-font-sans);
+  font-size: var(--inv-text-body-md);
+  line-height: 1.5;
+  color: var(--inv-grey-900);
+  background: var(--dashboard-page-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* =========================================================================
+   Semantic type roles (utility — Tailwind utilities are canonical in-app)
+   ========================================================================= */
+.t-h1 { font-size: var(--inv-text-h1); font-weight: 600; line-height: 1.2; letter-spacing: -0.02em; }
+.t-h2 { font-size: var(--inv-text-h2); font-weight: 600; line-height: 1.2; letter-spacing: -0.02em; }
+.t-h3 { font-size: var(--inv-text-h3); font-weight: 600; line-height: 1.25; letter-spacing: -0.01em; }
+.t-h4 { font-size: var(--inv-text-h4); font-weight: 600; line-height: 1.3; }
+.t-h5 { font-size: var(--inv-text-h5); font-weight: 600; line-height: 1.35; }
+.t-h6 { font-size: var(--inv-text-h6); font-weight: 600; line-height: 1.4; }
+
+.t-body-lg   { font-size: var(--inv-text-body-lg);   font-weight: 400; line-height: 1.5; }
+.t-body-md   { font-size: var(--inv-text-body-md);   font-weight: 400; line-height: 1.5; }
+.t-body-sm   { font-size: var(--inv-text-body-sm);   font-weight: 400; line-height: 1.5; }
+.t-body-mini { font-size: var(--inv-text-body-mini); font-weight: 400; line-height: 1.45; }
+
+.t-label-sm  { font-size: var(--inv-text-body-sm);   font-weight: 500; color: var(--inv-grey-700); }
+.t-section-eyebrow {
+  font-size: 0.6875rem;            /* 11px — sidebar / KPI eyebrow */
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--inv-grey-400);
+}
+.t-kpi-eyebrow {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--inv-grey-500);
+}
+.t-mono-num { font-variant-numeric: tabular-nums; }
+
+/* =========================================================================
+   Reusable atom: catalog chip (tags). Matches `.inv-catalog-chip` in app.
+   Pills (border-radius: 999px) are NOT used in this DS.
+   ========================================================================= */
+.inv-catalog-chip {
+  display: inline-block;
+  border-radius: var(--inv-catalog-chip-radius);
+  padding: var(--inv-space-1) var(--inv-space-2);
+  font-size: var(--inv-text-body-mini);
+  font-weight: 500;
+  line-height: 1.25;
+}

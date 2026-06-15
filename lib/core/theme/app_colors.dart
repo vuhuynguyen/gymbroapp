@@ -51,6 +51,26 @@ class GbColors extends ThemeExtension<GbColors> {
     required this.amber,
     required this.amberSoft,
     required this.amberInk,
+    required this.progInk,
+    required this.progInk2,
+    required this.progInk3,
+    required this.progInk4,
+    required this.progPaper,
+    required this.progCard2,
+    required this.progLine,
+    required this.progLine2,
+    required this.progField,
+    required this.progBrandSoft,
+    required this.progBrandInk,
+    required this.progRing,
+    required this.progPos,
+    required this.progWarn,
+    required this.progNeg,
+    required this.progHeat0,
+    required this.progHeat1,
+    required this.progHeat2,
+    required this.progHeat3,
+    required this.progHeat4,
   });
 
   final Color primary0, primary25, primary50, primary500, primary600, primary700, primary800;
@@ -67,6 +87,20 @@ class GbColors extends ThemeExtension<GbColors> {
   final Color emerald, emeraldSoft, emeraldInk;
   final Color amber, amberSoft, amberInk;
 
+  // Progress "Graphite / premium-blue" layer (gb-tokens.css) — the Progress
+  // tab's own visual system. Navy ink ramp, cool layered surfaces, honest deep
+  // pos/warn/neg (on text only), a single-hue blue heatmap ramp. Light-only
+  // (the app is light-only; the design's `.gb-dark` variant is not populated).
+  final Color progInk, progInk2, progInk3, progInk4;
+  final Color progPaper, progCard2, progLine, progLine2, progField;
+  final Color progBrandSoft, progBrandInk, progRing;
+  final Color progPos, progWarn, progNeg;
+  final Color progHeat0, progHeat1, progHeat2, progHeat3, progHeat4;
+
+  /// The 5-step blue heatmap ramp as a list (heat0→heat4), for index lookup.
+  List<Color> get progHeatRamp =>
+      [progHeat0, progHeat1, progHeat2, progHeat3, progHeat4];
+
   /// Signature 3-stop hero gradient (`--gb-hero`, ~150deg) — Log/Plan heroes, live header, CTAs.
   static const LinearGradient heroGradient = LinearGradient(
     begin: Alignment.topLeft,
@@ -80,6 +114,16 @@ class GbColors extends ThemeExtension<GbColors> {
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
     colors: [AppPalette.heroDeepA, AppPalette.heroDeepB],
+  );
+
+  /// Progress-tab signature hero panel (`--hero-bg`, 156deg) — the "This week"
+  /// dark panel. A subtly deeper, tonal-navy take on [heroGradient] tuned to the
+  /// Graphite system (3 stops at 0 / 58% / 100%).
+  static const LinearGradient progressHeroGradient = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [AppPalette.progHeroA, AppPalette.progHeroB, AppPalette.progHeroC],
+    stops: [0.0, 0.58, 1.0],
   );
 
   /// Mint→white progress-bar fill (hero/live progress).
@@ -131,6 +175,26 @@ class GbColors extends ThemeExtension<GbColors> {
     amber: AppPalette.amber,
     amberSoft: AppPalette.amberSoft,
     amberInk: AppPalette.amberInk,
+    progInk: AppPalette.progInk,
+    progInk2: AppPalette.progInk2,
+    progInk3: AppPalette.progInk3,
+    progInk4: AppPalette.progInk4,
+    progPaper: AppPalette.progPaper,
+    progCard2: AppPalette.progCard2,
+    progLine: AppPalette.progLine,
+    progLine2: AppPalette.progLine2,
+    progField: AppPalette.progField,
+    progBrandSoft: AppPalette.progBrandSoft,
+    progBrandInk: AppPalette.progBrandInk,
+    progRing: AppPalette.progRing,
+    progPos: AppPalette.progPos,
+    progWarn: AppPalette.progWarn,
+    progNeg: AppPalette.progNeg,
+    progHeat0: AppPalette.progHeat0,
+    progHeat1: AppPalette.progHeat1,
+    progHeat2: AppPalette.progHeat2,
+    progHeat3: AppPalette.progHeat3,
+    progHeat4: AppPalette.progHeat4,
   );
 
   @override

@@ -90,4 +90,45 @@ abstract final class AppPalette {
 
   /// Light top-stop of the rest-timer ring gradient (design `#6ee7b7`; the bottom stop is [liveDot]).
   static const restRingLight = Color(0xFF6EE7B7);
+
+  // ── Progress "Graphite / premium-blue" layer (gb-tokens.css) ──────────────
+  // The Progress tab's own visual system: a navy-tinted ink ramp (never pure
+  // black), cool blue-tinted page/surfaces layered for depth, a deep-navy hero,
+  // honest deep pos/warn/neg signals (color on text only), and a single-hue
+  // blue heatmap ramp. Primitives only — semantic access is via [GbColors].
+
+  /// Navy-tinted ink ramp (`--ink…--ink4`). `progInk` is the primary text ink.
+  static const progInk = Color(0xFF121A2C);
+  static const progInk2 = Color(0xFF4B5670);
+  static const progInk3 = Color(0xFF7C879F);
+  static const progInk4 = Color(0xFFA6B0C4);
+
+  /// Page background + layered surfaces (`--paper`, `--card2`, `--line`, `--line2`, `--field`).
+  static const progPaper = Color(0xFFE7EBF3);
+  static const progCard2 = Color(0xFFF3F6FC);
+  static const progLine = Color(0xFFDDE3EF);
+  static const progLine2 = Color(0xFFE7ECF4);
+  static const progField = Color(0xFFD2D9E6);
+
+  /// Brand-blue accents the Progress tab leans on (`--brand-soft`, `--brand-ink`, `--ring`).
+  static const progBrandSoft = Color(0xFFEBF2FF);
+  static const progBrandInk = Color(0xFF1D4ED8);
+  static const progRing = Color(0xFF3B82F6);
+
+  /// Honest semantic signals — deep, used on text only (`--pos`, `--warn`, `--neg`).
+  static const progPos = Color(0xFF157A4A);
+  static const progWarn = Color(0xFF8A6312);
+  static const progNeg = Color(0xFFAD3B32);
+
+  /// Deep brand-navy hero gradient stops (`--hero-bg`, 156deg).
+  static const progHeroA = Color(0xFF2F64DA);
+  static const progHeroB = Color(0xFF2150C2);
+  static const progHeroC = Color(0xFF1C44AC);
+
+  /// Single-hue brand-blue heatmap ramp, heat0→heat4 (`--heat0…--heat4`).
+  static const progHeat0 = Color(0xFFE3E8F3);
+  static const progHeat1 = Color(0xFFC2D6F7);
+  static const progHeat2 = Color(0xFF8BB2F0);
+  static const progHeat3 = Color(0xFF4F8AE8);
+  static const progHeat4 = Color(0xFF2563EB);
 }

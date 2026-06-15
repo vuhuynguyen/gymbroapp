@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>GymBro · Progress tab redesign</title>
+<link rel="stylesheet" href="gb-tokens.css" />
+<style>
+  html, body { margin: 0; padding: 0; background: #e8e4dd; }
+  /* device artboards render the phone bezel; kill the canvas card chrome behind them */
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="ios-frame.jsx"></script>
+<script type="text/babel" src="progress-ui.jsx"></script>
+<script type="text/babel" src="progress-screen.jsx"></script>
+</head>
+<body>
+<div id="root"></div>
+<template id="__bundler_thumbnail">
+  <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <rect width="100" height="100" rx="22" fill="#1d4ed8"/>
+    <rect x="30" y="22" width="40" height="56" rx="9" fill="#fff"/>
+    <circle cx="50" cy="44" r="11" fill="none" stroke="#1d4ed8" stroke-width="4"/>
+    <path d="M44 44a6 6 0 0012 0" fill="none" stroke="#10b981" stroke-width="4" stroke-linecap="round"/>
+  </svg>
+</template>
+
+<script type="text/babel">
+const { IOSDevice } = window;
+const { ProgressScreen, AnnotationsPanel } = window;
+
+// device artboard: transparent card so only the phone bezel shows
+const deviceStyle = { background: 'transparent', boxShadow: 'none', overflow: 'visible' };
+
+function Phone({ state, dark, height = 874 }) {
+  return (
+    <IOSDevice dark={dark} height={height} width={402}>
+      <ProgressScreen state={state} dark={dark} />
+    </IOSDevice>
+  );
+}
+
+function App() {
+  return (
+    <DesignCanvas>
+      <DCSection id="home" title="Progress home" subtitle="Populated · the 5-second glance, light & dark">
+        <DCArtboard id="light" label="Light · glance" width={402} height={874} style={deviceStyle}>
+          <Phone state="home" dark={false} />
+        </DCArtboard>
+        <DCArtboard id="dark" label="Dark · glance" width={402} height={874} style={deviceStyle}>
+          <Phone state="home" dark={true} />
+        </DCArtboard>
+        <DCArtboard id="full" label="Full scroll · all six sections" width={402} height={1300} style={deviceStyle}>
+          <Phone state="home" dark={false} height={1300} />
+        </DCArtboard>
+        <DCArtboard id="anatomy" label="Anatomy · the decision each card drives" width={400} height={760}
+          style={{ background: 'var(--card)', borderRadius: 16, boxShadow: 'var(--sh2)', border: '1px solid var(--line)' }}>
+          <AnnotationsPanel />
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="states" title="States" subtitle="A new user is the default, not an edge case — honest absence beats a confident fake">
+        <DCArtboard id="loading" label="Loading · skeleton" width={402} height={874} style={deviceStyle}>
+          <Phone state="loading" dark={false} />
+        </DCArtboard>
+        <DCArtboard id="newuser" label="New user · first run" width={402} height={874} style={deviceStyle}>
+          <Phone state="newuser" dark={false} />
+        </DCArtboard>
+        <DCArtboard id="noplan" label="No plan assigned" width={402} height={874} style={deviceStyle}>
+          <Phone state="noplan" dark={false} />
+        </DCArtboard>
+        <DCArtboard id="fewpoints" label="Lift with < 4 data points" width={402} height={874} style={deviceStyle}>
+          <Phone state="fewpoints" dark={false} />
+        </DCArtboard>
+        <DCArtboard id="nopr" label="No PRs yet" width={402} height={874} style={deviceStyle}>
+          <Phone state="nopr" dark={false} />
+        </DCArtboard>
+        <DCArtboard id="refresh" label="Pull-to-refresh" width={402} height={874} style={deviceStyle}>
+          <Phone state="refresh" dark={false} />
+        </DCArtboard>
+        <DCArtboard id="error" label="Error · friendly retry (dark)" width={402} height={874} style={deviceStyle}>
+          <Phone state="error" dark={true} />
+        </DCArtboard>
+      </DCSection>
+    </DesignCanvas>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

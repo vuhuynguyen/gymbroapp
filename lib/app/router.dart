@@ -8,7 +8,9 @@ import '../features/auth/forgot_password_screen.dart';
 import '../features/auth/login_screen.dart';
 import '../features/coach/assign_screen.dart';
 import '../features/coach/client_monitor_screen.dart';
+import '../features/coach/client_strength_screen.dart';
 import '../features/coach/coach_hub_screen.dart';
+import '../features/coach/coach_progress_screen.dart';
 import '../features/coach/plan_view_screen.dart';
 import '../features/log/log_screen.dart';
 import '../features/nutrition/my_foods_screen.dart';
@@ -16,6 +18,7 @@ import '../features/nutrition/nutrition_day_detail_screen.dart';
 import '../features/nutrition/nutrition_history_screen.dart';
 import '../features/plan/plan_screen.dart';
 import '../features/profile/profile_screen.dart';
+import '../features/progress/lift_detail_screen.dart';
 import '../features/progress/progress_screen.dart';
 import '../features/session/live_session_screen.dart';
 import '../features/session/session_detail_screen.dart';
@@ -31,7 +34,13 @@ final _rootKey = GlobalKey<NavigatorState>();
 const _ownerForbidden = {'/plan'};
 const _coachRoots = {'/coach'};
 // Coach-only full-screen routes — a resolved Client is bounced off these (the server also 403s).
-const _coachOnlyPrefixes = ['/client/', '/assign/', '/plan-view/'];
+const _coachOnlyPrefixes = [
+  '/client/',
+  '/assign/',
+  '/plan-view/',
+  '/coach-progress',
+  '/coach-client/',
+];
 
 /// go_router with a role-adaptive `StatefulShellRoute`. Branches (fixed order): log, plan, progress,
 /// coach (the coach hub), profile. The redirect awaits the bootstrap silent refresh (token gate) and
@@ -109,6 +118,15 @@ final routerProvider = Provider<GoRouter>((ref) {
           parentNavigatorKey: _rootKey,
           builder: (_, __) => const StartSessionScreen()),
 
+      // Progress per-lift drill-down (full-screen, above the shell — tab bar hidden). Self-scoped;
+      // both roles reach it for their own lifts (an Owner tracks their own trends, like /progress).
+      GoRoute(
+        path: '/progress/lift/:exerciseId',
+        parentNavigatorKey: _rootKey,
+        builder: (_, s) =>
+            LiftDetailScreen(exerciseId: s.pathParameters['exerciseId']!),
+      ),
+
       // Nutrition full-screen routes (above the shell). Self-scoped for a trainee; the coach reaches a
       // client's day detail with a `clientId` query param (tenant-scoped read).
       GoRoute(
@@ -158,6 +176,22 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/plan-view/:id',
         parentNavigatorKey: _rootKey,
         builder: (_, s) => PlanViewScreen(planId: s.pathParameters['id']!),
+      ),
+
+      // Coach Progress surface (Phase 2b) — the at-risk-first roster and the per-client strength
+      // detail. Tenant-scoped (own gym only); a resolved Client is bounced off (`_coachOnlyPrefixes`).
+      GoRoute(
+        path: '/coach-progress',
+        parentNavigatorKey: _rootKey,
+        builder: (_, __) => const CoachProgressScreen(),
+      ),
+      GoRoute(
+        path: '/coach-client/:id',
+        parentNavigatorKey: _rootKey,
+        builder: (_, s) => ClientStrengthScreen(
+          clientId: s.pathParameters['id']!,
+          clientName: s.uri.queryParameters['name'],
+        ),
       ),
 
       // Role-adaptive bottom-tab shell.
