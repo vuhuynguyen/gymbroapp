@@ -409,6 +409,7 @@ class NutriAdherenceCard extends StatelessWidget {
     // instead, with an empty ring, so an ad-hoc day reads honestly.
     final noPlan = total == 0 && !log.isClosed;
     final loggedCount = log.allItems.length;
+    final hasCalTarget = log.targetKcal != null && log.targetKcal! > 0;
     final headline = log.isClosed
         ? (log.adherencePct >= 80 ? 'Solid day — plan followed' : 'Day closed')
         : (total == 0
@@ -458,9 +459,20 @@ class NutriAdherenceCard extends StatelessWidget {
                         color: gb.ink,
                         letterSpacing: -0.15)),
                 const SizedBox(height: AppSpacing.sm),
-                // Calories live in the dedicated "Calories today" card (logged / target); keep only
-                // protein here so the two cards don't both report kcal.
-                _stat(context, '${log.loggedProtein.round()}', 'protein g'),
+                // All-source (plan + ad-hoc) calories and protein, consolidated here so there's one
+                // nutrition summary. Calories show logged / target when a target exists, else just logged.
+                Row(
+                  children: [
+                    _stat(
+                        context,
+                        hasCalTarget
+                            ? '${log.consumedKcal} / ${log.targetKcal}'
+                            : '${log.consumedKcal}',
+                        'kcal'),
+                    const SizedBox(width: 22),
+                    _stat(context, '${log.loggedProtein.round()}', 'protein g'),
+                  ],
+                ),
               ],
             ),
           ),
