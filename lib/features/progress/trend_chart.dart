@@ -14,6 +14,12 @@ import 'progress_format.dart';
 /// Faint raw session points, a bold lightly-anchored e1RM line (only above the 4-point honesty gate),
 /// amber PR dots where `isPr`, and min/max y labels. Below the gate it plots only the raw dots — the
 /// caller shows the "log N more" copy; a line under the gate is a fabricated signal.
+/// Default plotted value: the session-best e1RM.
+double e1rmValue(E1rmSeriesPoint p) => p.sessionBestE1rmKg;
+
+/// Alternate plotted value: the top working-set weight that session (null → 0).
+double weightValue(E1rmSeriesPoint p) => p.topSetWeightKg ?? 0;
+
 class TrendChart extends StatelessWidget {
   const TrendChart({
     required this.points,
@@ -22,11 +28,18 @@ class TrendChart extends StatelessWidget {
     required this.raw,
     required this.pr,
     required this.label,
+    this.valueOf = e1rmValue,
+    this.metricId = 'e1rm',
     super.key,
   });
 
   /// Session-best points, oldest → newest.
   final List<E1rmSeriesPoint> points;
+
+  /// Which value to plot per point (e1RM by default, or top-set weight). [metricId] identifies it so
+  /// the painter repaints when the user switches metric.
+  final double Function(E1rmSeriesPoint) valueOf;
+  final String metricId;
 
   /// Whether the 4-point honesty gate is cleared — gates the connecting line on/off.
   final bool hasTrend;
@@ -53,6 +66,8 @@ class TrendChart extends StatelessWidget {
         raw: raw,
         pr: pr,
         label: label,
+        valueOf: valueOf,
+        metricId: metricId,
       ),
       size: Size.infinite,
     );
@@ -68,6 +83,8 @@ class TrendPainter extends CustomPainter {
     required this.raw,
     required this.pr,
     required this.label,
+    this.valueOf = e1rmValue,
+    this.metricId = 'e1rm',
   });
   final List<E1rmSeriesPoint> points;
   final bool hasTrend;
@@ -75,10 +92,12 @@ class TrendPainter extends CustomPainter {
   final Color raw;
   final Color pr;
   final Color label;
+  final double Function(E1rmSeriesPoint) valueOf;
+  final String metricId;
 
-  /// The plotted session-best values — depends only on the (immutable) [points], so mapped once per
-  /// painter instance instead of on every `paint` (paint also fires on layout/ancestor repaint).
-  late final List<double> _values = [for (final p in points) p.sessionBestE1rmKg];
+  /// The plotted values (e1RM or weight) — depends only on the (immutable) [points] + selector, so
+  /// mapped once per painter instance instead of on every `paint`.
+  late final List<double> _values = [for (final p in points) valueOf(p)];
 
   /// Axis bounds (min, max, span) over [_values] — likewise input-only, so derived once. Empty for an
   /// empty series (paint early-returns before reading them).
@@ -177,6 +196,7 @@ class TrendPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(TrendPainter old) =>
+      old.metricId != metricId ||
       old.hasTrend != hasTrend ||
       old.line != line ||
       old.raw != raw ||
