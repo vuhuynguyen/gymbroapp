@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gymbroapp/data/models/exercise_models.dart';
 import 'package:gymbroapp/data/models/progress_models.dart';
+import 'package:gymbroapp/data/repositories/exercise_repository.dart';
 import 'package:gymbroapp/features/progress/lift_detail_screen.dart';
 import 'package:gymbroapp/features/progress/progress_providers.dart';
 // widgets.dart re-exports the theme barrel, so this single import yields AppTheme,
@@ -40,7 +42,13 @@ void main() {
       );
 
   Widget host(Override override) => ProviderScope(
-        overrides: [override],
+        overrides: [
+          override,
+          // The screen now watches the catalog for muscle meta + the guide button — stub it empty so
+          // nothing touches the network (the guide button still works; the meta just shows fewer chips).
+          exerciseCatalogProvider
+              .overrideWith((ref) async => <String, ExerciseSummary>{}),
+        ],
         child: MaterialApp(
           theme: AppTheme.light(),
           home: Builder(
@@ -53,6 +61,12 @@ void main() {
       );
 
   Future<void> pumpData(WidgetTester tester, ExerciseE1rmSeries data) async {
+    // A tall viewport so the whole page (meta card + header + trend + stall note + recent sessions)
+    // mounts at once — find.* only sees built widgets in a lazy ListView.
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(
       host(exerciseE1rmSeriesProvider.overrideWith((ref, id) async => data)),
     );
@@ -86,12 +100,12 @@ void main() {
     expect(find.byType(GbSkeletonList), findsNothing);
   });
 
-  testWidgets('empty points → "Not enough data yet" empty state', (tester) async {
+  testWidgets('empty points → honest invite + guide stay available', (tester) async {
     await pumpData(tester, series(points: const []));
 
-    expect(find.byType(EmptyState), findsOneWidget);
-    expect(find.text('Not enough data yet'), findsOneWidget);
-    // The header still shows a back affordance, never an error.
+    // No faked chart — an honest invite, and the exercise guide is still reachable.
+    expect(find.textContaining('Log a few working sets'), findsOneWidget);
+    expect(find.text('View exercise guide'), findsOneWidget);
     expect(find.byType(ErrorRetry), findsNothing);
   });
 
@@ -123,7 +137,7 @@ void main() {
 
     // Trend card + legend (PR swatch present once it's a real trend).
     expect(find.text('e1RM trend'), findsOneWidget);
-    expect(find.text('PR'), findsOneWidget);
+    expect(find.text('PR'), findsWidgets); // legend + recent-session PR chips
     // The up direction tag.
     expect(find.text('Up'), findsOneWidget);
   });
@@ -142,7 +156,7 @@ void main() {
     // At least one CustomPaint inside the trend card (the painter draws the line + PR dots).
     expect(find.byType(CustomPaint), findsWidgets);
     expect(find.text('e1RM trend'), findsOneWidget);
-    expect(find.text('PR'), findsOneWidget); // PR legend → markers are drawn
+    expect(find.text('PR'), findsWidgets); // legend + recent-session PR chips // PR legend → markers are drawn
   });
 
   testWidgets('down direction → red "Slipping" tag is the only red', (tester) async {

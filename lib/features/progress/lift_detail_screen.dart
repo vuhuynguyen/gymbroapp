@@ -5,8 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/network/api_exception.dart';
+import '../../data/models/exercise_models.dart';
 import '../../data/models/progress_models.dart';
+import '../../data/repositories/exercise_repository.dart';
 import '../../shared/widgets/widgets.dart';
+import '../session/live_session_screen.dart' show openExerciseGuide;
 import 'lift_widgets.dart';
 import 'progress_format.dart';
 import 'progress_providers.dart';
@@ -26,6 +29,8 @@ class LiftDetailScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final series = ref.watch(exerciseE1rmSeriesProvider(exerciseId));
+    // The catalog gives the muscle breakdown + a guide entrypoint (loads independently; null is fine).
+    final catalog = ref.watch(exerciseCatalogProvider).valueOrNull?[exerciseId];
 
     // Prefer the loaded lift name in the header once it arrives; a neutral title before.
     final title = series.maybeWhen(
@@ -57,7 +62,19 @@ class LiftDetailScreen extends ConsumerWidget {
                   await ref
                       .read(exerciseE1rmSeriesProvider(exerciseId).future);
                 },
-                child: _Body(series: s),
+                child: _Body(
+                  series: s,
+                  catalog: catalog,
+                  onGuide: () => openExerciseGuide(
+                    context,
+                    exerciseId: exerciseId,
+                    exerciseName: (s.exerciseName?.trim().isNotEmpty ?? false)
+                        ? s.exerciseName!.trim()
+                        : 'Exercise',
+                    repository: ref.read(exerciseRepositoryProvider),
+                    catalog: catalog,
+                  ),
+                ),
               ),
             ),
           ),
@@ -67,40 +84,208 @@ class LiftDetailScreen extends ConsumerWidget {
   }
 }
 
-/// The data body — a scrollable so pull-to-refresh stays available in every state, including empty.
+/// The data body — a scrollable so pull-to-refresh stays available in every state. The exercise meta +
+/// guide sit at the top (always available, even with thin trend data); the trend + recent-sessions
+/// table follow once there are logged points.
 class _Body extends StatelessWidget {
-  const _Body({required this.series});
+  const _Body(
+      {required this.series, required this.onGuide, this.catalog});
   final ExerciseE1rmSeries series;
+  final ExerciseSummary? catalog;
+  final VoidCallback onGuide;
 
   @override
   Widget build(BuildContext context) {
-    // No qualifying points at all → honest empty invite (DRILL-DOWNS §1), not a faked chart.
-    if (series.points.isEmpty) {
-      return const _ScrollableCenter(
-        child: EmptyState(
-          icon: Icons.show_chart,
-          title: 'Not enough data yet',
-          subtitle:
-              'Log a few working sets of this lift to see your e1RM trend and PR markers.',
-        ),
-      );
-    }
-
+    final gb = context.gb;
+    final hasData = series.points.isNotEmpty;
     return ListView(
       padding: const EdgeInsets.fromLTRB(
           AppSpacing.screenH, AppSpacing.gap, AppSpacing.screenH, 32),
       children: [
-        _HeaderStrip(series: series),
+        _ExerciseMetaCard(catalog: catalog, onGuide: onGuide),
         const SizedBox(height: AppSpacing.gap),
-        _TrendCard(series: series),
-        if (series.stalled && series.stallSessions > 0) ...[
+        if (!hasData)
+          // No qualifying points yet → honest invite, not a faked chart (DRILL-DOWNS §1).
+          GbCard(
+            child: Row(
+              children: [
+                Icon(Icons.show_chart, size: AppSizes.iconLg, color: gb.grey400),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(
+                  child: Text(
+                    'Log a few working sets of this lift to see your e1RM trend and PR markers.',
+                    style: AppText.body.copyWith(color: gb.grey600, height: 1.3),
+                  ),
+                ),
+              ],
+            ),
+          )
+        else ...[
+          _HeaderStrip(series: series),
           const SizedBox(height: AppSpacing.gap),
-          _StallNote(stallSessions: series.stallSessions),
+          _TrendCard(series: series),
+          if (series.stalled && series.stallSessions > 0) ...[
+            const SizedBox(height: AppSpacing.gap),
+            _StallNote(stallSessions: series.stallSessions),
+          ],
+          const SizedBox(height: AppSpacing.gap),
+          _RecentSessions(points: series.points),
         ],
       ],
     );
   }
 }
+
+/// Exercise meta — muscle involvement (primary / secondary) + type/equipment, and the "View guide"
+/// entrypoint into the Form Coach sheet. Muscle chips come from the catalog; the guide always shows.
+class _ExerciseMetaCard extends StatelessWidget {
+  const _ExerciseMetaCard({required this.onGuide, this.catalog});
+  final ExerciseSummary? catalog;
+  final VoidCallback onGuide;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    final c = catalog;
+    final primary =
+        c?.muscles.where((m) => m.isPrimary).map((m) => m.name).toList() ??
+            const <String>[];
+    final secondary =
+        c?.muscles.where((m) => !m.isPrimary).map((m) => m.name).toList() ??
+            const <String>[];
+    // Fall back to the single primary group if the detailed list is absent (older payload).
+    final primaryChips = primary.isNotEmpty
+        ? primary
+        : [if (c?.muscleGroup.isNotEmpty ?? false) c!.muscleGroup];
+
+    return GbCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (primaryChips.isNotEmpty || secondary.isNotEmpty) ...[
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                for (final m in primaryChips) _MuscleChip(m, primary: true),
+                for (final m in secondary) _MuscleChip(m, primary: false),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.xs + 2),
+          ],
+          if (c != null && c.type.isNotEmpty) ...[
+            Text(
+              '${c.type}${c.equipment.isNotEmpty ? ' · ${c.equipment}' : ''}',
+              style: AppText.meta.copyWith(color: gb.grey500),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+          ],
+          GbButton(
+            label: 'View exercise guide',
+            icon: Icons.menu_book_outlined,
+            variant: GbButtonVariant.outlined,
+            size: GbButtonSize.sm,
+            full: true,
+            onPressed: onGuide,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A muscle pill — brand-tinted for a primary mover, grey for a secondary one.
+class _MuscleChip extends StatelessWidget {
+  const _MuscleChip(this.label, {required this.primary});
+  final String label;
+  final bool primary;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    final fg = primary ? gb.primary700 : gb.grey600;
+    final bg = primary ? gb.primary600.withValues(alpha: 0.10) : gb.grey25;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration:
+          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(7)),
+      child: Text(label,
+          style: TextStyle(
+              fontSize: 11.5, fontWeight: FontWeight.w700, color: fg)),
+    );
+  }
+}
+
+/// The most recent sessions for this lift (newest first, up to 8) — date · top set · e1RM · PR — so
+/// progress over time is readable as a table, not only as the chart.
+class _RecentSessions extends StatelessWidget {
+  const _RecentSessions({required this.points});
+  final List<E1rmSeriesPoint> points;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    final recent = points.reversed.take(8).toList();
+    if (recent.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        GbSectionTitle('Recent sessions', count: recent.length),
+        const SizedBox(height: AppSpacing.sm),
+        GbCard(
+          padding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+          child: Column(
+            children: [
+              for (final (i, p) in recent.indexed) ...[
+                if (i > 0) Divider(height: 1, color: gb.grey25),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 9),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 74,
+                        child: Text(_shortDate(p.date),
+                            style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: gb.grey700)),
+                      ),
+                      Expanded(
+                        child: Text(
+                          p.topSetWeightKg != null
+                              ? '${fmtKg(p.topSetWeightKg!)} kg × ${p.topSetReps ?? '—'}'
+                              : '—',
+                          style: AppText.meta.copyWith(color: gb.grey600).tabular,
+                        ),
+                      ),
+                      Text('${fmtKg(p.sessionBestE1rmKg)} kg',
+                          style: AppText.mono(const TextStyle(
+                                  fontSize: 13, fontWeight: FontWeight.w700))
+                              .copyWith(color: gb.grey900)),
+                      if (p.isPr) ...[
+                        const SizedBox(width: AppSpacing.xs),
+                        const PrChip(small: true),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+const _months = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', //
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+];
+
+/// Short "15 Jun" date for the recent-sessions table; '—' when the point has no date.
+String _shortDate(DateTime? d) =>
+    d == null ? '—' : '${d.day} ${_months[d.month - 1]}';
 
 // ── Header strip: current e1RM · direction tag · Δ note ──────────────────────
 
@@ -339,27 +524,6 @@ class _Legend extends StatelessWidget {
         const SizedBox(width: AppSpacing.xs),
         Text(label, style: AppText.meta.copyWith(color: gb.grey500)),
       ],
-    );
-  }
-}
-
-// ── Shared scaffolding ───────────────────────────────────────────────────────
-
-/// Centers [child] inside an always-scrollable viewport so pull-to-refresh works in empty states.
-class _ScrollableCenter extends StatelessWidget {
-  const _ScrollableCenter({required this.child});
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) => SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(minHeight: constraints.maxHeight),
-          child: Center(child: child),
-        ),
-      ),
     );
   }
 }

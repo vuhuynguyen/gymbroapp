@@ -7,6 +7,7 @@ import '../../domain/enums.dart';
 import '../../shared/superset/superset_grouping.dart';
 import '../../shared/widgets/widgets.dart';
 import '../plan/plan_providers.dart';
+import '../session/live_session_screen.dart' show GuideButton;
 
 /// Read-only plan detail for a coach (Owner sees the full, unredacted plan). Authoring stays in the
 /// portal; here a coach reviews structure and can jump to Assign.
@@ -217,6 +218,10 @@ class _ExerciseRowState extends State<_ExerciseRow> {
                 const SizedBox(width: AppSpacing.xs),
                 Text('$count set${count == 1 ? '' : 's'}',
                     style: AppText.meta.copyWith(color: gb.grey400)),
+                if (!hidden)
+                  GuideButton(
+                      exerciseId: exercise.exerciseId,
+                      name: exercise.exerciseName ?? 'Exercise'),
                 const SizedBox(width: AppSpacing.xs),
                 AnimatedRotation(
                   turns: _open ? 0.25 : 0,
