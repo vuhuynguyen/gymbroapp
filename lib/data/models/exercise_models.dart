@@ -105,6 +105,7 @@ class ExerciseSummary {
     this.estimatedCaloriesBurn,
     this.averageDurationSeconds,
     required this.muscleGroup,
+    this.muscles = const [],
     this.imageUrl,
   });
 
@@ -120,6 +121,9 @@ class ExerciseSummary {
   final int? estimatedCaloriesBurn;
   final int? averageDurationSeconds;
   final String muscleGroup;
+
+  /// Full targeted-muscle list (primary + secondary), primary-first. Empty on older payloads.
+  final List<ExerciseMuscle> muscles;
   final String? imageUrl;
 
   factory ExerciseSummary.fromJson(Map<String, dynamic> j) => ExerciseSummary(
@@ -133,6 +137,10 @@ class ExerciseSummary {
         estimatedCaloriesBurn: asInt(j['estimatedCaloriesBurn']),
         averageDurationSeconds: asInt(j['averageDurationSeconds']),
         muscleGroup: asString(j['muscleGroup']) ?? '',
+        muscles: (j['muscles'] as List<dynamic>? ?? [])
+            .whereType<Map<String, dynamic>>()
+            .map(ExerciseMuscle.fromJson)
+            .toList(growable: false),
         imageUrl: asString(j['imageUrl']),
       );
 }

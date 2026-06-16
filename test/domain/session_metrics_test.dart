@@ -140,8 +140,8 @@ void main() {
           isPr: false,
         );
 
-    PerformedExercise exr(
-            String id, ExerciseTrackingType tt, List<PerformedSet> sets) =>
+    PerformedExercise exr(String id, ExerciseTrackingType tt, List<PerformedSet> sets,
+            {LastPerformed? last}) =>
         PerformedExercise(
           id: 'e-$id',
           exerciseId: id,
@@ -149,6 +149,7 @@ void main() {
           status: ExercisePerformStatus.completed,
           trackingType: tt,
           sets: sets,
+          lastPerformed: last,
         );
 
     test('workingSetCount excludes warmups and drop stages', () {
@@ -214,6 +215,65 @@ void main() {
       expect(t.durationSeconds, 900);
       expect(t.calories, 230);
       expect(t.avgHeartRate, 145);
+    });
+
+    test('muscleInvolvement splits primary vs secondary, sorted by total', () {
+      final exs = [
+        exr('bench', ExerciseTrackingType.strength,
+            [st(reps: 8, weight: 60), st(reps: 8, weight: 60)]),
+        exr('raise', ExerciseTrackingType.strength, [
+          st(type: PerformedSetType.warmup, reps: 10),
+          st(reps: 12, weight: 8),
+        ]),
+      ];
+      final muscles = {
+        'bench': [(group: 'Chest', isPrimary: true), (group: 'Arms', isPrimary: false)],
+        'raise': [(group: 'Shoulders', isPrimary: true)],
+      };
+      final inv = muscleInvolvement(exs, (id) => muscles[id] ?? const []);
+      expect(inv['Chest']!.primary, 2);
+      expect(inv['Chest']!.secondary, 0);
+      expect(inv['Arms']!.secondary, 2); // bench credits triceps as secondary
+      expect(inv['Arms']!.primary, 0);
+      expect(inv['Shoulders']!.primary, 1); // warmup excluded
+      expect(inv.keys.first, anyOf('Chest', 'Arms')); // both total 2, ahead of Shoulders
+    });
+
+    test('liftProgress compares this top set vs lastPerformed e1RM', () {
+      final up = liftProgress(exr('a', ExerciseTrackingType.strength,
+          [st(reps: 5, weight: 100)],
+          last: const LastPerformed(weightKg: 95, reps: 5)));
+      expect(up!.isUp, isTrue);
+
+      final same = liftProgress(exr('a', ExerciseTrackingType.strength,
+          [st(reps: 5, weight: 100)],
+          last: const LastPerformed(weightKg: 100, reps: 5)));
+      expect(same!.isSame, isTrue);
+
+      final down = liftProgress(exr('a', ExerciseTrackingType.strength,
+          [st(reps: 5, weight: 90)],
+          last: const LastPerformed(weightKg: 100, reps: 5)));
+      expect(down!.isDown, isTrue);
+
+      // No prior reference → null (never fabricated).
+      expect(
+          liftProgress(
+              exr('a', ExerciseTrackingType.strength, [st(reps: 5, weight: 100)])),
+          isNull);
+    });
+
+    test('sessionProgress rolls up only the compared lifts', () {
+      final p = sessionProgress([
+        exr('a', ExerciseTrackingType.strength, [st(reps: 5, weight: 100)],
+            last: const LastPerformed(weightKg: 95, reps: 5)), // up
+        exr('b', ExerciseTrackingType.strength, [st(reps: 5, weight: 90)],
+            last: const LastPerformed(weightKg: 100, reps: 5)), // down
+        exr('c', ExerciseTrackingType.strength,
+            [st(reps: 5, weight: 80)]), // no prior → ignored
+      ]);
+      expect(p.up, 1);
+      expect(p.down, 1);
+      expect(p.compared, 2);
     });
   });
 }
