@@ -9,7 +9,7 @@ import '../../data/models/exercise_models.dart';
 import '../../data/models/progress_models.dart';
 import '../../data/repositories/exercise_repository.dart';
 import '../../shared/widgets/widgets.dart';
-import '../session/live_session_screen.dart' show openExerciseGuide;
+import '../session/live_session_screen.dart' show GuideButton;
 import 'lift_widgets.dart';
 import 'progress_format.dart';
 import 'progress_providers.dart';
@@ -62,19 +62,7 @@ class LiftDetailScreen extends ConsumerWidget {
                   await ref
                       .read(exerciseE1rmSeriesProvider(exerciseId).future);
                 },
-                child: _Body(
-                  series: s,
-                  catalog: catalog,
-                  onGuide: () => openExerciseGuide(
-                    context,
-                    exerciseId: exerciseId,
-                    exerciseName: (s.exerciseName?.trim().isNotEmpty ?? false)
-                        ? s.exerciseName!.trim()
-                        : 'Exercise',
-                    repository: ref.read(exerciseRepositoryProvider),
-                    catalog: catalog,
-                  ),
-                ),
+                child: _Body(series: s, catalog: catalog),
               ),
             ),
           ),
@@ -88,11 +76,9 @@ class LiftDetailScreen extends ConsumerWidget {
 /// guide sit at the top (always available, even with thin trend data); the trend + recent-sessions
 /// table follow once there are logged points.
 class _Body extends StatelessWidget {
-  const _Body(
-      {required this.series, required this.onGuide, this.catalog});
+  const _Body({required this.series, this.catalog});
   final ExerciseE1rmSeries series;
   final ExerciseSummary? catalog;
-  final VoidCallback onGuide;
 
   @override
   Widget build(BuildContext context) {
@@ -102,7 +88,13 @@ class _Body extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(
           AppSpacing.screenH, AppSpacing.gap, AppSpacing.screenH, 32),
       children: [
-        _ExerciseMetaCard(catalog: catalog, onGuide: onGuide),
+        _ExerciseMetaCard(
+          catalog: catalog,
+          exerciseId: series.exerciseId,
+          name: (series.exerciseName?.trim().isNotEmpty ?? false)
+              ? series.exerciseName!.trim()
+              : 'Exercise',
+        ),
         const SizedBox(height: AppSpacing.gap),
         if (!hasData)
           // No qualifying points yet → honest invite, not a faked chart (DRILL-DOWNS §1).
@@ -139,9 +131,11 @@ class _Body extends StatelessWidget {
 /// Exercise meta — muscle involvement (primary / secondary) + type/equipment, and the "View guide"
 /// entrypoint into the Form Coach sheet. Muscle chips come from the catalog; the guide always shows.
 class _ExerciseMetaCard extends StatelessWidget {
-  const _ExerciseMetaCard({required this.onGuide, this.catalog});
+  const _ExerciseMetaCard(
+      {required this.exerciseId, required this.name, this.catalog});
+  final String exerciseId;
+  final String name;
   final ExerciseSummary? catalog;
-  final VoidCallback onGuide;
 
   @override
   Widget build(BuildContext context) {
@@ -157,37 +151,42 @@ class _ExerciseMetaCard extends StatelessWidget {
     final primaryChips = primary.isNotEmpty
         ? primary
         : [if (c?.muscleGroup.isNotEmpty ?? false) c!.muscleGroup];
+    final hasChips = primaryChips.isNotEmpty || secondary.isNotEmpty;
 
     return GbCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      // Muscles + type on the left; a compact guide icon on the right (no full-width button).
+      child: Row(
         children: [
-          if (primaryChips.isNotEmpty || secondary.isNotEmpty) ...[
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                for (final m in primaryChips) _MuscleChip(m, primary: true),
-                for (final m in secondary) _MuscleChip(m, primary: false),
+                if (hasChips)
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final m in primaryChips)
+                        _MuscleChip(m, primary: true),
+                      for (final m in secondary) _MuscleChip(m, primary: false),
+                    ],
+                  ),
+                if (c != null && c.type.isNotEmpty) ...[
+                  if (hasChips) const SizedBox(height: AppSpacing.xs + 2),
+                  Text(
+                    '${c.type}${c.equipment.isNotEmpty ? ' · ${c.equipment}' : ''}',
+                    style: AppText.meta.copyWith(color: gb.grey500),
+                  ),
+                ],
+                if (!hasChips && (c == null || c.type.isEmpty))
+                  Text('Exercise guide',
+                      style: AppText.rowTitle.copyWith(color: gb.grey900)),
               ],
             ),
-            const SizedBox(height: AppSpacing.xs + 2),
-          ],
-          if (c != null && c.type.isNotEmpty) ...[
-            Text(
-              '${c.type}${c.equipment.isNotEmpty ? ' · ${c.equipment}' : ''}',
-              style: AppText.meta.copyWith(color: gb.grey500),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-          ],
-          GbButton(
-            label: 'View exercise guide',
-            icon: Icons.menu_book_outlined,
-            variant: GbButtonVariant.outlined,
-            size: GbButtonSize.sm,
-            full: true,
-            onPressed: onGuide,
           ),
+          const SizedBox(width: AppSpacing.sm),
+          GuideButton(exerciseId: exerciseId, name: name),
         ],
       ),
     );
@@ -387,7 +386,7 @@ class _TrendCard extends StatefulWidget {
 }
 
 class _TrendCardState extends State<_TrendCard> {
-  bool _weight = false; // false = e1RM, true = top-set weight
+  bool _weight = true; // default to logged weight (the real reference); e1RM is an estimate
 
   @override
   Widget build(BuildContext context) {
@@ -483,8 +482,8 @@ class _MetricToggle extends StatelessWidget {
         border: Border.all(color: gb.borderCard),
       ),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
-        pill('e1RM', !weight, () => onChanged(false)),
         pill('Weight', weight, () => onChanged(true)),
+        pill('e1RM', !weight, () => onChanged(false)),
       ]),
     );
   }
