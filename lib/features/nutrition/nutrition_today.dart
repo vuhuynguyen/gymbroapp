@@ -9,6 +9,41 @@ import 'nutrition_providers.dart';
 import 'nutrition_sheets.dart';
 import 'nutrition_widgets.dart';
 
+/// Quick off-plan food logging — shared by Today's "Log off-plan food" row and the bottom-nav "+"
+/// chooser. Reads today's log for the meal slots, opens the food picker, and adds the pick off-plan.
+/// On a closed day it just tells the user logging is locked; a dismissed picker is a silent no-op.
+Future<void> logQuickFood(BuildContext context, WidgetRef ref) async {
+  final log = ref.read(todayNutritionProvider).valueOrNull;
+  if (log != null && log.isClosed) {
+    showInfoSnack(context, 'Today is closed — logging is locked.');
+    return;
+  }
+  final pick =
+      await showFoodPicker(context, swap: false, meals: nutritionMealSlots(log));
+  if (pick == null || !context.mounted) return;
+  try {
+    await ref.read(todayNutritionProvider.notifier).addOffPlan(pick.food,
+        quantity: pick.quantity, mealName: pick.mealName);
+    if (context.mounted) showInfoSnack(context, 'Logged ${pick.food.name}.');
+  } catch (e) {
+    if (context.mounted) showErrorSnack(context, e);
+  }
+}
+
+/// Meal slots for the food picker — the day's own meals first (a plan may use custom names), then the
+/// standard slots so a trainee can always pick Breakfast/Lunch/Dinner/Snack with no plan assigned.
+const _standardMeals = ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
+List<String> nutritionMealSlots(DailyNutritionLog? log) {
+  final seen = <String>{};
+  return [
+    if (log != null)
+      for (final m in log.meals)
+        if (seen.add(m.name)) m.name,
+    for (final m in _standardMeals)
+      if (seen.add(m)) m,
+  ];
+}
+
 /// A muted section header used inside Log's Today pane (e.g. "Workout", "Nutrition"), with an optional
 /// trailing action link (the Nutrition section's "History →").
 class TodaySectionHeader extends StatelessWidget {
@@ -118,8 +153,7 @@ class NutritionTodaySection extends ConsumerWidget {
                 child: Icon(Icons.add, size: 21, color: gb.grey600)),
             title: 'Log off-plan food',
             subtitle: 'Anything you ate outside the plan',
-            onTap: () =>
-                _addOffPlan(context, controller, meals: _mealOptions(log)),
+            onTap: () => logQuickFood(context, ref),
           ),
           const SizedBox(height: AppSpacing.gap),
         ],
@@ -143,33 +177,6 @@ class NutritionTodaySection extends ConsumerWidget {
           _NoPlanBlock(),
       ],
     );
-  }
-
-  /// Meal slots to offer under "Log under": the day's own meals first (a plan may use custom
-  /// names), then the standard slots so a trainee can always pick Breakfast/Lunch/Dinner/Snack
-  /// even with no plan assigned.
-  static const _standardMeals = ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
-  List<String> _mealOptions(DailyNutritionLog log) {
-    final seen = <String>{};
-    return [
-      for (final m in log.meals)
-        if (seen.add(m.name)) m.name,
-      for (final m in _standardMeals)
-        if (seen.add(m)) m,
-    ];
-  }
-
-  Future<void> _addOffPlan(
-      BuildContext context, TodayNutritionController controller,
-      {required List<String> meals}) async {
-    final pick = await showFoodPicker(context, swap: false, meals: meals);
-    if (pick == null) return;
-    try {
-      await controller.addOffPlan(pick.food,
-          quantity: pick.quantity, mealName: pick.mealName);
-    } catch (e) {
-      if (context.mounted) showErrorSnack(context, e);
-    }
   }
 
   Future<void> _run(
