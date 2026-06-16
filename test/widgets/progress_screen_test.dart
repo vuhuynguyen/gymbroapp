@@ -283,15 +283,15 @@ void main() {
       ),
     );
 
-    // Default 12w window: the current-week hero is NOT shown (it would sit at the top of the page).
-    expect(find.text('THIS WEEK'), findsNothing);
-
-    // Switch to the Week tab: the hero appears (top of page) and the Consistency heatmap is gone
-    // entirely from the tree (so its absence is reliable without scrolling).
-    await tester.tap(find.text('Week'));
-    await tester.pumpAndSettle();
+    // Default is the Week tab: the current-week hero IS shown; the multi-week Consistency heatmap is
+    // not (it lives only on the 4w / 12w windows).
     expect(find.text('THIS WEEK'), findsOneWidget);
     expect(find.text('Consistency'), findsNothing);
+
+    // Switch to a multi-week window: the hero drops away entirely from the tree.
+    await tester.tap(find.text('12w'));
+    await tester.pumpAndSettle();
+    expect(find.text('THIS WEEK'), findsNothing);
   });
 
   testWidgets('empty top-lifts → strength invite copy', (tester) async {
@@ -333,6 +333,9 @@ void main() {
         prs: [pr(id: 'p1', name: 'Row')],
       ),
     );
+    // Consistency lives only on the multi-week windows now (not the default Week tab).
+    await tester.tap(find.text('12w'));
+    await tester.pumpAndSettle();
     await scrollTo(tester, find.text('CONSISTENCY'));
 
     // With null pct and no streak, no big-% header — no "%" anywhere on the page.
@@ -360,6 +363,8 @@ void main() {
         prs: [pr(id: 'p1', name: 'Row')],
       ),
     );
+    await tester.tap(find.text('12w'));
+    await tester.pumpAndSettle();
     await scrollTo(tester, find.text('SESSIONS · LAST 12 WKS'));
 
     // Big number = sum of sessionCount (2 + 1 = 3), with the sessions/window caption.
@@ -386,6 +391,8 @@ void main() {
         prs: [pr(id: 'p1', name: 'Row')],
       ),
     );
+    await tester.tap(find.text('12w'));
+    await tester.pumpAndSettle();
     await scrollTo(tester, find.text('HIT GOAL · LAST 12 WKS'));
 
     // The with-goal header is exactly as before: big % + the "hit goal" label + the streak flame chip.
@@ -414,6 +421,8 @@ void main() {
         prs: [pr(id: 'p1', name: 'Row')],
       ),
     );
+    await tester.tap(find.text('12w'));
+    await tester.pumpAndSettle();
     await scrollTo(tester, find.text('HIT GOAL · LAST 8 WKS'));
 
     // The subtitle must track the effective window from the period selector, never a hardcoded 12.

@@ -302,6 +302,10 @@ class NutritionDaySummary {
 
   double get adherenceFraction => adherencePct / 100;
 
+  /// A day with no planned items isn't a "100% adherence" day — there was no plan to adhere to. Drives
+  /// the off-plan treatment in the history list (no fake ring / percentage / 0-of-0).
+  bool get hasPlan => plannedCount > 0;
+
   /// Parse a `YYYY-MM-DD` date (local midnight) for grouping/labels; null if malformed.
   DateTime? get date => DateTime.tryParse(localDate);
 
