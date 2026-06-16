@@ -544,73 +544,116 @@ class _ProgressVsLast extends StatelessWidget {
 }
 
 /// Working sets per muscle group as labelled two-tone bars — solid = primary mover, lighter = secondary
-/// (assisting) involvement. Scaled to the busiest group's total.
-class _MuscleBars extends StatelessWidget {
+/// (assisting) involvement. Scaled to the busiest group's total. Tap a row to reveal the exact
+/// primary/secondary split.
+class _MuscleBars extends StatefulWidget {
   const _MuscleBars({required this.byMuscle});
   final Map<String, MuscleInvolvement> byMuscle;
 
   @override
+  State<_MuscleBars> createState() => _MuscleBarsState();
+}
+
+class _MuscleBarsState extends State<_MuscleBars> {
+  final _expanded = <String>{};
+
+  @override
   Widget build(BuildContext context) {
     final gb = context.gb;
-    final maxV = byMuscle.values.fold<int>(1, (a, b) => b.total > a ? b.total : a);
+    final byMuscle = widget.byMuscle;
+    final maxV =
+        byMuscle.values.fold<int>(1, (a, b) => b.total > a ? b.total : a);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (final e in byMuscle.entries)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 84,
-                  child: Text(e.key,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: gb.grey700)),
-                ),
-                Expanded(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: SizedBox(
-                      height: 8,
-                      // stretch → each segment fills the 8px height (a bare ColoredBox in a Row would
-                      // otherwise collapse to 0px). Flex widths are proportional to the busiest group.
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          if (e.value.primary > 0)
-                            Expanded(
-                                flex: e.value.primary,
-                                child: ColoredBox(color: gb.primary600)),
-                          if (e.value.secondary > 0)
-                            Expanded(
-                                flex: e.value.secondary,
-                                child: ColoredBox(
-                                    color:
-                                        gb.primary600.withValues(alpha: 0.30))),
-                          if (maxV - e.value.total > 0)
-                            Expanded(
-                                flex: maxV - e.value.total,
-                                child: ColoredBox(color: gb.grey25)),
-                        ],
+        for (final e in byMuscle.entries) ...[
+          InkWell(
+            borderRadius: BorderRadius.circular(AppRadius.sm),
+            onTap: () => setState(() => _expanded.contains(e.key)
+                ? _expanded.remove(e.key)
+                : _expanded.add(e.key)),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 84,
+                    child: Text(e.key,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: gb.grey700)),
+                  ),
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: SizedBox(
+                        height: 8,
+                        // stretch → each segment fills the 8px height (a bare ColoredBox in a Row would
+                        // otherwise collapse to 0px). Flex widths are proportional to the busiest group.
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            if (e.value.primary > 0)
+                              Expanded(
+                                  flex: e.value.primary,
+                                  child: ColoredBox(color: gb.primary600)),
+                            if (e.value.secondary > 0)
+                              Expanded(
+                                  flex: e.value.secondary,
+                                  child: ColoredBox(
+                                      color: gb.primary600
+                                          .withValues(alpha: 0.30))),
+                            if (maxV - e.value.total > 0)
+                              Expanded(
+                                  flex: maxV - e.value.total,
+                                  child: ColoredBox(color: gb.grey25)),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                ),
-                SizedBox(
-                  width: 30,
-                  child: Text('${e.value.total}',
-                      textAlign: TextAlign.end,
-                      style: AppText.mono(const TextStyle(
-                              fontSize: 13, fontWeight: FontWeight.w700))
-                          .copyWith(color: gb.grey700)),
-                ),
-              ],
+                  const SizedBox(width: AppSpacing.xs),
+                  SizedBox(
+                    width: 30,
+                    child: Text('${e.value.total}',
+                        textAlign: TextAlign.end,
+                        style: AppText.mono(const TextStyle(
+                                fontSize: 13, fontWeight: FontWeight.w700))
+                            .copyWith(color: gb.grey700)),
+                  ),
+                  // A quiet caret hinting the row expands to the split.
+                  Icon(
+                      _expanded.contains(e.key)
+                          ? Icons.expand_less
+                          : Icons.expand_more,
+                      size: 16,
+                      color: gb.grey400),
+                ],
+              ),
             ),
           ),
+          // Tapped → the exact primary/secondary counts, aligned under the bar.
+          if (_expanded.contains(e.key))
+            Padding(
+              padding: const EdgeInsets.only(left: 84, bottom: 6),
+              child: Row(
+                children: [
+                  _LegendDot(
+                      color: gb.primary600,
+                      label: '${e.value.primary} primary'),
+                  if (e.value.secondary > 0) ...[
+                    const SizedBox(width: AppSpacing.md),
+                    _LegendDot(
+                        color: gb.primary600.withValues(alpha: 0.30),
+                        label: '${e.value.secondary} secondary'),
+                  ],
+                ],
+              ),
+            ),
+        ],
         const SizedBox(height: AppSpacing.xs),
         // Legend so the two tones read clearly.
         Row(
