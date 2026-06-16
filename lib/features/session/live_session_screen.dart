@@ -2235,6 +2235,53 @@ Future<void> presentGuideSheet(BuildContext context, Widget sheet) {
   );
 }
 
+/// Public entrypoint to open the Form Coach guide for an exercise by id — reused by the plan views and
+/// the lift-detail screen. [catalog] is an optional fallback (muscles/equipment) shown while the full
+/// `ExerciseDetail` loads from [repository].
+Future<void> openExerciseGuide(
+  BuildContext context, {
+  required String exerciseId,
+  required String exerciseName,
+  required ExerciseRepository repository,
+  ExerciseSummary? catalog,
+}) =>
+    presentGuideSheet(
+      context,
+      _GuideSheet(
+        exerciseId: exerciseId,
+        exerciseName: exerciseName,
+        catalog: catalog,
+        repository: repository,
+      ),
+    );
+
+/// A compact "open the exercise guide" icon button — self-contained (reads the catalog + repository),
+/// so it drops into any row that has an exercise id (plan views, etc.).
+class GuideButton extends ConsumerWidget {
+  const GuideButton({required this.exerciseId, required this.name, super.key});
+  final String exerciseId;
+  final String name;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return IconButton(
+      icon: const Icon(Icons.menu_book_outlined, size: 20),
+      color: context.gb.grey400,
+      tooltip: 'Exercise guide',
+      visualDensity: VisualDensity.compact,
+      constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+      padding: EdgeInsets.zero,
+      onPressed: () => openExerciseGuide(
+        context,
+        exerciseId: exerciseId,
+        exerciseName: name,
+        repository: ref.read(exerciseRepositoryProvider),
+        catalog: ref.read(exerciseCatalogProvider).valueOrNull?[exerciseId],
+      ),
+    );
+  }
+}
+
 /// Zero-tap coaching line on the exercise card — always visible, one tap opens the guide sheet.
 /// Mirrors the design's form-cue strip: tinted bar, target icon, the single highest-value cue,
 /// and a "Guide ›" pill.

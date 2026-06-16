@@ -6,6 +6,7 @@ import '../../data/models/plan_models.dart';
 import '../../domain/enums.dart';
 import '../../shared/superset/superset_grouping.dart';
 import '../../shared/widgets/widgets.dart';
+import '../session/live_session_screen.dart' show GuideButton;
 import '../session/start_actions.dart';
 import 'plan_providers.dart';
 
@@ -414,6 +415,10 @@ class _ExerciseRow extends StatelessWidget {
               ],
             ),
           ),
+          if (!hidden)
+            GuideButton(
+                exerciseId: exercise.exerciseId,
+                name: exercise.exerciseName ?? 'Exercise'),
         ],
       ),
       child: exercise.sets.isEmpty
