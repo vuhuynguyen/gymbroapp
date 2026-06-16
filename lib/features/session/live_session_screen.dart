@@ -2673,21 +2673,20 @@ class _MediaSlot extends StatelessWidget {
                 border: Border.all(color: gb.borderCard),
               ),
             ),
-            Positioned(
-              left: 10,
+            // Equipment pinned to the bottom-left corner, the demo chip to the bottom-right — two
+            // separate Positioned anchors so the demo loop always sits flush in the right corner
+            // (a Row + Spacer left it floating short of the edge).
+            if (equipment.isNotEmpty)
+              Positioned(
+                left: 10,
+                bottom: 10,
+                child:
+                    _MediaChip(icon: Icons.fitness_center, label: equipment),
+              ),
+            const Positioned(
               right: 10,
               bottom: 10,
-              child: Row(
-                children: [
-                  if (equipment.isNotEmpty)
-                    Flexible(
-                      child: _MediaChip(
-                          icon: Icons.fitness_center, label: equipment),
-                    ),
-                  const Spacer(),
-                  const _MediaChip(icon: Icons.play_arrow, label: 'Demo loop'),
-                ],
-              ),
+              child: _MediaChip(icon: Icons.play_arrow, label: 'Demo loop'),
             ),
           ],
         ),
