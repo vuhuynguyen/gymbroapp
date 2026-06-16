@@ -19,7 +19,11 @@ void main() {
   const exerciseId = 'ex-1';
 
   E1rmSeriesPoint point(double e1rm, {bool pr = false}) =>
-      E1rmSeriesPoint(sessionBestE1rmKg: e1rm, isPr: pr);
+      E1rmSeriesPoint(
+          sessionBestE1rmKg: e1rm,
+          topSetWeightKg: e1rm - 10, // weight is the default trend → give it real values
+          topSetReps: 5,
+          isPr: pr);
 
   ExerciseE1rmSeries series({
     List<E1rmSeriesPoint> points = const [],
@@ -105,7 +109,7 @@ void main() {
 
     // No faked chart — an honest invite, and the exercise guide is still reachable.
     expect(find.textContaining('Log a few working sets'), findsOneWidget);
-    expect(find.text('View exercise guide'), findsOneWidget);
+    expect(find.byTooltip('Exercise guide'), findsOneWidget);
     expect(find.byType(ErrorRetry), findsNothing);
   });
 
@@ -116,7 +120,7 @@ void main() {
     );
 
     // The trend card renders, but with the gate copy (3 points → 1 more).
-    expect(find.text('e1RM trend'), findsOneWidget);
+    expect(find.text('Weight trend'), findsOneWidget); // weight is the default metric now
     expect(find.textContaining('to see your trend'), findsOneWidget);
   });
 
@@ -136,7 +140,7 @@ void main() {
     expect(find.textContaining('vs your trailing 4 weeks'), findsOneWidget);
 
     // Trend card + legend (PR swatch present once it's a real trend).
-    expect(find.text('e1RM trend'), findsOneWidget);
+    expect(find.text('Weight trend'), findsOneWidget); // weight is the default metric now
     expect(find.text('PR'), findsWidgets); // legend + recent-session PR chips
     // The up direction tag.
     expect(find.text('Up'), findsOneWidget);
@@ -155,7 +159,7 @@ void main() {
 
     // At least one CustomPaint inside the trend card (the painter draws the line + PR dots).
     expect(find.byType(CustomPaint), findsWidgets);
-    expect(find.text('e1RM trend'), findsOneWidget);
+    expect(find.text('Weight trend'), findsOneWidget); // weight is the default metric now
     expect(find.text('PR'), findsWidgets); // legend + recent-session PR chips // PR legend → markers are drawn
   });
 

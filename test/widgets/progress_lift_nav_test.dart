@@ -94,7 +94,7 @@ void main() {
 
     // We're on the drill-down: the e1RM trend card + the detail-screen widget are present.
     expect(find.byType(LiftDetailScreen), findsOneWidget);
-    expect(find.text('e1RM trend'), findsOneWidget);
+    expect(find.text('Weight trend'), findsOneWidget); // weight is the default trend metric
     expect(find.text('Current e1RM'.toUpperCase()), findsOneWidget);
   });
 }

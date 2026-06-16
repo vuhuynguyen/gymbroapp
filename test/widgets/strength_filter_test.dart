@@ -249,6 +249,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(LiftDetailScreen), findsOneWidget);
-    expect(find.text('e1RM trend'), findsOneWidget);
+    expect(find.text('Weight trend'), findsOneWidget); // weight is the default trend metric
   });
 }

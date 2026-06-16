@@ -10,6 +10,7 @@ import '../../domain/enums.dart';
 import '../../domain/session_metrics.dart';
 import '../../shared/widgets/widgets.dart';
 import '../log/log_providers.dart';
+import 'live_session_screen.dart' show GuideButton;
 import 'start_actions.dart';
 
 /// Post-session summary: duration, volume, sets, RPE, PRs + per-exercise set breakdown. Reached from
@@ -465,6 +466,9 @@ class _ExerciseBreakdown extends StatelessWidget {
               ],
             ),
           ),
+          GuideButton(
+              exerciseId: exercise.exerciseId,
+              name: exercise.exerciseName ?? 'Exercise'),
         ],
       ),
       child: exercise.sets.isEmpty
