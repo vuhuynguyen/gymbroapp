@@ -60,6 +60,7 @@ class HomeShell extends ConsumerWidget {
             ref.invalidate(progressOverviewProvider);
             ref.invalidate(strengthLiftsProvider);
             ref.invalidate(bodyweightSeriesProvider);
+            ref.invalidate(sleepSeriesProvider);
             ref.invalidate(nutritionAdherenceProvider);
           }
           shell.goBranch(branch, initialLocation: branch == shell.currentIndex);

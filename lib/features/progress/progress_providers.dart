@@ -88,6 +88,15 @@ final bodyweightSeriesProvider =
   return ref.read(progressRepositoryProvider).metricSeries('weight');
 });
 
+/// Sleep-hours trend for the home Sleep section (`/api/me/progress/metrics/series?type=sleep`). Same
+/// shape + graceful degradation as [bodyweightSeriesProvider]: loads independently of the overview, so a
+/// slow/absent metrics endpoint never blocks the page; the section shows a "log your sleep" invite on no
+/// data and stays quiet on error. The metric-series endpoint is type-agnostic, so this reuses it.
+final sleepSeriesProvider =
+    FutureProvider.autoDispose<MetricSeries>((ref) async {
+  return ref.read(progressRepositoryProvider).metricSeries('sleep');
+});
+
 /// The trainee's current goal weight (Phase 3, Decision **D12**) — read as the latest point of the
 /// `goal_weight` metric series. `autoDispose`: the Body section watches it to overlay the goal line +
 /// distance-to-goal caption; null = no goal set yet → the section shows the "set a goal weight"

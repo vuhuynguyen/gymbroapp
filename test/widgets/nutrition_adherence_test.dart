@@ -64,6 +64,8 @@ void main() {
           // test is the Nutrition card.
           bodyweightSeriesProvider.overrideWith(
               (ref) async => const MetricSeries(type: 'weight', points: [])),
+          sleepSeriesProvider.overrideWith(
+              (ref) async => const MetricSeries(type: 'sleep', points: [])),
           goalWeightProvider.overrideWith((ref) async => null),
           nutritionAdherenceProvider.overrideWith((ref) async {
             return adherence.when(
