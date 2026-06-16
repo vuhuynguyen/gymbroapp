@@ -110,4 +110,110 @@ void main() {
     );
     expect(formatLoggedSet(weightedPlank), '10kg · 01:00');
   });
+
+  group('session-summary aggregates', () {
+    PerformedSet st({
+      PerformedSetType type = PerformedSetType.working,
+      String? parent,
+      int? reps,
+      double? weight,
+      int? duration,
+      int? distance,
+      int? cal,
+      int? hr,
+      int? rest,
+    }) =>
+        PerformedSet(
+          id: 'x',
+          setNumber: 1,
+          setType: type,
+          parentSetId: parent,
+          reps: reps,
+          weightKg: weight,
+          durationSeconds: duration,
+          distanceM: distance,
+          calories: cal,
+          avgHeartRate: hr,
+          restSeconds: rest,
+          isCompleted: true,
+          loggedAt: null,
+          isPr: false,
+        );
+
+    PerformedExercise exr(
+            String id, ExerciseTrackingType tt, List<PerformedSet> sets) =>
+        PerformedExercise(
+          id: 'e-$id',
+          exerciseId: id,
+          order: 1,
+          status: ExercisePerformStatus.completed,
+          trackingType: tt,
+          sets: sets,
+        );
+
+    test('workingSetCount excludes warmups and drop stages', () {
+      final e = exr('a', ExerciseTrackingType.strength, [
+        st(type: PerformedSetType.warmup, reps: 10, weight: 40),
+        st(reps: 8, weight: 60),
+        st(reps: 8, weight: 60),
+        st(type: PerformedSetType.drop, parent: 'lead', reps: 6, weight: 40),
+      ]);
+      expect(workingSetCount([e]), 2);
+      expect(warmupSetCount([e]), 1);
+    });
+
+    test('totalReps sums every set with reps', () {
+      final e = exr('a', ExerciseTrackingType.strength,
+          [st(reps: 10, weight: 40), st(reps: 8, weight: 60)]);
+      expect(totalReps([e]), 18);
+    });
+
+    test('density and training load', () {
+      expect(densityKgPerMin(600, 600)!.round(), 60); // 600kg / 10min
+      expect(densityKgPerMin(0, 600), isNull);
+      expect(sessionLoad(8, 1800), 240); // 8 × 30min
+      expect(sessionLoad(null, 1800), isNull);
+    });
+
+    test('isCardioSession only when there is no lifting', () {
+      expect(
+          isCardioSession(
+              [exr('run', ExerciseTrackingType.cardio, [st(duration: 600)])]),
+          isTrue);
+      expect(
+          isCardioSession([
+            exr('bench', ExerciseTrackingType.strength, [st(reps: 5, weight: 80)])
+          ]),
+          isFalse);
+      expect(isCardioSession(const []), isFalse);
+    });
+
+    test('workingSetsByMuscle groups by primary muscle, sorted desc', () {
+      final exs = [
+        exr('a', ExerciseTrackingType.strength,
+            [st(reps: 8, weight: 60), st(reps: 8, weight: 60)]),
+        exr('b', ExerciseTrackingType.strength, [
+          st(type: PerformedSetType.warmup, reps: 10),
+          st(reps: 8, weight: 20),
+        ]),
+      ];
+      final byM =
+          workingSetsByMuscle(exs, (id) => {'a': 'Chest', 'b': 'Shoulders'}[id]);
+      expect(byM, {'Chest': 2, 'Shoulders': 1});
+      expect(byM.keys.first, 'Chest'); // busiest first
+    });
+
+    test('cardioTotals sums distance/duration/calories and means HR', () {
+      final t = cardioTotals([
+        exr('run', ExerciseTrackingType.cardio, [
+          st(duration: 600, distance: 2000, cal: 150, hr: 140),
+          st(duration: 300, distance: 1000, cal: 80, hr: 150),
+        ])
+      ]);
+      expect(t.distanceM, 3000);
+      expect(t.durationSeconds, 900);
+      expect(t.calories, 230);
+      expect(t.avgHeartRate, 145);
+    });
+  });
 }

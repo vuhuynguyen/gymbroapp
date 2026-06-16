@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/time/app_time_zone.dart';
 import '../../data/models/session_models.dart';
+import '../../data/repositories/exercise_repository.dart';
 import '../../domain/enums.dart';
 import '../../domain/session_metrics.dart';
 import '../../shared/widgets/widgets.dart';
@@ -135,18 +136,36 @@ class _SessionActionBar extends StatelessWidget {
   }
 }
 
-class _Body extends StatelessWidget {
+class _Body extends ConsumerWidget {
   const _Body({required this.detail, required this.fromFinish});
   final SessionDetail detail;
   final bool fromFinish;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final gb = context.gb;
     final d = detail;
     final prExerciseIds = d.prs.map((p) => p.exerciseId).toSet();
-    final totalSets = d.exercises.fold<int>(0, (a, e) => a + e.sets.length);
     final at = d.startedAt ?? d.completedAt;
+
+    // Mode-aware summary aggregates — all grounded in logged data, never fabricated. A session with no
+    // strength/bodyweight lifting renders the cardio summary instead of volume/sets.
+    final cardio = isCardioSession(d.exercises);
+    final working = workingSetCount(d.exercises);
+    final warmups = warmupSetCount(d.exercises);
+    final reps = totalReps(d.exercises);
+    final rest = averageRestSeconds(d.exercises);
+    final density = densityKgPerMin(d.totalVolumeKg, d.durationSeconds);
+    final load = sessionLoad(d.rpeOverall, d.durationSeconds);
+    final ct = cardio ? cardioTotals(d.exercises) : null;
+    // Muscle groups come from the exercise catalog (same source the live logger uses); skipped for
+    // cardio. Null catalog (still loading / offline) simply yields no muscle bars.
+    final catalog = ref.watch(exerciseCatalogProvider).valueOrNull;
+    final byMuscle = cardio
+        ? const <String, int>{}
+        : workingSetsByMuscle(d.exercises, (id) => catalog?[id]?.muscleGroup);
+    final secondary =
+        _secondaryStats(cardio, reps, density, rest, load, warmups);
 
     final metaParts = <String>[
       if (d.programName != null && d.programName!.isNotEmpty) d.programName!,
@@ -185,7 +204,8 @@ class _Body extends StatelessWidget {
         ],
         const SizedBox(height: AppSpacing.md),
 
-        // Stat grid — row 1: duration, volume; row 2: sets, avg RPE, PRs.
+        // Stat grid — mode-aware. Lifting: duration · volume / working-sets · avg RPE · PRs.
+        // Cardio (no lifting): duration · distance / calories · avg HR · avg RPE.
         Row(
           children: [
             Expanded(
@@ -199,13 +219,21 @@ class _Body extends StatelessWidget {
             ),
             const SizedBox(width: AppSpacing.xs + 2),
             Expanded(
-              child: GbStatTile(
-                icon: Icons.bar_chart,
-                label: 'Volume',
-                value: _fmtVolume(d.totalVolumeKg),
-                unit: 'kg',
-                accent: gb.primary500,
-              ),
+              child: cardio
+                  ? GbStatTile(
+                      icon: Icons.straighten,
+                      label: 'Distance',
+                      value: _fmtDistanceValue(ct!.distanceM),
+                      unit: _fmtDistanceUnit(ct.distanceM),
+                      accent: gb.primary500,
+                    )
+                  : GbStatTile(
+                      icon: Icons.bar_chart,
+                      label: 'Volume',
+                      value: _fmtVolume(d.totalVolumeKg),
+                      unit: 'kg',
+                      accent: gb.primary500,
+                    ),
             ),
           ],
         ),
@@ -213,33 +241,76 @@ class _Body extends StatelessWidget {
         Row(
           children: [
             Expanded(
-              child: GbStatTile(
-                icon: Icons.layers_outlined,
-                label: 'Sets',
-                value: '$totalSets',
-              ),
+              child: cardio
+                  ? GbStatTile(
+                      icon: Icons.local_fire_department_outlined,
+                      label: 'Calories',
+                      value: ct!.calories > 0 ? '${ct.calories}' : '—',
+                      unit: ct.calories > 0 ? 'kcal' : null,
+                      accent: gb.amber,
+                    )
+                  : GbStatTile(
+                      icon: Icons.layers_outlined,
+                      label: 'Working sets',
+                      value: '$working',
+                    ),
             ),
             const SizedBox(width: AppSpacing.xs + 2),
             Expanded(
-              child: GbStatTile(
-                icon: Icons.local_fire_department_outlined,
-                label: 'Avg RPE',
-                value: d.rpeOverall != null ? '${d.rpeOverall}' : '—',
-                unit: d.rpeOverall != null ? '/10' : null,
-                accent: gb.amber,
-              ),
+              child: cardio
+                  ? GbStatTile(
+                      icon: Icons.favorite_outline,
+                      label: 'Avg HR',
+                      value: ct!.avgHeartRate != null ? '${ct.avgHeartRate}' : '—',
+                      unit: ct.avgHeartRate != null ? 'bpm' : null,
+                      accent: gb.danger,
+                    )
+                  : GbStatTile(
+                      icon: Icons.local_fire_department_outlined,
+                      label: 'Avg RPE',
+                      value: d.rpeOverall != null ? '${d.rpeOverall}' : '—',
+                      unit: d.rpeOverall != null ? '/10' : null,
+                      accent: gb.amber,
+                    ),
             ),
             const SizedBox(width: AppSpacing.xs + 2),
             Expanded(
-              child: GbStatTile(
-                icon: Icons.emoji_events_outlined,
-                label: 'PRs',
-                value: '${d.prs.length}',
-                accent: gb.amber,
-              ),
+              child: cardio
+                  ? GbStatTile(
+                      icon: Icons.local_fire_department_outlined,
+                      label: 'Avg RPE',
+                      value: d.rpeOverall != null ? '${d.rpeOverall}' : '—',
+                      unit: d.rpeOverall != null ? '/10' : null,
+                      accent: gb.amber,
+                    )
+                  : GbStatTile(
+                      icon: Icons.emoji_events_outlined,
+                      label: 'PRs',
+                      value: '${d.prs.length}',
+                      accent: gb.amber,
+                    ),
             ),
           ],
         ),
+
+        // Secondary stat line — lower-prominence detail (reps · density · rest · load · warmups).
+        if (secondary.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            secondary.join('   ·   '),
+            style: AppText.mono(const TextStyle(
+                    fontSize: 12.5, fontWeight: FontWeight.w500))
+                .copyWith(color: gb.grey500),
+          ),
+        ],
+
+        // Muscles trained — working sets per primary muscle group (lifting sessions only).
+        if (byMuscle.isNotEmpty) ...[
+          const SizedBox(height: AppSpacing.lg),
+          GbSectionTitle('Muscles trained', count: byMuscle.length),
+          const SizedBox(height: AppSpacing.sm),
+          _MuscleBars(byMuscle: byMuscle),
+        ],
 
         if (d.notes != null && d.notes!.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.md),
@@ -410,6 +481,79 @@ class _ExerciseBreakdown extends StatelessWidget {
 /// kg with a `1.2k` shorthand past a thousand — mirrors the prototype's `fmtVolume`.
 String _fmtVolume(double kg) =>
     kg >= 1000 ? '${(kg / 1000).toStringAsFixed(1)}k' : kg.toStringAsFixed(0);
+
+String _fmtDistanceValue(int m) =>
+    m >= 1000 ? (m / 1000).toStringAsFixed(m % 1000 == 0 ? 0 : 1) : '$m';
+String _fmtDistanceUnit(int m) => m >= 1000 ? 'km' : 'm';
+
+/// The lower-prominence stat line under the tiles — only parts with real values appear.
+List<String> _secondaryStats(
+    bool cardio, int reps, double? density, int? rest, int? load, int warmups) {
+  if (cardio) return [if (load != null) 'load $load'];
+  return [
+    if (reps > 0) '$reps reps',
+    if (density != null) '${density.round()} kg/min',
+    if (rest != null) 'rest ${formatRestClock(rest)}',
+    if (load != null) 'load $load',
+    if (warmups > 0) '$warmups warmup${warmups == 1 ? '' : 's'}',
+  ];
+}
+
+/// Working sets per primary muscle group as labelled horizontal bars (scaled to the busiest group).
+class _MuscleBars extends StatelessWidget {
+  const _MuscleBars({required this.byMuscle});
+  final Map<String, int> byMuscle;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    final maxV = byMuscle.values.fold<int>(1, (a, b) => b > a ? b : a);
+    return Column(
+      children: [
+        for (final e in byMuscle.entries)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 84,
+                  child: Text(e.key,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: gb.grey700)),
+                ),
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: Container(
+                      height: 8,
+                      color: gb.grey25,
+                      child: FractionallySizedBox(
+                        alignment: Alignment.centerLeft,
+                        widthFactor: (e.value / maxV).clamp(0.06, 1.0),
+                        child: Container(color: gb.primary500),
+                      ),
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: 30,
+                  child: Text('${e.value}',
+                      textAlign: TextAlign.end,
+                      style: AppText.mono(const TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w700))
+                          .copyWith(color: gb.grey700)),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
 
 const _months = [
   'Jan',
