@@ -633,22 +633,27 @@ class NutriDayCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final gb = context.gb;
+    final hasPlan = day.hasPlan;
     return GbCard(
       onTap: onTap,
       padding: const EdgeInsets.all(AppSpacing.sm),
       child: Row(
         children: [
+          // Plan day → the adherence ring with %. Ad-hoc / no-plan day → a neutral ring (no fake 100%),
+          // marked with the off-plan flash instead.
           GbRing(
-            value: day.adherenceFraction,
+            value: hasPlan ? day.adherenceFraction : 0,
             size: 40,
             stroke: 5,
             gradient: const [AppPalette.primary200, AppPalette.primary700],
-            child: Text('${day.adherencePct}%',
-                style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                        color: gb.grey900)
-                    .tabular),
+            child: hasPlan
+                ? Text('${day.adherencePct}%',
+                    style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: gb.grey900)
+                        .tabular)
+                : Icon(Icons.bolt_rounded, size: 15, color: gb.adhocTag),
           ),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
@@ -667,8 +672,10 @@ class NutriDayCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                    '${day.completedCount}/${day.plannedCount} completed'
-                    '${day.skippedCount > 0 ? ' · ${day.skippedCount} skipped' : ''}',
+                    hasPlan
+                        ? '${day.completedCount}/${day.plannedCount} completed'
+                            '${day.skippedCount > 0 ? ' · ${day.skippedCount} skipped' : ''}'
+                        : 'Logged off-plan',
                     style: AppText.meta.copyWith(color: gb.grey500)),
               ],
             ),

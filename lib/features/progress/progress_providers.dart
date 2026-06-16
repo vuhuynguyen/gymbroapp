@@ -24,12 +24,12 @@ extension ProgressRangeX on ProgressRange {
       };
 }
 
-/// The selected Progress view. Default = **12 weeks** — the page lands on the trend glance it always
-/// has, with **Today** (the snapshot+advice dashboard) sitting as the prominent first tab one tap away.
+/// The selected Progress view. Default = **Week** — the page lands on the current-week glance (This
+/// Week hero + strength), with **Today** one tap left and the longer trend windows one tap right.
 /// Page-level state (a plain [StateProvider]), NOT `autoDispose` — the choice survives a tab switch /
 /// drill-down round-trip so the control reads as a persistent page setting, not a per-visit reset.
 final progressRangeProvider =
-    StateProvider<ProgressRange>((ref) => ProgressRange.twelveWeek);
+    StateProvider<ProgressRange>((ref) => ProgressRange.week);
 
 /// The selected look-back window in weeks, derived from [progressRangeProvider]. The overview +
 /// per-lift e1RM + strength + nutrition fetches read it and re-request with the matching window. The

@@ -92,14 +92,14 @@ void main() {
     final repo = _FakeProgressRepository(nonEmptyOverview());
     await pump(tester, repo);
 
-    // The four view options render (Today snapshot + three trend windows); 12w is the default.
+    // The four view options render (Today snapshot + three trend windows); Week is the default.
     expect(find.text('Today'), findsOneWidget);
     expect(find.text('Week'), findsOneWidget);
     expect(find.text('4w'), findsOneWidget);
     expect(find.text('12w'), findsOneWidget);
 
-    // The initial overview fetch threaded the default window.
-    expect(repo.overviewWeeks, contains(12));
+    // The initial overview fetch threaded the default window (Week = 1).
+    expect(repo.overviewWeeks, contains(1));
   });
 
   testWidgets('changing the period re-requests the overview with the new weeks value',
@@ -107,8 +107,8 @@ void main() {
     final repo = _FakeProgressRepository(nonEmptyOverview());
     await pump(tester, repo);
 
-    // Baseline: only the default-12 request so far.
-    expect(repo.overviewWeeks, [12]);
+    // Baseline: only the default-Week request so far.
+    expect(repo.overviewWeeks, [1]);
 
     // Tap 4w → the overview provider re-runs and re-requests with weeks=4.
     await tester.tap(find.text('4w'));
@@ -128,10 +128,10 @@ void main() {
     // nutrition provider is subscribed when the period changes.
     await pump(tester, repo, tallViewport: true);
 
-    // The default-12 fetch already threaded a 12-week (84-day) window.
+    // The default-Week fetch already threaded a 1-week (7-day) window.
     expect(repo.nutritionFroms, isNotEmpty);
     final (f0, t0) = repo.nutritionFroms.first;
-    expect(t0!.difference(f0!).inDays, 84); // 7 * 12 weeks (default)
+    expect(t0!.difference(f0!).inDays, 7); // 7 * 1 week (default)
 
     final before = repo.nutritionFroms.length;
 

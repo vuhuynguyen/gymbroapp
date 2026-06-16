@@ -79,9 +79,16 @@ class _WeekGroup {
   _WeekGroup(this.label, this.days);
   final String label;
   final List<NutritionDaySummary> days;
-  int get avgPct => days.isEmpty
-      ? 0
-      : (days.fold<int>(0, (a, d) => a + d.adherencePct) / days.length).round();
+
+  /// Average adherence over PLAN days only — ad-hoc / no-plan days have no real % (they'd report a
+  /// meaningless 100%), so they're excluded. Null when the week has no plan days.
+  int? get avgPct {
+    final planDays = days.where((d) => d.hasPlan).toList();
+    if (planDays.isEmpty) return null;
+    return (planDays.fold<int>(0, (a, d) => a + d.adherencePct) /
+            planDays.length)
+        .round();
+  }
 }
 
 /// Group day summaries by their Monday-anchored week, labelled This week / Last week / Week of d MMM.
@@ -127,7 +134,7 @@ List<_WeekGroup> _byWeek(List<NutritionDaySummary> days) {
 class _WeekHeader extends StatelessWidget {
   const _WeekHeader({required this.label, required this.avgPct});
   final String label;
-  final int avgPct;
+  final int? avgPct;
 
   @override
   Widget build(BuildContext context) {
@@ -142,12 +149,13 @@ class _WeekHeader extends StatelessWidget {
                   color: gb.ink,
                   letterSpacing: -0.14)),
           const Spacer(),
-          Text('avg $avgPct%',
-              style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: gb.grey500)
-                  .tabular),
+          if (avgPct != null)
+            Text('avg $avgPct%',
+                style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: gb.grey500)
+                    .tabular),
         ],
       ),
     );
