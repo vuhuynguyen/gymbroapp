@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/models/plan_models.dart';
 import '../../domain/enums.dart';
+import '../../shared/superset/superset_grouping.dart';
 import '../../shared/widgets/widgets.dart';
 import '../plan/plan_providers.dart';
 
@@ -108,6 +109,15 @@ class _WorkoutCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final gb = context.gb;
+    // Superset grouping (A1/A2 …) so a coach reviewing the plan sees which exercises are paired.
+    final ssTags = supersetTags([
+      for (final e in workout.exercises)
+        SupersetMember(
+            id: e.id,
+            order: e.order,
+            groupId: e.supersetGroupId,
+            name: e.exerciseName),
+    ]);
     return GbCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -126,7 +136,11 @@ class _WorkoutCard extends StatelessWidget {
           const SizedBox(height: AppSpacing.sm),
           for (var i = 0; i < workout.exercises.length; i++) ...[
             if (i > 0) Divider(height: 1, color: gb.grey25),
-            _ExerciseRow(index: i + 1, exercise: workout.exercises[i]),
+            _ExerciseRow(
+              index: i + 1,
+              exercise: workout.exercises[i],
+              supersetTag: ssTags[workout.exercises[i].id],
+            ),
           ],
         ],
       ),
@@ -137,9 +151,11 @@ class _WorkoutCard extends StatelessWidget {
 /// Numbered read-only exercise row — collapsed by default (number · name · set count); tap to reveal the
 /// prescribed set pills. Inline collapse keeps the workout-card grouping intact (no nested cards).
 class _ExerciseRow extends StatefulWidget {
-  const _ExerciseRow({required this.index, required this.exercise});
+  const _ExerciseRow(
+      {required this.index, required this.exercise, this.supersetTag});
   final int index;
   final PlanWorkoutExerciseDetail exercise;
+  final SupersetTag? supersetTag;
 
   @override
   State<_ExerciseRow> createState() => _ExerciseRowState();
@@ -194,6 +210,10 @@ class _ExerciseRowState extends State<_ExerciseRow> {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                if (widget.supersetTag != null) ...[
+                  const SizedBox(width: 6),
+                  SupersetChip(widget.supersetTag!),
+                ],
                 const SizedBox(width: AppSpacing.xs),
                 Text('$count set${count == 1 ? '' : 's'}',
                     style: AppText.meta.copyWith(color: gb.grey400)),

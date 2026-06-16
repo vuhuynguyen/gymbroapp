@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../domain/enums.dart';
 import '../../shared/widgets/widgets.dart';
 import '../log/log_screen.dart' show showStartWorkoutSheet;
+import '../progress/progress_providers.dart';
 import '../tenant/tenant_controller.dart';
 
 /// Role-adaptive bottom-tab shell (design / strategy-doc navigation):
@@ -52,6 +53,15 @@ class HomeShell extends ConsumerWidget {
         selected: selected,
         onSelect: (i) {
           final branch = branchIndices[i];
+          // Progress is kept alive by the shell, so its autoDispose providers don't refetch on their
+          // own — refresh them each time the tab is entered (or re-tapped). skipLoadingOnRefresh keeps
+          // the current content on screen while the new data loads, so there's no skeleton flash.
+          if (branch == _progress) {
+            ref.invalidate(progressOverviewProvider);
+            ref.invalidate(strengthLiftsProvider);
+            ref.invalidate(bodyweightSeriesProvider);
+            ref.invalidate(nutritionAdherenceProvider);
+          }
           shell.goBranch(branch, initialLocation: branch == shell.currentIndex);
         },
         onStart: () => showStartWorkoutSheet(context, ref),

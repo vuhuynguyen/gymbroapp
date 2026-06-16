@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../data/models/plan_models.dart';
 import '../../domain/enums.dart';
+import '../../shared/superset/superset_grouping.dart';
 import '../../shared/widgets/widgets.dart';
 import '../session/start_actions.dart';
 import 'plan_providers.dart';
@@ -281,6 +282,15 @@ class _PlanBody extends ConsumerWidget {
         final day = dayIndex.clamp(0, plan.workouts.length - 1);
         final workout = plan.workouts[day];
         final gb = context.gb;
+        // Superset grouping (A1/A2 …) so the trainee can see which exercises are paired before starting.
+        final ssTags = supersetTags([
+          for (final e in workout.exercises)
+            SupersetMember(
+                id: e.id,
+                order: e.order,
+                groupId: e.supersetGroupId,
+                name: e.exerciseName),
+        ]);
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -336,7 +346,11 @@ class _PlanBody extends ConsumerWidget {
             const SizedBox(height: AppSpacing.gap),
             // Read-only exercise rows.
             for (var i = 0; i < workout.exercises.length; i++) ...[
-              _ExerciseRow(index: i + 1, exercise: workout.exercises[i]),
+              _ExerciseRow(
+                index: i + 1,
+                exercise: workout.exercises[i],
+                supersetTag: ssTags[workout.exercises[i].id],
+              ),
               if (i < workout.exercises.length - 1)
                 const SizedBox(height: AppSpacing.xs + 1),
             ],
@@ -350,9 +364,11 @@ class _PlanBody extends ConsumerWidget {
 /// One read-only plan exercise row — numbered tile, name, set summary, chevron. Renders the
 /// server's redaction states (hidden exercise / targets hidden) exactly as the API delivers them.
 class _ExerciseRow extends StatelessWidget {
-  const _ExerciseRow({required this.index, required this.exercise});
+  const _ExerciseRow(
+      {required this.index, required this.exercise, this.supersetTag});
   final int index;
   final PlanWorkoutExerciseDetail exercise;
+  final SupersetTag? supersetTag;
 
   @override
   Widget build(BuildContext context) {
@@ -371,15 +387,26 @@ class _ExerciseRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  name,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: gb.ink,
-                    fontStyle: hidden ? FontStyle.italic : FontStyle.normal,
-                  ),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        name,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: gb.ink,
+                          fontStyle:
+                              hidden ? FontStyle.italic : FontStyle.normal,
+                        ),
+                      ),
+                    ),
+                    if (supersetTag != null) ...[
+                      const SizedBox(width: 6),
+                      SupersetChip(supersetTag!),
+                    ],
+                  ],
                 ),
                 const SizedBox(height: 2),
                 Text(_setSummary(exercise.sets),

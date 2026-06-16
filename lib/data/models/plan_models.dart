@@ -108,6 +108,7 @@ class PlanWorkoutExerciseDetail {
     this.exerciseName,
     required this.order,
     required this.sets,
+    this.supersetGroupId,
   });
 
   final String id;
@@ -117,6 +118,10 @@ class PlanWorkoutExerciseDetail {
   final String? exerciseName;
   final int order;
   final List<PlanSetDetail> sets;
+
+  /// Exercises in a workout that share a non-null group id are prescribed as a superset (performed
+  /// in rotation, rest after the round). Null = a standalone exercise.
+  final String? supersetGroupId;
 
   static const _emptyGuid = '00000000-0000-0000-0000-000000000000';
 
@@ -129,6 +134,7 @@ class PlanWorkoutExerciseDetail {
         exerciseName: asString(j['exerciseName']),
         order: asInt(j['order']) ?? 0,
         sets: asList(j['sets'], PlanSetDetail.fromJson),
+        supersetGroupId: asString(j['supersetGroupId']),
       );
 }
 
