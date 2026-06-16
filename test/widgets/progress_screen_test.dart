@@ -101,6 +101,8 @@ void main() {
   final offNetworkSections = <Override>[
     bodyweightSeriesProvider.overrideWith(
         (ref) async => const MetricSeries(type: 'weight', points: [])),
+    sleepSeriesProvider.overrideWith(
+        (ref) async => const MetricSeries(type: 'sleep', points: [])),
     goalWeightProvider.overrideWith((ref) async => null),
     nutritionAdherenceProvider.overrideWith(
         (ref) async => const NutritionAdherence(hasPlan: false, recentDays: [])),

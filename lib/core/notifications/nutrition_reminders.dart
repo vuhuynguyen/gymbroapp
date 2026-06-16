@@ -68,8 +68,15 @@ class NutritionReminders {
   /// App-wide instance (the plugin is a singleton under the hood).
   static final NutritionReminders instance = NutritionReminders(FlutterLocalNotificationsPlugin());
 
-  /// Initialize the plugin once at startup. Safe to call when notifications are unsupported (no-op on failure).
-  Future<void> init() async {
+  /// Invoked when the user taps a notification while the app is running (or resumes from background).
+  /// Wired by `main()` to the app router so a meal reminder opens the Log tab and a rest alert reopens
+  /// the live session. Null until [init]. Cold-start taps are handled via [launchPayload] instead.
+  void Function(String? payload)? _onTap;
+
+  /// Initialize the plugin once at startup. Safe to call when notifications are unsupported (no-op on
+  /// failure). [onTap] receives a tapped notification's payload (e.g. `'log'`, `'session:<id>'`).
+  Future<void> init({void Function(String? payload)? onTap}) async {
+    _onTap = onTap;
     try {
       const settings = InitializationSettings(
         android: AndroidInitializationSettings('@mipmap/ic_launcher'),
@@ -79,11 +86,26 @@ class NutritionReminders {
           requestSoundPermission: false,
         ),
       );
-      await _plugin.initialize(settings);
+      await _plugin.initialize(
+        settings,
+        onDidReceiveNotificationResponse: (resp) => _onTap?.call(resp.payload),
+      );
       _ready = true;
     } catch (_) {
       _ready = false;
     }
+  }
+
+  /// The payload of the notification that cold-launched the app (app was terminated), or null. `main()`
+  /// routes on it after the first frame so navigation lands once the router is mounted.
+  Future<String?> launchPayload() async {
+    try {
+      final details = await _plugin.getNotificationAppLaunchDetails();
+      if (details?.didNotificationLaunchApp ?? false) {
+        return details!.notificationResponse?.payload;
+      }
+    } catch (_) {}
+    return null;
   }
 
   /// Reschedule a day's upcoming meal reminders: cancel all, then schedule each meal whose planned time is
@@ -124,11 +146,13 @@ class NutritionReminders {
         );
         await _plugin.zonedSchedule(
           r.id,
-          '${r.mealName} time',
+          'Time for ${r.mealName} 🍴',
           _mealBody(meal),
           r.at,
           details,
           androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+          // Tapping a meal reminder opens the Log tab (today's checklist).
+          payload: 'log',
         );
       }
     } catch (_) {
@@ -136,13 +160,14 @@ class NutritionReminders {
     }
   }
 
-  /// Precise, friendly body for a meal reminder: how many items to log, with a supplement call-out.
+  /// Precise, friendly body for a meal reminder: a clear tap cue + how many items, with a supplement
+  /// call-out. Leads with "Tap to log" so the action is obvious from the lock screen.
   static String _mealBody(NutritionMeal meal) {
     final planned = meal.plannedItems;
     final n = planned.length;
-    if (n == 0) return 'Tap to log it in GymBro';
+    if (n == 0) return 'Tap to open today’s plan';
     final supps = planned.where((i) => i.kind == FoodKind.supplement).length;
-    final base = '$n item${n == 1 ? '' : 's'} to log';
+    final base = 'Tap to log your $n item${n == 1 ? '' : 's'}';
     return supps > 0
         ? '$base · incl. $supps supplement${supps == 1 ? '' : 's'}'
         : base;
@@ -150,7 +175,8 @@ class NutritionReminders {
 
   /// Schedule a "rest's over" alert [seconds] from now (fires even if the app is backgrounded/screen off).
   /// Replaces any pending rest alert. Cancel it when the set is logged early or the rest is skipped.
-  Future<void> scheduleRestDone(int seconds) async {
+  /// [sessionId] makes a tap reopen that live session; without it the tap falls back to the Log tab.
+  Future<void> scheduleRestDone(int seconds, {String? sessionId}) async {
     if (!_ready || seconds <= 0) return;
     try {
       if (!await _ensurePermission()) return;
@@ -158,7 +184,7 @@ class NutritionReminders {
       await _plugin.zonedSchedule(
         _restDoneId,
         "Rest's over 💪",
-        'Time for your next set',
+        'Tap to log your next set',
         at,
         const NotificationDetails(
           android: AndroidNotificationDetails(
@@ -170,6 +196,7 @@ class NutritionReminders {
           iOS: DarwinNotificationDetails(),
         ),
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        payload: sessionId != null ? 'session:$sessionId' : 'log',
       );
     } catch (_) {
       // Best-effort: a denied permission or exact-alarm restriction must never break the workout.

@@ -56,6 +56,10 @@ void main() {
               error: (e, _) => throw e,
             );
           }),
+          // The Sleep section sits alongside Body; keep it quiet (empty → invite) so it never hits the
+          // network in these Body-focused tests.
+          sleepSeriesProvider.overrideWith(
+              (ref) async => const MetricSeries(type: 'sleep', points: [])),
           // Goal weight: null unless the test supplies one. The write test lets the real provider run
           // against the fake repo (so invalidate → refetch is observable), so it opts out here.
           if (overrideGoal)

@@ -23,6 +23,7 @@ import 'today_insights.dart';
 ///   4. Personal records — a display-only PR teaser (brand trophy)
 ///   5. Body — bodyweight trend (Section 5, conditional) — watches `bodyweightSeriesProvider`,
 ///      renders a smoothed EMA line or a log-your-weight invite; quiet on error, never blocks §1–4.
+///   6. Sleep — hours-slept trend (conditional) — same shape via `sleepSeriesProvider`, no goal line.
 /// All states (loading / error / new-user hero / no-plan / thin-lift-data / no-PR) live in §5; the
 /// only red the page allows is a per-lift "slipping" tag, never a page-level state.
 ///
@@ -88,6 +89,8 @@ class ProgressScreen extends ConsumerWidget {
                             // Section 5 (conditional). Each watches its own provider, so a slow/absent
                             // metrics/nutrition endpoint never blocks the overview above.
                             const _BodySection(),
+                            const SizedBox(height: AppSpacing.lg),
+                            const _SleepSection(),
                             const SizedBox(height: AppSpacing.lg),
                             const _NutritionSection(),
                           ],
@@ -1900,6 +1903,92 @@ class _BodySection extends ConsumerWidget {
             const _QuietCard(text: 'Log your weight to see your trend.')
           else
             _BodyTrendCard(series: s),
+        ],
+      ),
+    );
+  }
+}
+
+/// Trim a trailing `.0` from a metric number for display ("8" not "8.0", "7.5" stays).
+String _trimNum(num v) => v % 1 == 0 ? '${v.toInt()}' : v.toStringAsFixed(1);
+
+/// The Sleep section — an hours-slept trend mirroring [_BodySection] (no goal line). Watches its own
+/// [sleepSeriesProvider], loads independently, shows a "log your sleep" invite on no data, and stays
+/// quiet on loading/error so it never blocks the glance layer.
+class _SleepSection extends ConsumerWidget {
+  const _SleepSection();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final series = ref.watch(sleepSeriesProvider);
+    return series.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (s) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const _SectionTitle('Sleep'),
+          const SizedBox(height: AppSpacing.sm),
+          if (s.isEmpty)
+            const _QuietCard(text: 'Log your sleep to see your trend.')
+          else
+            _SleepTrendCard(series: s),
+        ],
+      ),
+    );
+  }
+}
+
+/// The sleep trend card: the EMA line over the period + last-night and average captions. Reuses the
+/// shared trend painter ([_BodyweightTrend]) with no goal line.
+class _SleepTrendCard extends StatelessWidget {
+  const _SleepTrendCard({required this.series});
+  final MetricSeries series;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    final values = [for (final p in series.points) p.value];
+    final latest = values.last;
+    final avg = values.reduce((a, b) => a + b) / values.length;
+    return _ProgCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(child: _MonoLabel('Hours slept', color: gb.progInk3)),
+              Text(
+                'avg ${_trimNum(avg)}h',
+                style: AppText.mono(const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0))
+                    .copyWith(color: gb.progInk2),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          SizedBox(
+            height: 96,
+            width: double.infinity,
+            child: _BodyweightTrend(
+              points: values,
+              unit: 'h',
+              goalKg: null,
+              line: gb.primary600,
+              raw: gb.progInk4,
+              label: gb.progInk3,
+              goal: gb.progPos,
+            ),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Text(
+            'Last night ${_trimNum(latest)}h',
+            style: AppText.mono(
+                    const TextStyle(fontSize: 12, fontWeight: FontWeight.w500))
+                .copyWith(color: gb.progInk2),
+          ),
         ],
       ),
     );

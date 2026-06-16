@@ -162,7 +162,8 @@ class LiveSessionController extends AutoDisposeNotifier<LiveSessionState> {
     state = state.copyWith(
         rest: RestTimerState(remaining, r.total + (delta > 0 ? delta : 0)));
     // Keep the OS alert in step with the adjusted countdown.
-    unawaited(NutritionReminders.instance.scheduleRestDone(remaining));
+    unawaited(NutritionReminders.instance
+        .scheduleRestDone(remaining, sessionId: state.session?.sessionId));
   }
 
   void skipRest() {
@@ -281,7 +282,8 @@ class LiveSessionController extends AutoDisposeNotifier<LiveSessionState> {
         _restStartedAt = DateTime.now();
         state = state.copyWith(
             currentExerciseId: next.id, rest: RestTimerState(rest, rest));
-        unawaited(NutritionReminders.instance.scheduleRestDone(rest));
+        unawaited(NutritionReminders.instance
+            .scheduleRestDone(rest, sessionId: state.session?.sessionId));
       } else {
         // Mid-round (or editing) → straight to the next peer, no rest.
         unawaited(NutritionReminders.instance.cancelRestDone());
@@ -296,7 +298,8 @@ class LiveSessionController extends AutoDisposeNotifier<LiveSessionState> {
     _restStartedAt = DateTime.now();
     state = state.copyWith(rest: RestTimerState(rest, rest));
     // Fire a "rest's over" OS alert at rest-end so it reaches the user even if the app is backgrounded.
-    unawaited(NutritionReminders.instance.scheduleRestDone(rest));
+    unawaited(NutritionReminders.instance
+        .scheduleRestDone(rest, sessionId: state.session?.sessionId));
   }
 
   /// True while a live (in-progress) session is loaded — drives the rest timer & finish CTA. False when
