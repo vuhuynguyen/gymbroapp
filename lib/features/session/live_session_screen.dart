@@ -2265,7 +2265,7 @@ class GuideButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return IconButton(
-      icon: const Icon(Icons.help_outline_rounded, size: 20),
+      icon: const Icon(Icons.info_outline_rounded, size: 20),
       color: context.gb.primary600,
       tooltip: 'Exercise guide',
       visualDensity: VisualDensity.compact,
