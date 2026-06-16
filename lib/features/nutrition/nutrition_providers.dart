@@ -102,6 +102,9 @@ class TodayNutritionController extends AsyncNotifier<DailyNutritionLog> {
     return _optimistic(
       (log) => log.withItem(item.id, (i) => i.copyWith(status: status)),
       () => _repo.setItemStatus(date: date, itemId: item.id, status: status),
+      // Re-sync the day so the summary card's consumed-kcal (server-computed, all-source) reflects
+      // the toggle — the count/ring/protein move optimistically, but calories live server-side.
+      reconcile: true,
     );
   }
 
@@ -132,6 +135,8 @@ class TodayNutritionController extends AsyncNotifier<DailyNutritionLog> {
       ),
       () => _repo.substitute(
           date: date, itemId: item.id, foodId: food.id, quantity: quantity),
+      // A swap changes the item's macros → re-sync so the card's consumed-kcal is server-accurate.
+      reconcile: true,
     );
   }
 
@@ -198,6 +203,8 @@ class TodayNutritionController extends AsyncNotifier<DailyNutritionLog> {
           ]),
       ]),
       () => _repo.removeItem(date: date, itemId: item.id),
+      // Removing an eaten item lowers consumed-kcal → re-sync so the card drops to match.
+      reconcile: true,
     );
   }
 }
