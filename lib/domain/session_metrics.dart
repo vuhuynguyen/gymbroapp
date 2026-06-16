@@ -3,6 +3,7 @@
 // and so the UI can be replaced without touching the math. The server is still the source of
 // truth for stored metrics (volume, e1RM, PR count); these mirror its client-side derivations.
 import '../data/models/session_models.dart';
+import 'enums.dart';
 
 String _fmtKg(double kg) => kg % 1 == 0 ? '${kg.toInt()}kg' : '${kg}kg';
 String _fmt1(double v) => v % 1 == 0 ? '${v.toInt()}' : '$v';
@@ -129,4 +130,112 @@ double? epleyOneRepMax(double? weightKg, int? reps) {
   if (weightKg == null || reps == null || weightKg <= 0 || reps <= 0)
     return null;
   return ((weightKg * (1 + reps / 30)) * 10).round() / 10;
+}
+
+// ── Session-summary aggregates (post-workout review) ─────────────────────────
+// All pure; counts treat a drop/rest-pause cluster as ONE set (lead = parentSetId == null) to match
+// how the app rolls sets up, and exclude warmups from "working" (hard) sets.
+
+/// Hard working sets — the hypertrophy signal: lead sets (no drop-stage double-count) that aren't warmups.
+int workingSetCount(List<PerformedExercise> exercises) => exercises.fold(
+    0,
+    (a, e) =>
+        a +
+        e.sets
+            .where((s) =>
+                s.parentSetId == null && s.setType != PerformedSetType.warmup)
+            .length);
+
+/// Warmup sets logged across the session.
+int warmupSetCount(List<PerformedExercise> exercises) => exercises.fold(
+    0,
+    (a, e) =>
+        a + e.sets.where((s) => s.setType == PerformedSetType.warmup).length);
+
+/// Total reps performed (every set that carried reps).
+int totalReps(List<PerformedExercise> exercises) => exercises.fold(
+    0, (a, e) => a + e.sets.fold<int>(0, (b, s) => b + (s.reps ?? 0)));
+
+/// Mean logged rest (seconds) across sets that recorded one; null when none did.
+int? averageRestSeconds(List<PerformedExercise> exercises) {
+  final rests = <int>[
+    for (final e in exercises)
+      for (final s in e.sets)
+        if ((s.restSeconds ?? 0) > 0) s.restSeconds!,
+  ];
+  if (rests.isEmpty) return null;
+  return (rests.reduce((a, b) => a + b) / rests.length).round();
+}
+
+/// Work density — volume per training minute (kg/min); null when duration/volume is missing.
+double? densityKgPerMin(double volumeKg, int? durationSeconds) {
+  if (durationSeconds == null || durationSeconds <= 0 || volumeKg <= 0) {
+    return null;
+  }
+  return volumeKg / (durationSeconds / 60);
+}
+
+/// Session training load (Foster's sRPE): session RPE × minutes — a simple, validated internal-load
+/// number for tracking fatigue. Null unless both RPE and duration are present.
+int? sessionLoad(int? rpeOverall, int? durationSeconds) {
+  if (rpeOverall == null ||
+      rpeOverall <= 0 ||
+      durationSeconds == null ||
+      durationSeconds <= 0) {
+    return null;
+  }
+  return (rpeOverall * (durationSeconds / 60)).round();
+}
+
+/// True when the session is conditioning-only (no strength/bodyweight lifting) → drives the cardio
+/// summary instead of the volume/sets one.
+bool isCardioSession(List<PerformedExercise> exercises) =>
+    exercises.isNotEmpty &&
+    !exercises.any((e) =>
+        e.trackingType == ExerciseTrackingType.strength ||
+        e.trackingType == ExerciseTrackingType.bodyweight);
+
+/// Working sets per primary muscle group, resolved via [muscleOf] (exerciseId → group label), sorted
+/// desc by count. Exercises with no resolved muscle are skipped (never fabricate a group).
+Map<String, int> workingSetsByMuscle(
+  List<PerformedExercise> exercises,
+  String? Function(String exerciseId) muscleOf,
+) {
+  final out = <String, int>{};
+  for (final e in exercises) {
+    final mg = muscleOf(e.exerciseId);
+    if (mg == null || mg.isEmpty) continue;
+    final n = e.sets
+        .where((s) =>
+            s.parentSetId == null && s.setType != PerformedSetType.warmup)
+        .length;
+    if (n == 0) continue;
+    out[mg] = (out[mg] ?? 0) + n;
+  }
+  final sorted = out.entries.toList()
+    ..sort((a, b) => b.value.compareTo(a.value));
+  return {for (final e in sorted) e.key: e.value};
+}
+
+/// Conditioning totals (distance m, duration s, calories, mean HR) for the cardio summary.
+({int distanceM, int durationSeconds, int calories, int? avgHeartRate})
+    cardioTotals(List<PerformedExercise> exercises) {
+  var dist = 0, dur = 0, cal = 0;
+  final hrs = <int>[];
+  for (final e in exercises) {
+    for (final s in e.sets) {
+      dist += s.distanceM ?? 0;
+      dur += s.durationSeconds ?? 0;
+      cal += s.calories ?? 0;
+      if ((s.avgHeartRate ?? 0) > 0) hrs.add(s.avgHeartRate!);
+    }
+  }
+  final hr =
+      hrs.isEmpty ? null : (hrs.reduce((a, b) => a + b) / hrs.length).round();
+  return (
+    distanceM: dist,
+    durationSeconds: dur,
+    calories: cal,
+    avgHeartRate: hr
+  );
 }
