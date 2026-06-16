@@ -3,6 +3,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 
 import '../../data/models/nutrition_models.dart';
+import '../../domain/enums.dart';
 import '../time/app_time_zone.dart';
 
 /// One meal reminder: a stable id, the meal label, and the absolute instant to fire (in the trainee's zone).
@@ -57,6 +58,11 @@ class NutritionReminders {
   final FlutterLocalNotificationsPlugin _plugin;
 
   static const _channelId = 'nutrition_reminders';
+  static const _workoutChannelId = 'workout_alerts';
+  // Meal reminders use ids 0..(_mealIdMax-1); the rest-timer alert uses a fixed high id so the two never
+  // collide (scheduleDay only clears the meal range, never the rest alert).
+  static const _mealIdMax = 50;
+  static const _restDoneId = 9001;
   bool _ready = false;
 
   /// App-wide instance (the plugin is a singleton under the hood).
@@ -87,7 +93,10 @@ class NutritionReminders {
     try {
       if (!await _ensurePermission()) return;
 
-      await _plugin.cancelAll();
+      // Clear only the meal-reminder id range (never the rest-timer alert) before rescheduling.
+      for (var id = 0; id < _mealIdMax; id++) {
+        await _plugin.cancel(id);
+      }
 
       final now = tz.TZDateTime.now(tz.local);
       final reminders = mealReminders(
@@ -107,11 +116,16 @@ class NutritionReminders {
       );
 
       for (final r in reminders) {
-        if (!r.at.isAfter(now)) continue;
+        if (r.id >= _mealIdMax || !r.at.isAfter(now)) continue;
+        // Precise, friendly copy: how many items are still to log, calling out supplements.
+        final meal = day.meals.firstWhere(
+          (m) => m.name == r.mealName,
+          orElse: () => NutritionMeal(name: r.mealName),
+        );
         await _plugin.zonedSchedule(
           r.id,
-          '${r.mealName} — tap to log',
-          'Mark it done in GymBro',
+          '${r.mealName} time',
+          _mealBody(meal),
           r.at,
           details,
           androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
@@ -120,6 +134,54 @@ class NutritionReminders {
     } catch (_) {
       // Reminders are a convenience — never let them surface an error into the logging flow.
     }
+  }
+
+  /// Precise, friendly body for a meal reminder: how many items to log, with a supplement call-out.
+  static String _mealBody(NutritionMeal meal) {
+    final planned = meal.plannedItems;
+    final n = planned.length;
+    if (n == 0) return 'Tap to log it in GymBro';
+    final supps = planned.where((i) => i.kind == FoodKind.supplement).length;
+    final base = '$n item${n == 1 ? '' : 's'} to log';
+    return supps > 0
+        ? '$base · incl. $supps supplement${supps == 1 ? '' : 's'}'
+        : base;
+  }
+
+  /// Schedule a "rest's over" alert [seconds] from now (fires even if the app is backgrounded/screen off).
+  /// Replaces any pending rest alert. Cancel it when the set is logged early or the rest is skipped.
+  Future<void> scheduleRestDone(int seconds) async {
+    if (!_ready || seconds <= 0) return;
+    try {
+      if (!await _ensurePermission()) return;
+      final at = tz.TZDateTime.now(tz.local).add(Duration(seconds: seconds));
+      await _plugin.zonedSchedule(
+        _restDoneId,
+        "Rest's over 💪",
+        'Time for your next set',
+        at,
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            _workoutChannelId,
+            'Workout alerts',
+            channelDescription: 'Rest-timer and workout alerts',
+            importance: Importance.high,
+          ),
+          iOS: DarwinNotificationDetails(),
+        ),
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      );
+    } catch (_) {
+      // Best-effort: a denied permission or exact-alarm restriction must never break the workout.
+    }
+  }
+
+  /// Cancel a pending "rest's over" alert (the set was logged early, the rest was skipped, or the in-app
+  /// countdown already finished while foregrounded).
+  Future<void> cancelRestDone() async {
+    try {
+      await _plugin.cancel(_restDoneId);
+    } catch (_) {}
   }
 
   Future<bool> _ensurePermission() async {

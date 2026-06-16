@@ -7,6 +7,7 @@ import '../../data/models/session_models.dart';
 import '../../data/repositories/session_repository.dart';
 import '../../domain/enums.dart';
 import '../../domain/session_metrics.dart';
+import '../../core/notifications/nutrition_reminders.dart';
 import '../log/log_providers.dart';
 
 class RestTimerState {
@@ -136,17 +137,23 @@ class LiveSessionController extends AutoDisposeNotifier<LiveSessionState> {
       final rest = state.rest;
       if (rest != null) {
         final remaining = rest.remaining - 1;
-        next = remaining <= 0
-            ? next.copyWith(clearRest: true)
-            : next.copyWith(rest: RestTimerState(remaining, rest.total));
+        if (remaining <= 0) {
+          // Foreground countdown finished — the user is here, so cancel the duplicate OS alert.
+          unawaited(NutritionReminders.instance.cancelRestDone());
+          next = next.copyWith(clearRest: true);
+        } else {
+          next = next.copyWith(rest: RestTimerState(remaining, rest.total));
+        }
       }
       state = next;
     });
   }
 
   // ── Focus / rest ─────────────────────────────────────────────────────────
-  void setCurrentExercise(String exerciseId) =>
-      state = state.copyWith(currentExerciseId: exerciseId, clearRest: true);
+  void setCurrentExercise(String exerciseId) {
+    unawaited(NutritionReminders.instance.cancelRestDone());
+    state = state.copyWith(currentExerciseId: exerciseId, clearRest: true);
+  }
 
   void adjustRest(int delta) {
     final r = state.rest;
@@ -154,9 +161,14 @@ class LiveSessionController extends AutoDisposeNotifier<LiveSessionState> {
     final remaining = (r.remaining + delta).clamp(0, 86400);
     state = state.copyWith(
         rest: RestTimerState(remaining, r.total + (delta > 0 ? delta : 0)));
+    // Keep the OS alert in step with the adjusted countdown.
+    unawaited(NutritionReminders.instance.scheduleRestDone(remaining));
   }
 
-  void skipRest() => state = state.copyWith(clearRest: true);
+  void skipRest() {
+    unawaited(NutritionReminders.instance.cancelRestDone());
+    state = state.copyWith(clearRest: true);
+  }
 
   // ── Mutations ──────────────────────────────────────────────────────────
   Future<void> logSet(
@@ -263,8 +275,10 @@ class LiveSessionController extends AutoDisposeNotifier<LiveSessionState> {
         _restStartedAt = DateTime.now();
         state = state.copyWith(
             currentExerciseId: next.id, rest: RestTimerState(rest, rest));
+        unawaited(NutritionReminders.instance.scheduleRestDone(rest));
       } else {
         // Mid-round (or editing) → straight to the next peer, no rest.
+        unawaited(NutritionReminders.instance.cancelRestDone());
         state = state.copyWith(currentExerciseId: next.id, clearRest: true);
       }
       return;
@@ -275,6 +289,8 @@ class LiveSessionController extends AutoDisposeNotifier<LiveSessionState> {
     }
     _restStartedAt = DateTime.now();
     state = state.copyWith(rest: RestTimerState(rest, rest));
+    // Fire a "rest's over" OS alert at rest-end so it reaches the user even if the app is backgrounded.
+    unawaited(NutritionReminders.instance.scheduleRestDone(rest));
   }
 
   /// True while a live (in-progress) session is loaded — drives the rest timer & finish CTA. False when
@@ -426,6 +442,7 @@ class LiveSessionController extends AutoDisposeNotifier<LiveSessionState> {
             rpeOverall: derivedRpe, completedAt: DateTime.now()),
       );
       _ticker?.cancel();
+      unawaited(NutritionReminders.instance.cancelRestDone());
     });
     return result != null;
   }
@@ -436,6 +453,7 @@ class LiveSessionController extends AutoDisposeNotifier<LiveSessionState> {
     final result = await _mutate(() async {
       await _repo.abandon(session.sessionId);
       _ticker?.cancel();
+      unawaited(NutritionReminders.instance.cancelRestDone());
     });
     return result != null;
   }
