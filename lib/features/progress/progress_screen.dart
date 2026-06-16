@@ -9,9 +9,11 @@ import '../../core/time/relative_day.dart';
 import '../../data/models/progress_models.dart';
 import '../../data/repositories/progress_repository.dart';
 import '../../shared/widgets/widgets.dart';
+import '../nutrition/nutrition_providers.dart';
 import 'lift_widgets.dart';
 import 'progress_format.dart';
 import 'progress_providers.dart';
+import 'today_insights.dart';
 
 /// Progress — a glance layer over `GET /api/me/progress/overview` (PHASE-1 §3 IA), plus a
 /// conditional Body section that loads independently.
@@ -33,6 +35,7 @@ class ProgressScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final overview = ref.watch(progressOverviewProvider);
+    final range = ref.watch(progressRangeProvider);
     final gb = context.gb;
 
     return Scaffold(
@@ -67,24 +70,27 @@ class ProgressScreen extends ConsumerWidget {
                         padding: const EdgeInsets.fromLTRB(AppSpacing.screenH,
                             AppSpacing.md + 4, AppSpacing.screenH, 100),
                         children: [
-                          // The period control sits under the page title, above the glance layer —
-                          // 4w / 8w / 12w (default) / 26w. The This Week hero below stays current-week
-                          // regardless of the selection (it never reads the period).
+                          // The view control sits under the page title: Today (snapshot + advice) or a
+                          // trend window (Week / 4w / 12w). The This Week hero stays current-week.
                           const _PeriodBar(),
                           const SizedBox(height: AppSpacing.md),
-                          _ThisWeekSection(overview: o),
-                          const SizedBox(height: AppSpacing.lg),
-                          _StrengthSection(lifts: o.topLifts),
-                          const SizedBox(height: AppSpacing.lg),
-                          _ConsistencySection(consistency: o.consistency),
-                          const SizedBox(height: AppSpacing.lg),
-                          _PrSection(prs: o.recentPrs),
-                          const SizedBox(height: AppSpacing.lg),
-                          // Section 5 (conditional). Each watches its own provider, so a slow/absent
-                          // metrics/nutrition endpoint never blocks the overview above.
-                          const _BodySection(),
-                          const SizedBox(height: AppSpacing.lg),
-                          const _NutritionSection(),
+                          if (range == ProgressRange.today)
+                            _TodaySection(overview: o)
+                          else ...[
+                            _ThisWeekSection(overview: o),
+                            const SizedBox(height: AppSpacing.lg),
+                            _StrengthSection(lifts: o.topLifts),
+                            const SizedBox(height: AppSpacing.lg),
+                            _ConsistencySection(consistency: o.consistency),
+                            const SizedBox(height: AppSpacing.lg),
+                            _PrSection(prs: o.recentPrs),
+                            const SizedBox(height: AppSpacing.lg),
+                            // Section 5 (conditional). Each watches its own provider, so a slow/absent
+                            // metrics/nutrition endpoint never blocks the overview above.
+                            const _BodySection(),
+                            const SizedBox(height: AppSpacing.lg),
+                            const _NutritionSection(),
+                          ],
                         ],
                       ),
               ),
@@ -250,24 +256,22 @@ class _ProgCard extends StatelessWidget {
   }
 }
 
-// ── Period control (4w / 8w / 12w / 26w segmented) ───────────────────────────
+// ── Period control (Today / Week / 4w / 12w segmented) ───────────────────────
 
-/// The Progress page's period control — a compact prog-toned segmented track (4w / 8w / 12w / 26w)
-/// sitting under the page title. Reads/writes [progressPeriodWeeksProvider]; selecting an option
-/// re-requests the overview, the per-lift e1RM series, and the nutrition trend with the new window.
-/// Built inline (not the grey-toned shared [GbSegmented]) so it stays on the Graphite paper ramp.
+/// The Progress page's view control — a compact prog-toned segmented track (Today / Week / 4w / 12w)
+/// sitting under the page title. Reads/writes [progressRangeProvider]; **Today** switches to the
+/// snapshot+advice dashboard, while the three trend windows re-request the overview, per-lift e1RM
+/// series, and nutrition trend with the new window. Built inline (not the grey-toned shared
+/// [GbSegmented]) so it stays on the Graphite paper ramp.
 class _PeriodBar extends ConsumerWidget {
   const _PeriodBar();
-
-  /// (weeks, label) options; 12 is the default selection.
-  static const _options = [(4, '4w'), (8, '8w'), (12, '12w'), (26, '26w')];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final gb = context.gb;
-    final selected = ref.watch(progressPeriodWeeksProvider);
+    final selected = ref.watch(progressRangeProvider);
     return Semantics(
-      label: 'Period',
+      label: 'Progress view',
       child: Container(
         padding: const EdgeInsets.all(3),
         decoration: BoxDecoration(
@@ -277,14 +281,13 @@ class _PeriodBar extends ConsumerWidget {
         ),
         child: Row(
           children: [
-            for (final (weeks, label) in _options)
+            for (final r in ProgressRange.values)
               Expanded(
                 child: _PeriodSegment(
-                  label: label,
-                  selected: weeks == selected,
-                  onTap: () => ref
-                      .read(progressPeriodWeeksProvider.notifier)
-                      .state = weeks,
+                  label: r.label,
+                  selected: r == selected,
+                  onTap: () =>
+                      ref.read(progressRangeProvider.notifier).state = r,
                 ),
               ),
           ],
@@ -329,6 +332,215 @@ class _PeriodSegment extends StatelessWidget {
             letterSpacing: 0,
           )).copyWith(color: selected ? gb.progInk : gb.progInk3),
         ),
+      ),
+    );
+  }
+}
+
+// ── Today dashboard (snapshot + grounded advice) ─────────────────────────────
+
+/// The **Today** view — a snapshot of today's logged facts (calories, protein, sleep, weight, weekly
+/// workouts) plus grounded coaching tips. All advice is computed on-device by [buildTodayInsights]
+/// from already-fetched providers (no new endpoint); nothing is fabricated — an unlogged metric simply
+/// drops its tile/tip. Watches the shared nutrition/check-in/weight providers so it reflects what the
+/// user logged elsewhere this session.
+class _TodaySection extends ConsumerWidget {
+  const _TodaySection({required this.overview});
+  final ProgressOverview overview;
+
+  static String _trim(double v) =>
+      v % 1 == 0 ? '${v.toInt()}' : v.toStringAsFixed(1);
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final gb = context.gb;
+    final nutrition = ref.watch(todayNutritionProvider).valueOrNull;
+    final checkin = ref.watch(checkinProvider).valueOrNull;
+    final weight = ref.watch(bodyweightSeriesProvider).valueOrNull;
+
+    final insights = buildTodayInsights(
+      nutrition: nutrition,
+      checkin: checkin,
+      overview: overview,
+      weightTrend: weight == null
+          ? const <double>[]
+          : [for (final p in weight.points) p.value.toDouble()],
+      now: DateTime.now(),
+    );
+    final s = insights.snapshot;
+
+    final tiles = <Widget>[
+      if (s.consumedKcal != null)
+        _SnapshotTile(
+          icon: Icons.local_fire_department_outlined,
+          label: 'Calories',
+          value: '${s.consumedKcal}',
+          sub: s.targetKcal != null ? '/ ${s.targetKcal} kcal' : 'kcal',
+        ),
+      if (s.proteinG != null)
+        _SnapshotTile(
+            icon: Icons.egg_alt_outlined,
+            label: 'Protein',
+            value: '${s.proteinG}',
+            sub: 'g logged'),
+      if (s.sleepHours != null)
+        _SnapshotTile(
+            icon: Icons.bedtime_outlined,
+            label: 'Sleep',
+            value: _trim(s.sleepHours!),
+            sub: 'h last night'),
+      if (s.weightKg != null)
+        _SnapshotTile(
+            icon: Icons.monitor_weight_outlined,
+            label: 'Weight',
+            value: _trim(s.weightKg!),
+            sub: 'kg'),
+      if (s.sessionsThisWeek != null)
+        _SnapshotTile(
+          icon: Icons.fitness_center_outlined,
+          label: 'This week',
+          value: '${s.sessionsThisWeek}',
+          sub: s.weeklyGoal != null ? '/ ${s.weeklyGoal} done' : 'done',
+        ),
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (tiles.isNotEmpty) ...[
+          const _MonoLabel('Today at a glance'),
+          const SizedBox(height: AppSpacing.sm),
+          Wrap(
+              spacing: AppSpacing.sm, runSpacing: AppSpacing.sm, children: tiles),
+          const SizedBox(height: AppSpacing.lg),
+        ],
+        const _MonoLabel('Advice'),
+        const SizedBox(height: AppSpacing.sm),
+        if (insights.tips.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(AppSpacing.md),
+            decoration: BoxDecoration(
+              color: gb.progField,
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              border: Border.all(color: gb.progLine),
+            ),
+            child: Text(
+              'Log a meal, your sleep or a workout to see today’s advice.',
+              style: TextStyle(
+                  fontSize: 13, height: 1.4, color: gb.progInk3),
+            ),
+          )
+        else
+          for (final t in insights.tips) ...[
+            _TipCard(tip: t),
+            const SizedBox(height: AppSpacing.sm),
+          ],
+      ],
+    );
+  }
+}
+
+/// One compact fact tile in the Today snapshot grid.
+class _SnapshotTile extends StatelessWidget {
+  const _SnapshotTile({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.sub,
+  });
+  final IconData icon;
+  final String label;
+  final String value;
+  final String sub;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return Container(
+      width: 104,
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: gb.card,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: gb.progLine),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 16, color: gb.progInk3),
+          const SizedBox(height: 6),
+          _MonoLabel(label, fontSize: 9.5),
+          const SizedBox(height: 3),
+          Text(value,
+              style: TextStyle(
+                  fontSize: 19,
+                  fontWeight: FontWeight.w800,
+                  height: 1.0,
+                  letterSpacing: -0.5,
+                  color: gb.progInk)),
+          const SizedBox(height: 1),
+          Text(sub,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 10.5, color: gb.progInk3)),
+        ],
+      ),
+    );
+  }
+}
+
+/// One advice tip — a tinted card whose colour/icon follows the tip's [TipTone].
+class _TipCard extends StatelessWidget {
+  const _TipCard({required this.tip});
+  final TodayTip tip;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    final (Color fg, Color bg, IconData icon) = switch (tip.tone) {
+      TipTone.good => (
+          gb.progPos,
+          gb.progPos.withValues(alpha: 0.10),
+          Icons.check_circle_outline
+        ),
+      TipTone.warn => (
+          gb.progWarn,
+          gb.progWarn.withValues(alpha: 0.12),
+          Icons.error_outline
+        ),
+      TipTone.info => (gb.progBrandInk, gb.progBrandSoft, Icons.lightbulb_outline),
+    };
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.sm + 2),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: fg.withValues(alpha: 0.22)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: fg),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(tip.title,
+                    style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w800,
+                        color: gb.progInk)),
+                const SizedBox(height: 2),
+                Text(tip.detail,
+                    style: TextStyle(
+                        fontSize: 12.5, height: 1.35, color: gb.progInk2)),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

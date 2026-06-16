@@ -92,11 +92,11 @@ void main() {
     final repo = _FakeProgressRepository(nonEmptyOverview());
     await pump(tester, repo);
 
-    // The four period options render; 12w is the default selection.
+    // The four view options render (Today snapshot + three trend windows); 12w is the default.
+    expect(find.text('Today'), findsOneWidget);
+    expect(find.text('Week'), findsOneWidget);
     expect(find.text('4w'), findsOneWidget);
-    expect(find.text('8w'), findsOneWidget);
     expect(find.text('12w'), findsOneWidget);
-    expect(find.text('26w'), findsOneWidget);
 
     // The initial overview fetch threaded the default window.
     expect(repo.overviewWeeks, contains(12));
@@ -115,10 +115,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(repo.overviewWeeks.last, 4);
 
-    // Tap 26w → re-requests with weeks=26.
-    await tester.tap(find.text('26w'));
+    // Tap Week → re-requests with the 1-week window.
+    await tester.tap(find.text('Week'));
     await tester.pumpAndSettle();
-    expect(repo.overviewWeeks.last, 26);
+    expect(repo.overviewWeeks.last, 1);
   });
 
   testWidgets('changing the period also re-requests the nutrition trend with the new window',
