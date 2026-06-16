@@ -251,23 +251,40 @@ class LiveSessionController extends AutoDisposeNotifier<LiveSessionState> {
   /// Superset-aware progression: rotate to the next peer; rest only after the round wraps to the first peer.
   void _advanceAfterSet(PerformedExercise ex, int plannedRest) {
     final rest = plannedRest > 0 ? plannedRest : 90;
+    // Editing a finished workout: no rest timer (the ticker doesn't run on a completed session), just
+    // advance the superset focus so a stale rest bar never appears.
+    final editing = !isEditableLive;
     final peers = _supersetPeers(ex);
     if (peers.length > 1) {
       final idx = peers.indexWhere((p) => p.id == ex.id);
       final next = peers[(idx + 1) % peers.length];
-      if (next.id == peers.first.id) {
+      if (!editing && next.id == peers.first.id) {
         // Round complete → rest, then resume on the first peer.
         _restStartedAt = DateTime.now();
         state = state.copyWith(
             currentExerciseId: next.id, rest: RestTimerState(rest, rest));
       } else {
-        // Mid-round → straight to the next exercise, no rest.
+        // Mid-round (or editing) → straight to the next peer, no rest.
         state = state.copyWith(currentExerciseId: next.id, clearRest: true);
       }
       return;
     }
+    if (editing) {
+      state = state.copyWith(clearRest: true);
+      return;
+    }
     _restStartedAt = DateTime.now();
     state = state.copyWith(rest: RestTimerState(rest, rest));
+  }
+
+  /// True while a live (in-progress) session is loaded — drives the rest timer & finish CTA. False when
+  /// editing a finished workout in place (status != InProgress).
+  bool get isEditableLive => state.session?.status.isInProgress ?? false;
+
+  /// True when the loaded session is a finished workout being edited in place (not the live workout).
+  bool get isEditingFinished {
+    final s = state.session;
+    return s != null && !s.status.isInProgress;
   }
 
   Future<void> editSet(
@@ -471,6 +488,17 @@ class LiveSessionController extends AutoDisposeNotifier<LiveSessionState> {
   void _invalidateLists() {
     ref.invalidate(activeSessionProvider);
     ref.invalidate(sessionHistoryProvider);
+  }
+
+  /// Leaving the edit-a-finished-workout flow: edits already saved per-mutation, so just refresh the
+  /// history list and this session's detail so the corrected data shows on the screens behind.
+  void doneEditing() {
+    final id = state.session?.sessionId;
+    ref.invalidate(sessionHistoryProvider);
+    if (id != null) {
+      ref.invalidate(mySessionDetailProvider(id));
+      ref.invalidate(sessionDetailProvider(id));
+    }
   }
 
   static SessionSnapshotExercise? _snapshotFor(

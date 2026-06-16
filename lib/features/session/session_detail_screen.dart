@@ -55,17 +55,25 @@ class SessionDetailScreen extends ConsumerWidget {
                     d.source != SessionSource.adhoc &&
                     d.planAssignmentId != null &&
                     d.plannedWorkoutId != null;
+                // Edit a finished workout in place — own, completed sessions only (abandoned stays
+                // read-only; the coach view is read-only). Opens the live editor in edit mode.
+                final canEdit = mine && d.status == SessionStatus.completed;
                 return Column(
                   children: [
                     Expanded(child: _Body(detail: d, fromFinish: fromFinish)),
-                    if (canRepeat)
-                      _RepeatBar(
-                        onRepeat: () => startFromAssignment(
-                          context,
-                          ref,
-                          planAssignmentId: d.planAssignmentId!,
-                          plannedWorkoutId: d.plannedWorkoutId!,
-                        ),
+                    if (canEdit || canRepeat)
+                      _SessionActionBar(
+                        onEdit: canEdit
+                            ? () => context.push('/session/${d.id}')
+                            : null,
+                        onRepeat: canRepeat
+                            ? () => startFromAssignment(
+                                  context,
+                                  ref,
+                                  planAssignmentId: d.planAssignmentId!,
+                                  plannedWorkoutId: d.plannedWorkoutId!,
+                                )
+                            : null,
                       ),
                   ],
                 );
@@ -78,14 +86,32 @@ class SessionDetailScreen extends ConsumerWidget {
   }
 }
 
-/// Pinned footer with the "Repeat workout" CTA (design Session Detail action bar).
-class _RepeatBar extends StatelessWidget {
-  const _RepeatBar({required this.onRepeat});
-  final VoidCallback onRepeat;
+/// Pinned footer with the Session Detail actions: "Edit" (fix a finished workout in place) and/or
+/// "Repeat workout". Either may be null; when both show, Edit is the secondary (outlined) action.
+class _SessionActionBar extends StatelessWidget {
+  const _SessionActionBar({this.onEdit, this.onRepeat});
+  final VoidCallback? onEdit;
+  final VoidCallback? onRepeat;
 
   @override
   Widget build(BuildContext context) {
     final gb = context.gb;
+    final edit = onEdit == null
+        ? null
+        : GbButton(
+            label: 'Edit',
+            icon: Icons.edit_outlined,
+            full: true,
+            variant: GbButtonVariant.outlined,
+            severity: GbButtonSeverity.secondary,
+            onPressed: onEdit!);
+    final repeat = onRepeat == null
+        ? null
+        : GbButton(
+            label: 'Repeat workout',
+            icon: Icons.play_arrow,
+            full: true,
+            onPressed: onRepeat!);
     return Container(
       decoration: BoxDecoration(
           color: gb.card,
@@ -95,11 +121,14 @@ class _RepeatBar extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(AppSpacing.screenH, AppSpacing.sm,
               AppSpacing.screenH, AppSpacing.sm),
-          child: GbButton(
-              label: 'Repeat workout',
-              icon: Icons.play_arrow,
-              full: true,
-              onPressed: onRepeat),
+          child: Row(
+            children: [
+              if (edit != null) Expanded(child: edit),
+              if (edit != null && repeat != null)
+                const SizedBox(width: AppSpacing.sm),
+              if (repeat != null) Expanded(child: repeat),
+            ],
+          ),
         ),
       ),
     );

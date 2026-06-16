@@ -233,6 +233,17 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
     }
   }
 
+  /// Editing a finished workout: edits are already saved per-mutation, so "Done" just refreshes the
+  /// history/detail and leaves — no complete/abandon.
+  void _done() {
+    _ctrl.doneEditing();
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/log');
+    }
+  }
+
   void _openExerciseMenu(PerformedExercise ex) {
     final hasLogged = ex.sets.isNotEmpty;
     showGbSheet<void>(
@@ -353,6 +364,9 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
 
     _maybeSeedEntry(st);
     final session = st.session!;
+    // Editing a finished workout in place (status != InProgress): no rest timer, "Done" instead of
+    // "Finish", and the header reads "Editing logged workout".
+    final editing = !session.status.isInProgress;
     // Ad-hoc sessions start with NO exercises — `currentExercise` is null until one is added, so
     // never null-assert it here (the 1s elapsed timer rebuilds every tick).
     final ex = st.currentExercise;
@@ -370,13 +384,16 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
           _Header(
             topInset: MediaQuery.of(context).padding.top,
             title: session.snapshot?.workoutName ?? 'Workout',
-            subtitle: session.source == SessionSource.fromAssignment
-                ? 'Plan workout'
-                : 'Ad-hoc session',
+            subtitle: editing
+                ? 'Editing logged workout'
+                : (session.source == SessionSource.fromAssignment
+                    ? 'Plan workout'
+                    : 'Ad-hoc session'),
             logged: logged,
             total: total,
             hasTarget: totalPlanned > 0,
-            onAbandon: _confirmAbandon,
+            // Editing a finished workout: no "abandon" — leaving via back/Done just saves the edits.
+            onAbandon: editing ? null : _confirmAbandon,
             onBack: () => context.canPop() ? context.pop() : context.go('/log'),
           ),
           _ExercisePager(
@@ -448,7 +465,7 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
                     ],
                   ),
           ),
-          if (st.rest != null)
+          if (!editing && st.rest != null)
             _RestBar(
                 rest: st.rest!,
                 onAdd: () => _ctrl.adjustRest(15),
@@ -459,6 +476,7 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
               canPrev: exIndex > 0,
               isLast: exIndex == session.exercises.length - 1,
               busy: st.busy,
+              editing: editing,
               onPrev: () {
                 if (exIndex > 0) {
                   _ctrl.setCurrentExercise(session.exercises[exIndex - 1].id);
@@ -469,7 +487,7 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
                   _ctrl.setCurrentExercise(session.exercises[exIndex + 1].id);
                 }
               },
-              onFinish: _finish,
+              onFinish: editing ? _done : _finish,
             ),
           ),
         ],
@@ -498,7 +516,8 @@ class _Header extends StatelessWidget {
   /// True only for plan sessions with a planned set target — drives the progress bar and the
   /// "logged/total" count. Ad-hoc sessions have no target, so they show a bare "N sets" instead.
   final bool hasTarget;
-  final VoidCallback onAbandon;
+  /// Null when editing a finished workout — there's nothing to abandon, so the X is hidden.
+  final VoidCallback? onAbandon;
   final VoidCallback onBack;
 
   @override
@@ -539,10 +558,13 @@ class _Header extends StatelessWidget {
                   ],
                 ),
               ),
-              GbGlassButton(
-                  icon: Icons.close,
-                  onTap: onAbandon,
-                  semanticLabel: 'Abandon workout'),
+              if (onAbandon != null)
+                GbGlassButton(
+                    icon: Icons.close,
+                    onTap: onAbandon!,
+                    semanticLabel: 'Abandon workout')
+              else
+                const SizedBox(width: 40), // keep the title centred when editing
             ],
           ),
           // Plan-only progress bar (full width). The elapsed timer moved to the exercise-pager row to
@@ -1792,6 +1814,7 @@ class _ActionBar extends StatelessWidget {
     required this.onPrev,
     required this.onNext,
     required this.onFinish,
+    this.editing = false,
   });
   final bool canPrev;
   final bool isLast;
@@ -1799,6 +1822,9 @@ class _ActionBar extends StatelessWidget {
   final VoidCallback onPrev;
   final VoidCallback onNext;
   final VoidCallback onFinish;
+
+  /// Editing a finished workout → the primary action is "Done" (leave), not "Finish workout".
+  final bool editing;
 
   @override
   Widget build(BuildContext context) {
@@ -1827,8 +1853,8 @@ class _ActionBar extends StatelessWidget {
           Expanded(
             child: isLast
                 ? GbButton(
-                    label: 'Finish workout',
-                    icon: Icons.flag,
+                    label: editing ? 'Done' : 'Finish workout',
+                    icon: editing ? Icons.check : Icons.flag,
                     full: true,
                     busy: busy,
                     onPressed: onFinish,
