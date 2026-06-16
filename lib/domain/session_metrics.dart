@@ -5,6 +5,7 @@
 import '../data/models/session_models.dart';
 
 String _fmtKg(double kg) => kg % 1 == 0 ? '${kg.toInt()}kg' : '${kg}kg';
+String _fmt1(double v) => v % 1 == 0 ? '${v.toInt()}' : '$v';
 
 /// Mode-aware, zero-suppressing summary of a logged set used everywhere a set is shown
 /// (live logger, session detail, history). Only metrics with a real (> 0) value appear, so a
@@ -23,6 +24,9 @@ String formatLoggedSet(PerformedSet set) {
   if ((set.durationSeconds ?? 0) > 0)
     parts.add(formatDuration(set.durationSeconds!));
   if ((set.distanceM ?? 0) > 0) parts.add('${set.distanceM}m');
+  if ((set.inclinePercent ?? 0) > 0) parts.add('${_fmt1(set.inclinePercent!)}%');
+  if ((set.speedKph ?? 0) > 0) parts.add('${_fmt1(set.speedKph!)}km/h');
+  if ((set.level ?? 0) > 0) parts.add('L${set.level}');
   if ((set.rounds ?? 0) > 0) parts.add('${set.rounds} rounds');
   if ((set.calories ?? 0) > 0) parts.add('${set.calories}kcal');
   if ((set.avgHeartRate ?? 0) > 0) parts.add('${set.avgHeartRate}bpm');

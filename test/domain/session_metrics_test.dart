@@ -78,4 +78,36 @@ void main() {
     expect(formatDuration(65), '01:05');
     expect(formatDuration(3661), '1:01:01');
   });
+
+  test('formatLoggedSet shows cardio incline/speed/level, trimming .0', () {
+    final treadmill = PerformedSet(
+      id: 's',
+      setNumber: 1,
+      setType: PerformedSetType.working,
+      durationSeconds: 1800,
+      distanceM: 2400,
+      inclinePercent: 8.5,
+      speedKph: 5,
+      level: 12,
+      isCompleted: true,
+      loggedAt: null,
+      isPr: false,
+    );
+    // duration · distance · incline% · speed · level — 5.0 trims to 5, 8.5 stays.
+    expect(formatLoggedSet(treadmill), '30:00 · 2400m · 8.5% · 5km/h · L12');
+  });
+
+  test('formatLoggedSet shows added load on a weighted timed hold', () {
+    final weightedPlank = PerformedSet(
+      id: 's',
+      setNumber: 1,
+      setType: PerformedSetType.working,
+      durationSeconds: 60,
+      weightKg: 10,
+      isCompleted: true,
+      loggedAt: null,
+      isPr: false,
+    );
+    expect(formatLoggedSet(weightedPlank), '10kg · 01:00');
+  });
 }

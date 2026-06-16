@@ -2,7 +2,7 @@ import 'enums.dart';
 
 /// Mobile mirror of the API's `ExerciseTrackingRules` — single source of truth for which set metrics a
 /// tracking mode shows and requires. Keep in sync with the C#/Angular matrices.
-enum TrackingMetric { reps, weight, duration, distance, rounds, rest, rpe, calories, heartRate }
+enum TrackingMetric { reps, weight, duration, distance, rounds, rest, rpe, calories, heartRate, incline, speed, level }
 
 class TrackingProfile {
   const TrackingProfile({
@@ -48,14 +48,24 @@ const _profiles = <ExerciseTrackingType, TrackingProfile>{
   ExerciseTrackingType.cardio: TrackingProfile(
     type: ExerciseTrackingType.cardio,
     fields: [TrackingMetric.duration, TrackingMetric.distance],
-    extras: [TrackingMetric.calories, TrackingMetric.heartRate, _rest],
+    // Incline / speed / level are optional intensity inputs (treadmill grade & pace, machine
+    // resistance) revealed behind "+ More" — not every cardio move uses them.
+    extras: [
+      TrackingMetric.incline,
+      TrackingMetric.speed,
+      TrackingMetric.level,
+      TrackingMetric.calories,
+      TrackingMetric.heartRate,
+      _rest
+    ],
     primary: [TrackingMetric.duration, TrackingMetric.distance],
     allowCompletionOnly: false,
   ),
   ExerciseTrackingType.timed: TrackingProfile(
     type: ExerciseTrackingType.timed,
     fields: [TrackingMetric.duration],
-    extras: [_rest],
+    // Optional added load for weighted holds (weighted plank / wall-sit / dead-hang).
+    extras: [TrackingMetric.weight, _rest],
     primary: [TrackingMetric.duration],
     allowCompletionOnly: false,
   ),

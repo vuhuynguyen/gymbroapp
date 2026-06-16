@@ -78,6 +78,9 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
       ..[TrackingMetric.rounds] = snapSet?.targetRounds ?? last?.rounds ?? 0
       ..[TrackingMetric.calories] = last?.calories ?? 0
       ..[TrackingMetric.heartRate] = last?.avgHeartRate ?? 0
+      ..[TrackingMetric.incline] = last?.inclinePercent ?? 0
+      ..[TrackingMetric.speed] = last?.speedKph ?? 0
+      ..[TrackingMetric.level] = (last?.level ?? 0).toDouble()
       // 0 = auto-capture the actual rest from the timer; the user can bump it to override.
       ..[TrackingMetric.rest] = 0;
     _entryType = snapSet != null
@@ -146,6 +149,9 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
       rounds: values.rounds,
       calories: gi(TrackingMetric.calories),
       avgHeartRate: gi(TrackingMetric.heartRate),
+      inclinePercent: gd(TrackingMetric.incline),
+      speedKph: gd(TrackingMetric.speed),
+      level: gi(TrackingMetric.level),
       // 0 → let the controller auto-capture the actual rest taken from the timer; >0 overrides it.
       restSeconds: rest > 0 ? rest : null,
     );
@@ -1202,6 +1208,9 @@ class _EditSetSheetState extends State<_EditSetSheet> {
     TrackingMetric.rounds: widget.set.rounds ?? 0,
     TrackingMetric.calories: widget.set.calories ?? 0,
     TrackingMetric.heartRate: widget.set.avgHeartRate ?? 0,
+    TrackingMetric.incline: widget.set.inclinePercent ?? 0,
+    TrackingMetric.speed: widget.set.speedKph ?? 0,
+    TrackingMetric.level: widget.set.level ?? 0,
     TrackingMetric.rest: widget.set.restSeconds ?? 0,
     TrackingMetric.rpe: widget.set.rpe ?? 0,
   };
@@ -1215,6 +1224,9 @@ class _EditSetSheetState extends State<_EditSetSheet> {
         TrackingMetric.rounds => (label: 'ROUNDS', unit: null, step: 1),
         TrackingMetric.calories => (label: 'CALORIES', unit: 'kcal', step: 5),
         TrackingMetric.heartRate => (label: 'AVG HR', unit: 'bpm', step: 1),
+        TrackingMetric.incline => (label: 'INCLINE', unit: '%', step: 0.5),
+        TrackingMetric.speed => (label: 'SPEED', unit: 'km/h', step: 0.5),
+        TrackingMetric.level => (label: 'LEVEL', unit: null, step: 1),
         TrackingMetric.rest => (label: 'REST', unit: 'sec', step: 5),
         TrackingMetric.rpe => (label: 'RPE', unit: null, step: 1),
       };
@@ -1228,6 +1240,8 @@ class _EditSetSheetState extends State<_EditSetSheet> {
     final keep = {...profile.fields, ...profile.extras};
     int? gi(TrackingMetric m) =>
         keep.contains(m) && _val(m) > 0 ? _val(m).toInt() : null;
+    double? gd(TrackingMetric m) =>
+        keep.contains(m) && _val(m) > 0 ? _val(m).toDouble() : null;
     final req = EditSetRequest(
       setType: _type,
       reps: gi(TrackingMetric.reps),
@@ -1238,6 +1252,9 @@ class _EditSetSheetState extends State<_EditSetSheet> {
       durationSeconds: gi(TrackingMetric.duration),
       distanceM: gi(TrackingMetric.distance),
       rounds: gi(TrackingMetric.rounds),
+      inclinePercent: gd(TrackingMetric.incline),
+      speedKph: gd(TrackingMetric.speed),
+      level: gi(TrackingMetric.level),
       calories: gi(TrackingMetric.calories),
       avgHeartRate: gi(TrackingMetric.heartRate),
       rpe: _val(TrackingMetric.rpe) > 0
@@ -1492,6 +1509,9 @@ class _EntryRow extends StatelessWidget {
         TrackingMetric.rounds => (label: 'ROUNDS', unit: null, step: 1),
         TrackingMetric.calories => (label: 'CALORIES', unit: 'kcal', step: 5),
         TrackingMetric.heartRate => (label: 'AVG HR', unit: 'bpm', step: 1),
+        TrackingMetric.incline => (label: 'INCLINE', unit: '%', step: 0.5),
+        TrackingMetric.speed => (label: 'SPEED', unit: 'km/h', step: 0.5),
+        TrackingMetric.level => (label: 'LEVEL', unit: null, step: 1),
         TrackingMetric.rest => (label: 'REST', unit: 'sec', step: 5),
         TrackingMetric.rpe => (label: 'RPE', unit: null, step: 1),
       };

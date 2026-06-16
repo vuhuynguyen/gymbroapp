@@ -182,6 +182,9 @@ class LiveSessionController extends AutoDisposeNotifier<LiveSessionState> {
     int? calories,
     int? avgHeartRate,
     int? rounds,
+    double? inclinePercent,
+    double? speedKph,
+    int? level,
     int? restSeconds,
     String? parentSetId,
   }) async {
@@ -239,6 +242,9 @@ class LiveSessionController extends AutoDisposeNotifier<LiveSessionState> {
           calories: calories,
           avgHeartRate: avgHeartRate,
           rounds: rounds,
+          inclinePercent: inclinePercent,
+          speedKph: speedKph,
+          level: level,
           restSeconds: effectiveRest,
         ),
       );

@@ -3,13 +3,39 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/models/progress_models.dart';
 import '../../data/repositories/progress_repository.dart';
 
-/// The Progress page's selected look-back window, in weeks. Page-level state (a plain
-/// [StateProvider]), NOT `autoDispose` — the choice survives a tab switch / drill-down round-trip so
-/// the period control reads as a persistent page setting, not a per-visit reset. Default **12 weeks**
-/// (the design's default window). The header segmented control writes it; the overview + per-lift
-/// e1RM fetches read it and re-request with the matching window. The This Week hero is intentionally
-/// NOT period-sensitive — it always reflects the current week regardless of this value.
-final progressPeriodWeeksProvider = StateProvider<int>((ref) => 12);
+/// The Progress page's view mode: a **Today** snapshot+advice dashboard, or one of three trend windows.
+enum ProgressRange { today, week, fourWeek, twelveWeek }
+
+extension ProgressRangeX on ProgressRange {
+  /// Trend look-back in weeks. Today renders the snapshot (not trends), so it just reuses the 12w
+  /// window under the hood for any provider that still happens to read the weeks value.
+  int get weeks => switch (this) {
+        ProgressRange.today => 12,
+        ProgressRange.week => 1,
+        ProgressRange.fourWeek => 4,
+        ProgressRange.twelveWeek => 12,
+      };
+
+  String get label => switch (this) {
+        ProgressRange.today => 'Today',
+        ProgressRange.week => 'Week',
+        ProgressRange.fourWeek => '4w',
+        ProgressRange.twelveWeek => '12w',
+      };
+}
+
+/// The selected Progress view. Default = **12 weeks** — the page lands on the trend glance it always
+/// has, with **Today** (the snapshot+advice dashboard) sitting as the prominent first tab one tap away.
+/// Page-level state (a plain [StateProvider]), NOT `autoDispose` — the choice survives a tab switch /
+/// drill-down round-trip so the control reads as a persistent page setting, not a per-visit reset.
+final progressRangeProvider =
+    StateProvider<ProgressRange>((ref) => ProgressRange.twelveWeek);
+
+/// The selected look-back window in weeks, derived from [progressRangeProvider]. The overview +
+/// per-lift e1RM + strength + nutrition fetches read it and re-request with the matching window. The
+/// This Week hero is intentionally NOT period-sensitive — it always reflects the current week.
+final progressPeriodWeeksProvider =
+    Provider<int>((ref) => ref.watch(progressRangeProvider).weeks);
 
 /// The trainee Progress home — one self-scoped read (`GET /api/me/progress/overview?weeks=N`).
 ///

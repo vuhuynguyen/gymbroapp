@@ -18,6 +18,9 @@ class PerformedSet {
     this.calories,
     this.avgHeartRate,
     this.rounds,
+    this.inclinePercent,
+    this.speedKph,
+    this.level,
     this.rpe,
     this.restSeconds,
     required this.isCompleted,
@@ -40,6 +43,15 @@ class PerformedSet {
   final int? calories;
   final int? avgHeartRate;
   final int? rounds;
+
+  /// Treadmill/ramp incline %, optional cardio intensity.
+  final double? inclinePercent;
+
+  /// Pace in km/h, optional treadmill/bike speed.
+  final double? speedKph;
+
+  /// Machine resistance/level (bike/elliptical/stair), optional.
+  final int? level;
   final int? rpe;
   final int? restSeconds;
   final bool isCompleted;
@@ -60,6 +72,9 @@ class PerformedSet {
         calories: asInt(j['calories']),
         avgHeartRate: asInt(j['avgHeartRate']),
         rounds: asInt(j['rounds']),
+        inclinePercent: asDouble(j['inclinePercent']),
+        speedKph: asDouble(j['speedKph']),
+        level: asInt(j['level']),
         rpe: asInt(j['rpe']),
         restSeconds: asInt(j['restSeconds']),
         isCompleted: asBool(j['isCompleted'], fallback: true),
@@ -597,6 +612,9 @@ class LogSetRequest {
     this.calories,
     this.avgHeartRate,
     this.rounds,
+    this.inclinePercent,
+    this.speedKph,
+    this.level,
     this.rpe,
     this.restSeconds,
     this.isCompleted = true,
@@ -615,6 +633,9 @@ class LogSetRequest {
   final int? calories;
   final int? avgHeartRate;
   final int? rounds;
+  final double? inclinePercent;
+  final double? speedKph;
+  final int? level;
   final int? rpe;
   final int? restSeconds;
   final bool isCompleted;
@@ -636,6 +657,10 @@ class LogSetRequest {
         if (avgHeartRate != null && avgHeartRate! > 0)
           'avgHeartRate': avgHeartRate,
         if (rounds != null && rounds! >= 1) 'rounds': rounds,
+        if (inclinePercent != null && inclinePercent! > 0)
+          'inclinePercent': inclinePercent,
+        if (speedKph != null && speedKph! > 0) 'speedKph': speedKph,
+        if (level != null && level! > 0) 'level': level,
         if (rpe != null && rpe! > 0) 'rpe': rpe,
         if (restSeconds != null && restSeconds! > 0) 'restSeconds': restSeconds,
         'isCompleted': isCompleted,
@@ -649,6 +674,9 @@ class EditSetRequest {
     this.durationSeconds,
     this.distanceM,
     this.rounds,
+    this.inclinePercent,
+    this.speedKph,
+    this.level,
     this.calories,
     this.avgHeartRate,
     this.rpe,
@@ -662,6 +690,9 @@ class EditSetRequest {
   final int? durationSeconds;
   final int? distanceM;
   final int? rounds;
+  final double? inclinePercent;
+  final double? speedKph;
+  final int? level;
   final int? calories;
   final int? avgHeartRate;
   final int? rpe;
@@ -677,6 +708,10 @@ class EditSetRequest {
           'durationSeconds': durationSeconds,
         if (distanceM != null && distanceM! > 0) 'distanceM': distanceM,
         if (rounds != null && rounds! > 0) 'rounds': rounds,
+        if (inclinePercent != null && inclinePercent! > 0)
+          'inclinePercent': inclinePercent,
+        if (speedKph != null && speedKph! > 0) 'speedKph': speedKph,
+        if (level != null && level! > 0) 'level': level,
         if (calories != null && calories! > 0) 'calories': calories,
         if (avgHeartRate != null && avgHeartRate! > 0)
           'avgHeartRate': avgHeartRate,
