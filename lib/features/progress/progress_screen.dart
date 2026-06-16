@@ -78,12 +78,18 @@ class ProgressScreen extends ConsumerWidget {
                           if (range == ProgressRange.today)
                             _TodaySection(overview: o)
                           else ...[
-                            _ThisWeekSection(overview: o),
-                            const SizedBox(height: AppSpacing.lg),
+                            // This Week is a current-week glance → only on the Week tab.
+                            if (range == ProgressRange.week) ...[
+                              _ThisWeekSection(overview: o),
+                              const SizedBox(height: AppSpacing.lg),
+                            ],
                             _StrengthSection(lifts: o.topLifts),
                             const SizedBox(height: AppSpacing.lg),
-                            _ConsistencySection(consistency: o.consistency),
-                            const SizedBox(height: AppSpacing.lg),
+                            // Consistency is a multi-week heatmap → only on the 4w / 12w windows.
+                            if (range != ProgressRange.week) ...[
+                              _ConsistencySection(consistency: o.consistency),
+                              const SizedBox(height: AppSpacing.lg),
+                            ],
                             _PrSection(prs: o.recentPrs),
                             const SizedBox(height: AppSpacing.lg),
                             // Section 5 (conditional). Each watches its own provider, so a slow/absent
@@ -375,32 +381,37 @@ class _TodaySection extends ConsumerWidget {
     final tiles = <Widget>[
       if (s.consumedKcal != null)
         _SnapshotTile(
-          icon: Icons.local_fire_department_outlined,
+          icon: Icons.local_fire_department_rounded,
+          accent: gb.amberInk,
           label: 'Calories',
           value: '${s.consumedKcal}',
           sub: s.targetKcal != null ? '/ ${s.targetKcal} kcal' : 'kcal',
         ),
       if (s.proteinG != null)
         _SnapshotTile(
-            icon: Icons.egg_alt_outlined,
+            icon: Icons.bolt_rounded,
+            accent: gb.primary600,
             label: 'Protein',
             value: '${s.proteinG}',
             sub: 'g logged'),
       if (s.sleepHours != null)
         _SnapshotTile(
-            icon: Icons.bedtime_outlined,
+            icon: Icons.bedtime_rounded,
+            accent: gb.secondary300,
             label: 'Sleep',
             value: _trim(s.sleepHours!),
             sub: 'h last night'),
       if (s.weightKg != null)
         _SnapshotTile(
-            icon: Icons.monitor_weight_outlined,
+            icon: Icons.monitor_weight_rounded,
+            accent: gb.emeraldInk,
             label: 'Weight',
             value: _trim(s.weightKg!),
             sub: 'kg'),
       if (s.sessionsThisWeek != null)
         _SnapshotTile(
-          icon: Icons.fitness_center_outlined,
+          icon: Icons.fitness_center_rounded,
+          accent: gb.progBrandInk,
           label: 'This week',
           value: '${s.sessionsThisWeek}',
           sub: s.weeklyGoal != null ? '/ ${s.weeklyGoal} done' : 'done',
@@ -413,8 +424,7 @@ class _TodaySection extends ConsumerWidget {
         if (tiles.isNotEmpty) ...[
           const _MonoLabel('Today at a glance'),
           const SizedBox(height: AppSpacing.sm),
-          Wrap(
-              spacing: AppSpacing.sm, runSpacing: AppSpacing.sm, children: tiles),
+          _snapshotGrid(tiles),
           const SizedBox(height: AppSpacing.lg),
         ],
         const _MonoLabel('Advice'),
@@ -444,15 +454,38 @@ class _TodaySection extends ConsumerWidget {
   }
 }
 
-/// One compact fact tile in the Today snapshot grid.
+/// Lay the snapshot tiles out in an even 3-column grid (equal widths, last row left-aligned) — tidier
+/// than a Wrap when the count isn't a multiple of three.
+Widget _snapshotGrid(List<Widget> tiles) {
+  const cols = 3;
+  final rows = <Widget>[];
+  for (var i = 0; i < tiles.length; i += cols) {
+    final children = <Widget>[];
+    for (var c = 0; c < cols; c++) {
+      if (c > 0) children.add(const SizedBox(width: AppSpacing.sm));
+      final idx = i + c;
+      children.add(Expanded(
+          child: idx < tiles.length ? tiles[idx] : const SizedBox.shrink()));
+    }
+    rows.add(IntrinsicHeight(
+      child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
+    ));
+    if (i + cols < tiles.length) rows.add(const SizedBox(height: AppSpacing.sm));
+  }
+  return Column(children: rows);
+}
+
+/// One fact tile in the Today snapshot grid — a tinted, metric-coloured icon chip over the value.
 class _SnapshotTile extends StatelessWidget {
   const _SnapshotTile({
     required this.icon,
+    required this.accent,
     required this.label,
     required this.value,
     required this.sub,
   });
   final IconData icon;
+  final Color accent;
   final String label;
   final String value;
   final String sub;
@@ -461,28 +494,39 @@ class _SnapshotTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final gb = context.gb;
     return Container(
-      width: 104,
-      padding: const EdgeInsets.all(AppSpacing.sm),
+      padding: const EdgeInsets.all(AppSpacing.sm + 1),
       decoration: BoxDecoration(
         color: gb.card,
         borderRadius: BorderRadius.circular(AppRadius.md),
         border: Border.all(color: gb.progLine),
+        boxShadow: AppShadows.sm,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 16, color: gb.progInk3),
-          const SizedBox(height: 6),
+          Container(
+            width: 30,
+            height: 30,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: accent.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Icon(icon, size: 17, color: accent),
+          ),
+          const SizedBox(height: 10),
           _MonoLabel(label, fontSize: 9.5),
           const SizedBox(height: 3),
           Text(value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                  fontSize: 19,
+                  fontSize: 22,
                   fontWeight: FontWeight.w800,
                   height: 1.0,
                   letterSpacing: -0.5,
                   color: gb.progInk)),
-          const SizedBox(height: 1),
+          const SizedBox(height: 2),
           Text(sub,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -501,18 +545,14 @@ class _TipCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final gb = context.gb;
+    // Richer accent families than the muted prog* tones so the advice list reads clearly: emerald for
+    // wins, amber for cautions, brand blue for neutral nudges.
     final (Color fg, Color bg, IconData icon) = switch (tip.tone) {
-      TipTone.good => (
-          gb.progPos,
-          gb.progPos.withValues(alpha: 0.10),
-          Icons.check_circle_outline
-        ),
-      TipTone.warn => (
-          gb.progWarn,
-          gb.progWarn.withValues(alpha: 0.12),
-          Icons.error_outline
-        ),
-      TipTone.info => (gb.progBrandInk, gb.progBrandSoft, Icons.lightbulb_outline),
+      TipTone.good => (gb.emeraldInk, gb.emeraldSoft, Icons.check_circle_rounded),
+      TipTone.warn =>
+        (gb.amberInk, gb.amberSoft, Icons.warning_amber_rounded),
+      TipTone.info =>
+        (gb.progBrandInk, gb.progBrandSoft, Icons.lightbulb_rounded),
     };
     return Container(
       width: double.infinity,
@@ -520,13 +560,20 @@ class _TipCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: fg.withValues(alpha: 0.22)),
+        border: Border.all(color: fg.withValues(alpha: 0.20)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 18, color: fg),
-          const SizedBox(width: AppSpacing.sm),
+          Container(
+            width: 30,
+            height: 30,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+                color: fg.withValues(alpha: 0.16), shape: BoxShape.circle),
+            child: Icon(icon, size: 17, color: fg),
+          ),
+          const SizedBox(width: AppSpacing.sm + 2),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,

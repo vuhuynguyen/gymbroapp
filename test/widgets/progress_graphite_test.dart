@@ -96,6 +96,8 @@ void main() {
         ],
       ),
     );
+    await tester.tap(find.text('Week')); // the This Week hero lives on the Week tab now
+    await tester.pumpAndSettle();
 
     // The hero renders the mono "THIS WEEK" eyebrow and the adherence ring with the "3/4" center.
     expect(find.text('THIS WEEK'), findsOneWidget);

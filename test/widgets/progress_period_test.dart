@@ -175,6 +175,8 @@ void main() {
       (tester) async {
     final repo = _FakeProgressRepository(nonEmptyOverview());
     await pump(tester, repo);
+    await tester.tap(find.text('Week')); // the This Week hero lives on the Week tab now
+    await tester.pumpAndSettle();
 
     // The hero "This week" info button is at the top — no scroll needed.
     await tester.tap(infoButton('How This Week is counted'));
