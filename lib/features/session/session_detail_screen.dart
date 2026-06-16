@@ -576,27 +576,26 @@ class _MuscleBars extends StatelessWidget {
                     borderRadius: BorderRadius.circular(4),
                     child: SizedBox(
                       height: 8,
-                      child: LayoutBuilder(
-                        builder: (ctx, c) {
-                          double seg(int n) => (n / maxV) * c.maxWidth;
-                          return Stack(
-                            children: [
-                              Positioned.fill(child: ColoredBox(color: gb.grey25)),
-                              Row(
-                                children: [
-                                  SizedBox(
-                                      width: seg(e.value.primary),
-                                      child: ColoredBox(color: gb.primary600)),
-                                  SizedBox(
-                                      width: seg(e.value.secondary),
-                                      child: ColoredBox(
-                                          color: gb.primary600
-                                              .withValues(alpha: 0.30))),
-                                ],
-                              ),
-                            ],
-                          );
-                        },
+                      // stretch → each segment fills the 8px height (a bare ColoredBox in a Row would
+                      // otherwise collapse to 0px). Flex widths are proportional to the busiest group.
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (e.value.primary > 0)
+                            Expanded(
+                                flex: e.value.primary,
+                                child: ColoredBox(color: gb.primary600)),
+                          if (e.value.secondary > 0)
+                            Expanded(
+                                flex: e.value.secondary,
+                                child: ColoredBox(
+                                    color:
+                                        gb.primary600.withValues(alpha: 0.30))),
+                          if (maxV - e.value.total > 0)
+                            Expanded(
+                                flex: maxV - e.value.total,
+                                child: ColoredBox(color: gb.grey25)),
+                        ],
                       ),
                     ),
                   ),
