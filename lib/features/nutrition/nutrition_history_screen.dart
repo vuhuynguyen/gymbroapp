@@ -47,20 +47,9 @@ class NutritionHistoryScreen extends ConsumerWidget {
                       padding: const EdgeInsets.fromLTRB(AppSpacing.screenH,
                           AppSpacing.gap, AppSpacing.screenH, 100),
                       children: [
-                        for (final g in groups) ...[
-                          _WeekHeader(label: g.label, avgPct: g.avgPct),
-                          for (final d in g.days)
-                            Padding(
-                              padding:
-                                  const EdgeInsets.only(bottom: AppSpacing.xs),
-                              child: NutriDayCard(
-                                day: d,
-                                onTap: () => context
-                                    .push('/nutrition-day/${d.localDate}'),
-                              ),
-                            ),
-                          const SizedBox(height: AppSpacing.sm),
-                        ],
+                        for (var i = 0; i < groups.length; i++)
+                          _WeekSection(
+                              group: groups[i], initiallyExpanded: i == 0),
                         PagingFooter(loadingMore: paged.loadingMore),
                       ],
                     ),
@@ -131,33 +120,73 @@ List<_WeekGroup> _byWeek(List<NutritionDaySummary> days) {
   ];
 }
 
-class _WeekHeader extends StatelessWidget {
-  const _WeekHeader({required this.label, required this.avgPct});
-  final String label;
-  final int? avgPct;
+/// A collapsible week of day cards — current week open, older weeks collapsed to their header (label
+/// + day count + avg adherence), so a long daily log stays scannable. Mirrors the workout History.
+class _WeekSection extends StatefulWidget {
+  const _WeekSection({required this.group, required this.initiallyExpanded});
+  final _WeekGroup group;
+  final bool initiallyExpanded;
+
+  @override
+  State<_WeekSection> createState() => _WeekSectionState();
+}
+
+class _WeekSectionState extends State<_WeekSection> {
+  late bool _open = widget.initiallyExpanded;
 
   @override
   Widget build(BuildContext context) {
     final gb = context.gb;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(2, AppSpacing.xs, 2, AppSpacing.xs),
-      child: Row(
-        children: [
-          Text(label,
-              style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  color: gb.ink,
-                  letterSpacing: -0.14)),
-          const Spacer(),
-          if (avgPct != null)
-            Text('avg $avgPct%',
-                style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: gb.grey500)
-                    .tabular),
-        ],
-      ),
+    final g = widget.group;
+    final n = g.days.length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: () => setState(() => _open = !_open),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(2, 4, 2, AppSpacing.sm - 2),
+            child: Row(
+              children: [
+                AnimatedRotation(
+                  turns: _open ? 0.25 : 0,
+                  duration: AppDurations.base,
+                  child: Icon(Icons.chevron_right,
+                      size: AppSizes.iconMd, color: gb.grey400),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                Text(g.label,
+                    style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: gb.ink,
+                        letterSpacing: -0.14)),
+                const Spacer(),
+                Text('$n day${n == 1 ? '' : 's'}',
+                    style: AppText.meta.copyWith(color: gb.grey400)),
+                if (g.avgPct != null) ...[
+                  const SizedBox(width: AppSpacing.xs),
+                  Text('avg ${g.avgPct}%',
+                      style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: gb.grey500)
+                          .tabular),
+                ],
+              ],
+            ),
+          ),
+        ),
+        if (_open)
+          for (final d in g.days)
+            Padding(
+              padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+              child: NutriDayCard(
+                day: d,
+                onTap: () => context.push('/nutrition-day/${d.localDate}'),
+              ),
+            ),
+        const SizedBox(height: AppSpacing.sm),
+      ],
     );
   }
 }

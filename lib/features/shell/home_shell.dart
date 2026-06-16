@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../domain/enums.dart';
 import '../../shared/widgets/widgets.dart';
-import '../log/log_screen.dart' show showStartWorkoutSheet;
+import '../log/log_screen.dart' show showQuickAddSheet;
 import '../progress/progress_providers.dart';
 import '../tenant/tenant_controller.dart';
 
@@ -65,7 +65,7 @@ class HomeShell extends ConsumerWidget {
           }
           shell.goBranch(branch, initialLocation: branch == shell.currentIndex);
         },
-        onStart: () => showStartWorkoutSheet(context, ref),
+        onStart: () => showQuickAddSheet(context, ref),
       ),
     );
   }
@@ -140,7 +140,7 @@ class _StartButton extends StatelessWidget {
     final gb = context.gb;
     return Semantics(
       button: true,
-      label: 'Start Workout',
+      label: 'Quick add — workout or food',
       // No Material ink at all → no grey press background (the active colour is the feedback, iOS
       // style). HitTestBehavior.opaque keeps the whole slot tappable.
       child: GestureDetector(
@@ -164,7 +164,7 @@ class _StartButton extends StatelessWidget {
               child: const Icon(Icons.add, size: 22, color: Colors.white),
             ),
             const SizedBox(height: 3),
-            Text('Start',
+            Text('Add',
                 style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,

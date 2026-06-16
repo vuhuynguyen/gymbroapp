@@ -611,7 +611,6 @@ class _History extends StatelessWidget {
 
     final weeks = groupSessionsByWeek(items);
     final now = DateTime.now();
-    final thisWeek = weeks.where((w) => w.label(now) == 'This week').toList();
 
     final counts = <SessionStatus?, int>{
       null: items.length,
@@ -626,8 +625,6 @@ class _History extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (thisWeek.isNotEmpty) _WeekSummaryCard(week: thisWeek.first),
-        const SizedBox(height: AppSpacing.gap),
         const _NutritionHistoryLink(),
         const SizedBox(height: AppSpacing.gap),
         SingleChildScrollView(
@@ -669,109 +666,6 @@ class _History extends StatelessWidget {
           onTap: () => onFilter(value),
         ),
       );
-}
-
-class _WeekSummaryCard extends StatelessWidget {
-  const _WeekSummaryCard({required this.week});
-  final SessionWeek week;
-
-  @override
-  Widget build(BuildContext context) {
-    final gb = context.gb;
-    final goal = week.weeklyGoal;
-    final sets = week.sessions.fold<int>(0, (a, s) => a + s.totalSets);
-    final left = goal != null ? (goal - week.completedCount).clamp(0, goal) : 0;
-    return GbCard(
-      padding: const EdgeInsets.all(AppSpacing.heroPad),
-      child: Row(
-        children: [
-          GbRing(
-            value: goal != null && goal > 0 ? week.completedCount / goal : 0,
-            size: 70,
-            stroke: 8,
-            gradient: const [AppPalette.primary200, AppPalette.primary700],
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('${week.completedCount}',
-                    style: const TextStyle(
-                            fontSize: 21,
-                            fontWeight: FontWeight.w800,
-                            height: 1)
-                        .tabular),
-                if (goal != null)
-                  Text('of $goal',
-                      style: TextStyle(
-                              fontSize: 10,
-                              color: gb.grey400,
-                              fontWeight: FontWeight.w700)
-                          .tabular),
-              ],
-            ),
-          ),
-          const SizedBox(width: AppSpacing.heroPad),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Eyebrow('This week'),
-                const SizedBox(height: 3),
-                Text(
-                  goal != null
-                      ? (left > 0
-                          ? '$left session${left == 1 ? '' : 's'} to your goal'
-                          : 'Goal reached')
-                      : 'Keep logging your sessions',
-                  style: TextStyle(
-                      fontSize: 14.5,
-                      fontWeight: FontWeight.w700,
-                      color: gb.ink,
-                      letterSpacing: -0.15),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                Row(
-                  children: [
-                    _kpi(context, _fmtVolume(week.volumeKg), 'kg', 'Volume'),
-                    const SizedBox(width: 22),
-                    _kpi(context, '$sets', null, 'Sets'),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _kpi(BuildContext context, String value, String? unit, String label) {
-    final gb = context.gb;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
-          children: [
-            Text(value,
-                style: TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                        color: gb.ink)
-                    .tabular),
-            if (unit != null)
-              Text(' $unit',
-                  style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: gb.grey400)),
-          ],
-        ),
-        const SizedBox(height: 1),
-        Eyebrow(label),
-      ],
-    );
-  }
 }
 
 /// Collapsible Monday-anchored week group (design: rotating chevron, per-week ring + PR chip).
@@ -944,6 +838,50 @@ Future<void> showStartWorkoutSheet(BuildContext context, WidgetRef ref) {
         Navigator.of(sheetCtx).pop();
         context.push('/start');
       },
+    ),
+  );
+}
+
+/// The bottom-nav "+" chooser — start a workout or log food, so the centre button serves both the
+/// workout and nutrition surfaces (not workout-only). Each choice pops this sheet, then opens the
+/// existing flow (the Start-workout sheet, or the food picker).
+Future<void> showQuickAddSheet(BuildContext context, WidgetRef ref) {
+  return showGbSheet<void>(
+    context,
+    builder: (sheetCtx) => Padding(
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg, AppSpacing.xs, AppSpacing.lg, AppSpacing.lg),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const GbSheetHeader(
+            title: 'Quick add',
+            subtitle: 'Start a workout or log what you ate.',
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          GbSheetActionTile(
+            icon: Icons.fitness_center,
+            label: 'Start workout',
+            sub: 'Pick a plan or go ad-hoc',
+            iconColor: context.gb.primary600,
+            onTap: () {
+              Navigator.of(sheetCtx).pop();
+              showStartWorkoutSheet(context, ref);
+            },
+          ),
+          GbSheetActionTile(
+            icon: Icons.restaurant_menu,
+            label: 'Log food',
+            sub: 'Add something you ate today',
+            iconColor: context.gb.emeraldInk,
+            onTap: () {
+              Navigator.of(sheetCtx).pop();
+              logQuickFood(context, ref);
+            },
+          ),
+        ],
+      ),
     ),
   );
 }
