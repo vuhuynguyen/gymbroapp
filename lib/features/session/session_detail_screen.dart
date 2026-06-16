@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/time/app_time_zone.dart';
+import '../../data/models/exercise_models.dart';
 import '../../data/models/session_models.dart';
 import '../../data/repositories/exercise_repository.dart';
 import '../../domain/enums.dart';
@@ -157,8 +158,16 @@ class _Body extends ConsumerWidget {
     // cardio. Null catalog (still loading / offline) simply yields no muscle bars.
     final catalog = ref.watch(exerciseCatalogProvider).valueOrNull;
     final byMuscle = cardio
-        ? const <String, int>{}
-        : workingSetsByMuscle(d.exercises, (id) => catalog?[id]?.muscleGroup);
+        ? const <String, MuscleInvolvement>{}
+        : muscleInvolvement(
+            d.exercises,
+            (id) => [
+              for (final m in (catalog?[id]?.muscles ?? const <ExerciseMuscle>[]))
+                (group: m.name, isPrimary: m.isPrimary)
+            ],
+          );
+    // Progress vs the trainee's previous session (the backend ships per-exercise lastPerformed).
+    final progress = cardio ? null : sessionProgress(d.exercises);
 
     final metaParts = <String>[
       if (d.programName != null && d.programName!.isNotEmpty) d.programName!,
@@ -286,7 +295,13 @@ class _Body extends ConsumerWidget {
           ],
         ),
 
-        // Muscles trained — working sets per primary muscle group (lifting sessions only).
+        // Progress vs the previous session (lifting only; shown once there's a prior to compare to).
+        if (progress != null && progress.compared > 0) ...[
+          const SizedBox(height: AppSpacing.sm),
+          _ProgressVsLast(progress: progress),
+        ],
+
+        // Muscles trained — working sets per muscle group, split primary vs secondary (lifting only).
         if (byMuscle.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.lg),
           GbSectionTitle('Muscles trained', count: byMuscle.length),
@@ -410,6 +425,8 @@ class _ExerciseBreakdown extends StatelessWidget {
       final e1 = s.estimatedOneRepMaxKg ?? epleyOneRepMax(s.weightKg, s.reps);
       if (e1 != null && e1 > best) best = e1;
     }
+    // Progress vs the previous session's top set for this lift (null when there's no prior reference).
+    final prog = liftProgress(exercise);
 
     final metaParts = <String>[
       '${exercise.sets.length} set${exercise.sets.length == 1 ? '' : 's'}',
@@ -441,6 +458,10 @@ class _ExerciseBreakdown extends StatelessWidget {
                 const SizedBox(height: 1),
                 Text(metaParts.join(' · '),
                     style: AppText.meta.copyWith(color: gb.grey500)),
+                if (prog != null) ...[
+                  const SizedBox(height: 3),
+                  _VsLastDelta(prog: prog),
+                ],
               ],
             ),
           ),
@@ -469,15 +490,71 @@ String _fmtDistanceValue(int m) =>
 String _fmtDistanceUnit(int m) => m >= 1000 ? 'km' : 'm';
 
 /// Working sets per primary muscle group as labelled horizontal bars (scaled to the busiest group).
-class _MuscleBars extends StatelessWidget {
-  const _MuscleBars({required this.byMuscle});
-  final Map<String, int> byMuscle;
+/// Session progress vs the previous session — a tinted strip summarising how many lifts beat / matched
+/// / fell short of last time. Emerald when net-positive, amber otherwise.
+class _ProgressVsLast extends StatelessWidget {
+  const _ProgressVsLast({required this.progress});
+  final ({int up, int down, int same, int compared}) progress;
 
   @override
   Widget build(BuildContext context) {
     final gb = context.gb;
-    final maxV = byMuscle.values.fold<int>(1, (a, b) => b > a ? b : a);
+    final p = progress;
+    final positive = p.up >= p.down;
+    final fg = positive ? gb.emeraldInk : gb.amberInk;
+    final bg = positive ? gb.emeraldSoft : gb.amberSoft;
+    final parts = <String>[
+      if (p.up > 0) '${p.up} up',
+      if (p.same > 0) '${p.same} matched',
+      if (p.down > 0) '${p.down} down',
+    ];
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm + 2, vertical: AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: fg.withValues(alpha: 0.20)),
+      ),
+      child: Row(
+        children: [
+          Icon(positive ? Icons.trending_up_rounded : Icons.trending_down_rounded,
+              size: 18, color: fg),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: RichText(
+              text: TextSpan(
+                style: TextStyle(fontSize: 13, color: gb.grey700),
+                children: [
+                  TextSpan(
+                      text: 'vs last time  ',
+                      style: TextStyle(fontWeight: FontWeight.w800, color: fg)),
+                  TextSpan(
+                      text:
+                          '${parts.join(' · ')}  (of ${p.compared} lift${p.compared == 1 ? '' : 's'})'),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Working sets per muscle group as labelled two-tone bars — solid = primary mover, lighter = secondary
+/// (assisting) involvement. Scaled to the busiest group's total.
+class _MuscleBars extends StatelessWidget {
+  const _MuscleBars({required this.byMuscle});
+  final Map<String, MuscleInvolvement> byMuscle;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    final maxV = byMuscle.values.fold<int>(1, (a, b) => b.total > a ? b.total : a);
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         for (final e in byMuscle.entries)
           Padding(
@@ -497,20 +574,36 @@ class _MuscleBars extends StatelessWidget {
                 Expanded(
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(4),
-                    child: Container(
+                    child: SizedBox(
                       height: 8,
-                      color: gb.grey25,
-                      child: FractionallySizedBox(
-                        alignment: Alignment.centerLeft,
-                        widthFactor: (e.value / maxV).clamp(0.06, 1.0),
-                        child: Container(color: gb.primary500),
+                      child: LayoutBuilder(
+                        builder: (ctx, c) {
+                          double seg(int n) => (n / maxV) * c.maxWidth;
+                          return Stack(
+                            children: [
+                              Positioned.fill(child: ColoredBox(color: gb.grey25)),
+                              Row(
+                                children: [
+                                  SizedBox(
+                                      width: seg(e.value.primary),
+                                      child: ColoredBox(color: gb.primary600)),
+                                  SizedBox(
+                                      width: seg(e.value.secondary),
+                                      child: ColoredBox(
+                                          color: gb.primary600
+                                              .withValues(alpha: 0.30))),
+                                ],
+                              ),
+                            ],
+                          );
+                        },
                       ),
                     ),
                   ),
                 ),
                 SizedBox(
                   width: 30,
-                  child: Text('${e.value}',
+                  child: Text('${e.value.total}',
                       textAlign: TextAlign.end,
                       style: AppText.mono(const TextStyle(
                               fontSize: 13, fontWeight: FontWeight.w700))
@@ -519,10 +612,66 @@ class _MuscleBars extends StatelessWidget {
               ],
             ),
           ),
+        const SizedBox(height: AppSpacing.xs),
+        // Legend so the two tones read clearly.
+        Row(
+          children: [
+            _LegendDot(color: gb.primary600, label: 'Primary'),
+            const SizedBox(width: AppSpacing.md),
+            _LegendDot(
+                color: gb.primary600.withValues(alpha: 0.30),
+                label: 'Secondary'),
+          ],
+        ),
       ],
     );
   }
 }
+
+class _LegendDot extends StatelessWidget {
+  const _LegendDot({required this.color, required this.label});
+  final Color color;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+            width: 10,
+            height: 10,
+            decoration:
+                BoxDecoration(color: color, borderRadius: BorderRadius.circular(3))),
+        const SizedBox(width: 5),
+        Text(label,
+            style: TextStyle(fontSize: 11, color: context.gb.grey500)),
+      ],
+    );
+  }
+}
+
+/// Per-exercise "vs last time" delta — this session's best working-set e1RM against the prior session's
+/// top set. Emerald when up, amber when down, neutral when matched.
+class _VsLastDelta extends StatelessWidget {
+  const _VsLastDelta({required this.prog});
+  final LiftProgress prog;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    final (Color c, String label) = prog.isUp
+        ? (gb.emeraldInk, '↑ +${_fmtKgDelta(prog.deltaE1rmKg)} e1RM vs last')
+        : prog.isDown
+            ? (gb.amberInk, '↓ −${_fmtKgDelta(prog.deltaE1rmKg.abs())} e1RM vs last')
+            : (gb.grey500, '= matched last time');
+    return Text(label,
+        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: c));
+  }
+}
+
+String _fmtKgDelta(double v) =>
+    v % 1 == 0 ? '${v.toInt()}kg' : '${v.toStringAsFixed(1)}kg';
 
 const _months = [
   'Jan',

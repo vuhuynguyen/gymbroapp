@@ -239,3 +239,102 @@ Map<String, int> workingSetsByMuscle(
     avgHeartRate: hr
   );
 }
+
+/// One muscle group's involvement this session: working sets where it was the primary mover vs a
+/// secondary (assisting) mover.
+class MuscleInvolvement {
+  const MuscleInvolvement({required this.primary, required this.secondary});
+  final int primary;
+  final int secondary;
+  int get total => primary + secondary;
+}
+
+/// Working sets per muscle group, split into primary vs secondary involvement, resolved via [musclesOf]
+/// (exerciseId → that exercise's muscles, each a (group, isPrimary) pair). Sorted desc by total;
+/// groups with no working sets are omitted. Never fabricated — an exercise with no resolved muscles is
+/// skipped. A working set credits each of the exercise's muscles once (full credit to the primary
+/// mover, indirect credit to the assisting muscles).
+Map<String, MuscleInvolvement> muscleInvolvement(
+  List<PerformedExercise> exercises,
+  List<({String group, bool isPrimary})> Function(String exerciseId) musclesOf,
+) {
+  final prim = <String, int>{};
+  final sec = <String, int>{};
+  for (final e in exercises) {
+    final sets = e.sets
+        .where((s) =>
+            s.parentSetId == null && s.setType != PerformedSetType.warmup)
+        .length;
+    if (sets == 0) continue;
+    for (final m in musclesOf(e.exerciseId)) {
+      if (m.group.isEmpty) continue;
+      if (m.isPrimary) {
+        prim[m.group] = (prim[m.group] ?? 0) + sets;
+      } else {
+        sec[m.group] = (sec[m.group] ?? 0) + sets;
+      }
+    }
+  }
+  final groups = {...prim.keys, ...sec.keys};
+  final out = {
+    for (final g in groups)
+      g: MuscleInvolvement(primary: prim[g] ?? 0, secondary: sec[g] ?? 0)
+  };
+  final sorted = out.entries.toList()
+    ..sort((a, b) => b.value.total.compareTo(a.value.total));
+  return {for (final e in sorted) e.key: e.value};
+}
+
+/// One lift's progress vs last time: this session's best working-set e1RM minus the previous session's
+/// top-set e1RM (from `lastPerformed`). Null when there's no prior reference or nothing comparable.
+class LiftProgress {
+  const LiftProgress({
+    required this.deltaE1rmKg,
+    required this.lastWeightKg,
+    required this.lastReps,
+  });
+  final double deltaE1rmKg;
+  final double? lastWeightKg;
+  final int? lastReps;
+  // 0.5kg dead-band so rounding noise doesn't read as a change.
+  bool get isUp => deltaE1rmKg > 0.5;
+  bool get isDown => deltaE1rmKg < -0.5;
+  bool get isSame => !isUp && !isDown;
+}
+
+/// Progress for one exercise vs its `lastPerformed` top set; null when no prior reference / no e1RM.
+LiftProgress? liftProgress(PerformedExercise ex) {
+  final last = ex.lastPerformed;
+  if (last == null) return null;
+  final lastE = epleyOneRepMax(last.weightKg, last.reps);
+  if (lastE == null) return null;
+  double? best;
+  for (final s in ex.sets) {
+    if (s.setType == PerformedSetType.warmup) continue;
+    final e = s.estimatedOneRepMaxKg ?? epleyOneRepMax(s.weightKg, s.reps);
+    if (e != null && (best == null || e > best)) best = e;
+  }
+  if (best == null) return null;
+  return LiftProgress(
+      deltaE1rmKg: best - lastE,
+      lastWeightKg: last.weightKg,
+      lastReps: last.reps);
+}
+
+/// Session roll-up of [liftProgress] across the exercises with a prior reference.
+({int up, int down, int same, int compared}) sessionProgress(
+    List<PerformedExercise> exercises) {
+  var up = 0, down = 0, same = 0;
+  for (final e in exercises) {
+    final p = liftProgress(e);
+    if (p == null) continue;
+    if (p.isUp) {
+      up++;
+    } else if (p.isDown) {
+      down++;
+    } else {
+      same++;
+    }
+  }
+  return (up: up, down: down, same: same, compared: up + down + same);
+}
