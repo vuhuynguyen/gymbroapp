@@ -8,6 +8,7 @@ import '../../data/repositories/exercise_repository.dart';
 import '../../domain/enums.dart';
 import '../../domain/exercise_tracking.dart';
 import '../../domain/session_metrics.dart';
+import '../../shared/superset/superset_grouping.dart';
 import '../../shared/widgets/widgets.dart';
 import 'coach_guide.dart';
 import 'live_session_controller.dart';
@@ -377,6 +378,17 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
     final total = totalPlanned > logged ? totalPlanned : logged;
     final exIndex =
         ex == null ? -1 : session.exercises.indexWhere((e) => e.id == ex.id);
+    // Superset rotation cue for the current exercise (null when standalone / not in a 2+ group).
+    final supersetTag = ex == null
+        ? null
+        : supersetTags([
+            for (final e in session.exercises)
+              SupersetMember(
+                  id: e.id,
+                  order: e.order,
+                  groupId: e.supersetGroupId,
+                  name: e.exerciseName),
+          ])[ex.id];
 
     return Scaffold(
       body: Column(
@@ -422,6 +434,7 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
                     children: [
                       _ExerciseCard(
                         exercise: ex,
+                        supersetTag: supersetTag,
                         catalog: catalog[ex.exerciseId],
                         snapshotSets: _snapshotSetsFor(st, ex),
                         profile: trackingProfileFor(ex.trackingType),
@@ -776,6 +789,7 @@ class _PagerChip extends StatelessWidget {
 class _ExerciseCard extends StatelessWidget {
   const _ExerciseCard({
     required this.exercise,
+    this.supersetTag,
     required this.catalog,
     required this.snapshotSets,
     required this.profile,
@@ -796,6 +810,9 @@ class _ExerciseCard extends StatelessWidget {
   });
 
   final PerformedExercise exercise;
+
+  /// Superset membership for this exercise (A1/A2 …), or null when standalone — drives the rotation cue.
+  final SupersetTag? supersetTag;
   final ExerciseSummary? catalog;
   final List<SessionSnapshotSet> snapshotSets;
   final TrackingProfile profile;
@@ -871,7 +888,6 @@ class _ExerciseCard extends StatelessWidget {
         ? '$loggedCount/$plannedCount sets'
         : '$loggedCount ${loggedCount == 1 ? 'set' : 'sets'}';
     final pills = <String>[
-      if (exercise.supersetGroupId != null) '⇄ Superset',
       setsLabel,
       if (catalog?.muscleGroup.isNotEmpty ?? false) catalog!.muscleGroup,
       if (catalog?.equipment.isNotEmpty ?? false) catalog!.equipment,
@@ -934,6 +950,10 @@ class _ExerciseCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 _FormCueStrip(catalog: catalog, onTap: onGuide),
+                if (supersetTag != null) ...[
+                  const SizedBox(height: 8),
+                  SupersetCue(supersetTag!),
+                ],
               ],
             ),
           ),
