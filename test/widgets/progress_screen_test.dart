@@ -242,6 +242,8 @@ void main() {
         prs: [pr(id: 'p1', name: 'Deadlift')],
       ),
     );
+    await tester.tap(find.text('Week')); // the This Week hero lives on the Week tab now
+    await tester.pumpAndSettle();
 
     // No-plan substitutes the GbRing with the design's big raw count: "2" + a mono "SESSIONS THIS
     // WEEK" sub-label (uppercased data-channel label).
@@ -264,9 +266,32 @@ void main() {
         prs: [pr(id: 'p1', name: 'Squat')],
       ),
     );
+    await tester.tap(find.text('Week')); // the This Week hero lives on the Week tab now
+    await tester.pumpAndSettle();
 
     expect(find.byType(GbRing), findsOneWidget);
     expect(find.text('3/4'), findsOneWidget); // ring center label
+  });
+
+  testWidgets('This Week shows only on the Week tab; Consistency only on multi-week',
+      (tester) async {
+    await pumpData(
+      tester,
+      overview(
+        thisWeek: week(completed: 2, goal: 4, hasPlan: true, start: DateTime.now()),
+        prs: [pr(id: 'p1', name: 'Squat')],
+      ),
+    );
+
+    // Default 12w window: the current-week hero is NOT shown (it would sit at the top of the page).
+    expect(find.text('THIS WEEK'), findsNothing);
+
+    // Switch to the Week tab: the hero appears (top of page) and the Consistency heatmap is gone
+    // entirely from the tree (so its absence is reliable without scrolling).
+    await tester.tap(find.text('Week'));
+    await tester.pumpAndSettle();
+    expect(find.text('THIS WEEK'), findsOneWidget);
+    expect(find.text('Consistency'), findsNothing);
   });
 
   testWidgets('empty top-lifts → strength invite copy', (tester) async {
@@ -408,6 +433,8 @@ void main() {
         ],
       ),
     );
+    await tester.tap(find.text('Week')); // the This Week hero lives on the Week tab now
+    await tester.pumpAndSettle();
 
     // The down lift renders the only red on the page — the "Slipping" tag, now on the design's honest
     // neg channel (sparkColor → progNeg #AD3B32), the SAME tint as the row's sparkline.
@@ -431,6 +458,8 @@ void main() {
         ],
       ),
     );
+    await tester.tap(find.text('Week')); // the This Week hero lives on the Week tab now
+    await tester.pumpAndSettle();
 
     final gb = AppTheme.light().extension<GbColors>()!;
     // The verdict headline now lives in the dark "This week" hero: it reads "bench up · 2 sessions
