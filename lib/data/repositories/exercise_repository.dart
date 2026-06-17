@@ -16,7 +16,10 @@ class ExerciseRepository {
         return ExerciseDetail.fromJson(res.data!);
       });
 
-  Future<List<ExerciseSummary>> search({String? query, int pageSize = 200}) =>
+  // Loads the WHOLE catalog so the picker can filter client-side (by category/equipment/query). Keep this
+  // above the seeded catalog size (now 918) — the API clamps to 2000. A page below the catalog count silently
+  // hides later exercises from the picker.
+  Future<List<ExerciseSummary>> search({String? query, int pageSize = 2000}) =>
       apiCall(() async {
         final res = await _dio.get<List<dynamic>>(
           '/api/exercises',
