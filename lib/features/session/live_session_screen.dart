@@ -2077,13 +2077,19 @@ class _CatalogSheetState extends ConsumerState<_CatalogSheet> {
             if (snap.hasError)
               return ErrorRetry(message: snap.error.toString());
             final all = snap.data ?? const [];
-            final muscles = <String>{
-              'All',
+            // Filter chips: All · Cardio (filtered by exercise TYPE — cardio is otherwise buried under its
+            // Legs muscle group and hard to find) · then the muscle groups present in the catalog.
+            final groups = <String>{
               for (final e in all)
                 if (e.muscleGroup.isNotEmpty) e.muscleGroup
             };
+            final hasCardio = all.any((e) => e.type.toLowerCase() == 'cardio');
+            final muscles = <String>['All', if (hasCardio) 'Cardio', ...groups];
             final filtered = all.where((e) {
-              final byMuscle = _muscle == 'All' || e.muscleGroup == _muscle;
+              final byMuscle = _muscle == 'All' ||
+                  (_muscle == 'Cardio'
+                      ? e.type.toLowerCase() == 'cardio'
+                      : e.muscleGroup == _muscle);
               final byQuery = _query.isEmpty ||
                   e.name.toLowerCase().contains(_query.toLowerCase());
               return byMuscle && byQuery;
@@ -2866,10 +2872,19 @@ class _MediaSlotState extends State<_MediaSlot> {
             if (pages.length == 1)
               pages.first
             else
-              PageView(
-                controller: _controller,
-                onPageChanged: (i) => setState(() => _page = i),
-                children: pages,
+              // Swipe OR tap to switch photo↔map — tap is a reliable fallback when a horizontal
+              // drag is hard to land inside the draggable sheet.
+              GestureDetector(
+                onTap: () => _controller.animateToPage(
+                  (activePage + 1) % pages.length,
+                  duration: const Duration(milliseconds: 280),
+                  curve: Curves.easeOutCubic,
+                ),
+                child: PageView(
+                  controller: _controller,
+                  onPageChanged: (i) => setState(() => _page = i),
+                  children: pages,
+                ),
               ),
             // Border overlay (over the image too).
             DecoratedBox(
