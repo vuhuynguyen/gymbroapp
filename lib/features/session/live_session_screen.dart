@@ -2084,25 +2084,96 @@ class _CatalogSheetState extends ConsumerState<_CatalogSheet> {
     super.dispose();
   }
 
-  /// A horizontal scrollable row of filter chips (one selected at a time).
-  Widget _filterChips(List<String> items, String selected,
-      String Function(String) label, ValueChanged<String> onSelect) {
+  /// Filter bar: a pinned Equipment dropdown (secondary axis) on the left, then a horizontally
+  /// scrolling row of category chips (primary axis). One compact row instead of two chip rows.
+  Widget _filterBar(List<String> categories, List<String> equipments) {
+    final gb = context.gb;
     return SizedBox(
-      height: 46,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
+      height: 50,
+      child: Row(
         children: [
-          for (final it in items)
-            Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: GbChip(
-                  label: label(it),
-                  selected: selected == it,
-                  onTap: () => onSelect(it)),
+          const SizedBox(width: AppSpacing.md),
+          _equipmentDropdown(equipments),
+          const SizedBox(width: AppSpacing.sm),
+          Container(width: 1, height: 22, color: gb.borderCard),
+          const SizedBox(width: AppSpacing.xs),
+          Expanded(
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+              children: [
+                for (final c in categories)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: GbChip(
+                        label: _categoryLabel(c),
+                        selected: _category == c,
+                        onTap: () => setState(() => _category = c)),
+                  ),
+              ],
             ),
+          ),
         ],
+      ),
+    );
+  }
+
+  /// Compact equipment filter — a pill that opens a dropdown menu of the equipment present. Reads as a
+  /// neutral "Equipment ▾" until a value is picked, then turns into a filled "Cable ▾"-style active chip.
+  Widget _equipmentDropdown(List<String> equipments) {
+    final gb = context.gb;
+    final active = _equipment != 'All';
+    return PopupMenuButton<String>(
+      initialValue: _equipment,
+      position: PopupMenuPosition.under,
+      onSelected: (q) => setState(() => _equipment = q),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.md)),
+      itemBuilder: (_) => [
+        for (final q in equipments)
+          PopupMenuItem<String>(
+            value: q,
+            height: 42,
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 18,
+                  child: q == _equipment
+                      ? Icon(Icons.check, size: 16, color: gb.primary600)
+                      : null,
+                ),
+                Text(_equipmentLabel(q),
+                    style: TextStyle(
+                        fontWeight: q == _equipment
+                            ? FontWeight.w700
+                            : FontWeight.w500)),
+              ],
+            ),
+          ),
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: active ? gb.primary600 : gb.card,
+          borderRadius: BorderRadius.circular(99),
+          border:
+              Border.all(color: active ? gb.primary600 : gb.borderCard),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.tune,
+                size: 14, color: active ? Colors.white : gb.grey400),
+            const SizedBox(width: 5),
+            Text(active ? _equipmentLabel(_equipment) : 'Equipment',
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: active ? Colors.white : gb.ink)),
+            Icon(Icons.arrow_drop_down,
+                size: 18, color: active ? Colors.white : gb.grey400),
+          ],
+        ),
       ),
     );
   }
@@ -2183,10 +2254,7 @@ class _CatalogSheetState extends ConsumerState<_CatalogSheet> {
                     onChanged: (v) => setState(() => _query = v),
                   ),
                 ),
-                _filterChips(categories, _category, _categoryLabel,
-                    (c) => setState(() => _category = c)),
-                _filterChips(equipments, _equipment, _equipmentLabel,
-                    (q) => setState(() => _equipment = q)),
+                _filterBar(categories, equipments),
                 Expanded(
                   child: ListView.separated(
                     controller: scroll,
