@@ -102,7 +102,8 @@ class NutritionItem {
   factory NutritionItem.fromJson(Map<String, dynamic> j) => NutritionItem(
         id: j['id'].toString(),
         planMealItemId: asString(j['planMealItemId']),
-        isPlanned: asBool(j['isPlanned'], fallback: j['planMealItemId'] != null),
+        isPlanned:
+            asBool(j['isPlanned'], fallback: j['planMealItemId'] != null),
         foodId: (j['foodId'] ?? '').toString(),
         foodName: asString(j['foodName']) ?? 'Food',
         status: NutritionItemStatus.parse(j['status']),
@@ -116,7 +117,8 @@ class NutritionItem {
         fiberG: asDouble(j['fiberG']),
         loggedAtUtc: asDate(j['loggedAtUtc']),
         note: asString(j['note']),
-        swappedFromName: asString(j['swappedFromName'] ?? j['substitutedFromName']),
+        swappedFromName:
+            asString(j['swappedFromName'] ?? j['substitutedFromName']),
         isCustom: asBool(j['isCustom']),
         isEdited: asBool(j['isEdited']),
       );
@@ -137,8 +139,7 @@ class NutritionMeal {
   List<NutritionItem> get plannedItems =>
       items.where((i) => i.isPlanned).toList(growable: false);
 
-  int get plannedDone =>
-      plannedItems.where((i) => i.status.isAdherent).length;
+  int get plannedDone => plannedItems.where((i) => i.status.isAdherent).length;
 
   NutritionMeal copyWithItems(List<NutritionItem> items) =>
       NutritionMeal(name: name, scheduledTime: scheduledTime, items: items);
@@ -204,14 +205,14 @@ class DailyNutritionLog {
         meals: const [],
       );
 
-  List<NutritionItem> get allItems =>
-      [for (final m in meals) ...m.items];
+  List<NutritionItem> get allItems => [for (final m in meals) ...m.items];
 
   List<NutritionItem> get plannedItems =>
       allItems.where((i) => i.isPlanned).toList(growable: false);
 
   int get plannedCount => plannedItems.length;
-  int get completedCount => plannedItems.where((i) => i.status.isAdherent).length;
+  int get completedCount =>
+      plannedItems.where((i) => i.status.isAdherent).length;
 
   /// Adherence rule (API §5): (completed + substituted planned items) ÷ planned items, 0–100; a day
   /// with **no planned items is 100%**. Recomputed locally so optimistic taps update the ring at once.
@@ -221,7 +222,8 @@ class DailyNutritionLog {
     return ((completedCount / planned) * 100).round().clamp(0, 100);
   }
 
-  double get adherenceFraction => plannedCount == 0 ? 1 : completedCount / plannedCount;
+  double get adherenceFraction =>
+      plannedCount == 0 ? 1 : completedCount / plannedCount;
 
   /// Summed kcal / protein of adherent (eaten + swapped) items — the ring card's secondary stats.
   num get loggedKcal => allItems
@@ -230,6 +232,12 @@ class DailyNutritionLog {
   num get loggedProtein => allItems
       .where((i) => i.status.isAdherent)
       .fold<num>(0, (a, i) => a + (i.proteinG ?? 0) * i.quantity);
+  num get loggedCarbs => allItems
+      .where((i) => i.status.isAdherent)
+      .fold<num>(0, (a, i) => a + (i.carbsG ?? 0) * i.quantity);
+  num get loggedFat => allItems
+      .where((i) => i.status.isAdherent)
+      .fold<num>(0, (a, i) => a + (i.fatG ?? 0) * i.quantity);
 
   DailyNutritionLog copyWithMeals(List<NutritionMeal> meals) =>
       DailyNutritionLog(
@@ -248,11 +256,13 @@ class DailyNutritionLog {
       );
 
   /// Replace one item (by id) across whatever meal holds it — the optimistic-update primitive.
-  DailyNutritionLog withItem(String itemId, NutritionItem Function(NutritionItem) update) =>
+  DailyNutritionLog withItem(
+          String itemId, NutritionItem Function(NutritionItem) update) =>
       copyWithMeals([
         for (final m in meals)
           m.copyWithItems([
-            for (final i in m.items) if (i.id == itemId) update(i) else i,
+            for (final i in m.items)
+              if (i.id == itemId) update(i) else i,
           ]),
       ]);
 
@@ -261,7 +271,8 @@ class DailyNutritionLog {
     return DailyNutritionLog(
       id: (j['id'] ?? 'today').toString(),
       localDate: asString(j['localDate']) ?? '',
-      hasPlan: asBool(j['hasPlan'], fallback: (j['meals'] as List?)?.isNotEmpty ?? false),
+      hasPlan: asBool(j['hasPlan'],
+          fallback: (j['meals'] as List?)?.isNotEmpty ?? false),
       isClosed: status == 'closed',
       source: SessionSource.parse(j['source']),
       meals: asList(j['meals'], NutritionMeal.fromJson),
@@ -326,7 +337,10 @@ class NutritionDaySummary {
 /// A paged nutrition-day timeline (history / coach monitoring).
 class NutritionDayList {
   const NutritionDayList(
-      {this.items = const [], this.page = 1, this.pageSize = 50, this.totalCount = 0});
+      {this.items = const [],
+      this.page = 1,
+      this.pageSize = 50,
+      this.totalCount = 0});
 
   final List<NutritionDaySummary> items;
   final int page;
@@ -455,8 +469,9 @@ class Food {
         name: name ?? this.name,
         brand: brand == _unset ? this.brand : brand as String?,
         kind: kind ?? this.kind,
-        servingLabel:
-            servingLabel == _unset ? this.servingLabel : servingLabel as String?,
+        servingLabel: servingLabel == _unset
+            ? this.servingLabel
+            : servingLabel as String?,
         servingSizeGrams: servingSizeGrams ?? this.servingSizeGrams,
         energyKcal: energyKcal ?? this.energyKcal,
         proteinG: proteinG ?? this.proteinG,
@@ -474,7 +489,10 @@ const Object _unset = Object();
 /// A paged food-catalog search response.
 class FoodList {
   const FoodList(
-      {this.items = const [], this.page = 1, this.pageSize = 20, this.totalCount = 0});
+      {this.items = const [],
+      this.page = 1,
+      this.pageSize = 20,
+      this.totalCount = 0});
 
   final List<Food> items;
   final int page;

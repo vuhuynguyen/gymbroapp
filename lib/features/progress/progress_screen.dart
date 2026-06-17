@@ -220,8 +220,8 @@ class _InfoButton extends StatelessWidget {
           child: SizedBox(
             width: 26,
             height: 26,
-            child: Icon(Icons.info_outline,
-                size: 16, color: color ?? gb.progInk3),
+            child:
+                Icon(Icons.info_outline, size: 16, color: color ?? gb.progInk3),
           ),
         ),
       ),
@@ -378,22 +378,10 @@ class _TodaySection extends ConsumerWidget {
     );
     final s = insights.snapshot;
 
+    // Calories + protein + carbs + fat (all-source) merge into one full-width macro card at the top of
+    // the glance; the remaining facts (sleep, weight, weekly workouts) stay as the small tile grid.
+    final hasMacros = s.consumedKcal != null;
     final tiles = <Widget>[
-      if (s.consumedKcal != null)
-        _SnapshotTile(
-          icon: Icons.local_fire_department_rounded,
-          accent: gb.amberInk,
-          label: 'Calories',
-          value: '${s.consumedKcal}',
-          sub: s.targetKcal != null ? '/ ${s.targetKcal} kcal' : 'kcal',
-        ),
-      if (s.proteinG != null)
-        _SnapshotTile(
-            icon: Icons.bolt_rounded,
-            accent: gb.primary600,
-            label: 'Protein',
-            value: '${s.proteinG}',
-            sub: 'g logged'),
       if (s.sleepHours != null)
         _SnapshotTile(
             icon: Icons.bedtime_rounded,
@@ -421,10 +409,14 @@ class _TodaySection extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (tiles.isNotEmpty) ...[
+        if (hasMacros || tiles.isNotEmpty) ...[
           const _MonoLabel('Today at a glance'),
           const SizedBox(height: AppSpacing.sm),
-          _snapshotGrid(tiles),
+          if (hasMacros) ...[
+            _MacroGlanceCard(snapshot: s),
+            const SizedBox(height: AppSpacing.sm),
+          ],
+          if (tiles.isNotEmpty) _snapshotGrid(tiles),
           const SizedBox(height: AppSpacing.lg),
         ],
         const _MonoLabel('Advice'),
@@ -440,8 +432,7 @@ class _TodaySection extends ConsumerWidget {
             ),
             child: Text(
               'Log a meal, your sleep or a workout to see today’s advice.',
-              style: TextStyle(
-                  fontSize: 13, height: 1.4, color: gb.progInk3),
+              style: TextStyle(fontSize: 13, height: 1.4, color: gb.progInk3),
             ),
           )
         else
@@ -468,9 +459,11 @@ Widget _snapshotGrid(List<Widget> tiles) {
           child: idx < tiles.length ? tiles[idx] : const SizedBox.shrink()));
     }
     rows.add(IntrinsicHeight(
-      child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
+      child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch, children: children),
     ));
-    if (i + cols < tiles.length) rows.add(const SizedBox(height: AppSpacing.sm));
+    if (i + cols < tiles.length)
+      rows.add(const SizedBox(height: AppSpacing.sm));
   }
   return Column(children: rows);
 }
@@ -537,6 +530,75 @@ class _SnapshotTile extends StatelessWidget {
   }
 }
 
+/// The merged macros card at the top of the Today glance — calories + protein + carbs + fat in one row
+/// (all-source: planned + ad-hoc), so the day's fuel reads at a glance rather than as separate tiles.
+class _MacroGlanceCard extends StatelessWidget {
+  const _MacroGlanceCard({required this.snapshot});
+  final TodaySnapshot snapshot;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    final s = snapshot;
+    return Container(
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm, vertical: AppSpacing.sm + 2),
+      decoration: BoxDecoration(
+        color: gb.card,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: gb.progLine),
+        boxShadow: AppShadows.sm,
+      ),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: _cell(gb, 'Calories', '${s.consumedKcal}',
+                  s.targetKcal != null ? '/ ${s.targetKcal} kcal' : 'kcal'),
+            ),
+            _divider(gb),
+            Expanded(child: _cell(gb, 'Protein', '${s.proteinG ?? 0}', 'g')),
+            _divider(gb),
+            Expanded(child: _cell(gb, 'Carbs', '${s.carbsG ?? 0}', 'g')),
+            _divider(gb),
+            Expanded(child: _cell(gb, 'Fat', '${s.fatG ?? 0}', 'g')),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _divider(GbColors gb) => Container(
+        width: 1,
+        margin: const EdgeInsets.symmetric(horizontal: AppSpacing.xs - 2),
+        color: gb.progLine,
+      );
+
+  Widget _cell(GbColors gb, String label, String value, String sub) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _MonoLabel(label, fontSize: 9.5),
+          const SizedBox(height: 4),
+          Text(value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  height: 1.0,
+                  letterSpacing: -0.5,
+                  color: gb.progInk)),
+          const SizedBox(height: 2),
+          Text(sub,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 10, color: gb.progInk3)),
+        ],
+      );
+}
+
 /// One advice tip — a tinted card whose colour/icon follows the tip's [TipTone].
 class _TipCard extends StatelessWidget {
   const _TipCard({required this.tip});
@@ -548,11 +610,17 @@ class _TipCard extends StatelessWidget {
     // Richer accent families than the muted prog* tones so the advice list reads clearly: emerald for
     // wins, amber for cautions, brand blue for neutral nudges.
     final (Color fg, Color bg, IconData icon) = switch (tip.tone) {
-      TipTone.good => (gb.emeraldInk, gb.emeraldSoft, Icons.check_circle_rounded),
-      TipTone.warn =>
-        (gb.amberInk, gb.amberSoft, Icons.warning_amber_rounded),
-      TipTone.info =>
-        (gb.progBrandInk, gb.progBrandSoft, Icons.lightbulb_rounded),
+      TipTone.good => (
+          gb.emeraldInk,
+          gb.emeraldSoft,
+          Icons.check_circle_rounded
+        ),
+      TipTone.warn => (gb.amberInk, gb.amberSoft, Icons.warning_amber_rounded),
+      TipTone.info => (
+          gb.progBrandInk,
+          gb.progBrandSoft,
+          Icons.lightbulb_rounded
+        ),
     };
     return Container(
       width: double.infinity,
@@ -935,7 +1003,8 @@ class _StrengthSectionState extends ConsumerState<_StrengthSection> {
 
     // If the selected chip's group vanished (period change dropped it), fall back to "All" so we never
     // render a selected-but-dead chip.
-    final selected = (_muscle != null && trained.contains(_muscle)) ? _muscle : null;
+    final selected =
+        (_muscle != null && trained.contains(_muscle)) ? _muscle : null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1299,8 +1368,8 @@ class _AllExercisesSheetState extends State<_AllExercisesSheet> {
             Flexible(
               child: groups.isEmpty
                   ? Padding(
-                      padding: const EdgeInsets.symmetric(
-                          vertical: AppSpacing.lg),
+                      padding:
+                          const EdgeInsets.symmetric(vertical: AppSpacing.lg),
                       child: Text(
                         'No exercises match "${_query.trim()}".',
                         style: TextStyle(
@@ -1525,8 +1594,7 @@ class _LiftRow extends StatelessWidget {
                           ]),
                         ),
                         const SizedBox(width: 6),
-                        _MonoLabel('est. 1RM',
-                            color: gb.progInk4, fontSize: 9),
+                        _MonoLabel('est. 1RM', color: gb.progInk4, fontSize: 9),
                         // A thin (no-trend) lift annotates the honest session count inline instead of
                         // a (forbidden) fabricated direction tag.
                         if (!hasTrend && sessionCount != null) ...[
@@ -1694,7 +1762,8 @@ class _ConsistencySection extends StatelessWidget {
                               ]),
                             ),
                             const SizedBox(height: 8),
-                            _MonoLabel('Hit goal · last ${consistency.windowWeeks} wks',
+                            _MonoLabel(
+                                'Hit goal · last ${consistency.windowWeeks} wks',
                                 color: gb.progInk3),
                           ],
                         ),
@@ -2508,9 +2577,8 @@ class _NutritionSection extends ConsumerWidget {
       loading: () => const SizedBox.shrink(),
       error: (_, __) => const SizedBox.shrink(),
       data: (a) {
-        // The all-source CALORIES-LOGGED LIST: every logged day (plan or ad-hoc) in the window. When
-        // present it ALWAYS renders, so an ad-hoc/no-plan logger (whose plan-only [recentDays] trend is
-        // empty) can still see what they logged.
+        // The all-source CALORIES-LOGGED day list: every logged day (plan or ad-hoc) in the window.
+        // It drives BOTH the trend and the explicit list, so an ad-hoc/no-plan logger sees both.
         final hasLog = a.caloriesByDay.isNotEmpty;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2519,18 +2587,13 @@ class _NutritionSection extends ConsumerWidget {
                 onInfo: () => _showHowSheet(context, _HowCounted.nutrition)),
             const SizedBox(height: AppSpacing.sm),
             if (hasLog) ...[
-              // The plan-only consumed-kcal TREND is unchanged — shown only when there are plan days to
-              // chart. The list below stands in for ad-hoc/no-plan loggers (empty [recentDays]).
-              if (a.recentDays.isNotEmpty) ...[
-                _CaloriesTrendCard(adherence: a),
-                const SizedBox(height: AppSpacing.sm),
-              ],
+              // The consumed-kcal TREND now charts the ALL-SOURCE [caloriesByDay] (ad-hoc + planned),
+              // so a no-plan logger sees a trend too. The list below complements it with explicit rows.
+              _CaloriesTrendCard(adherence: a),
+              const SizedBox(height: AppSpacing.sm),
               // ALWAYS show the all-source list when there's anything logged.
               _CaloriesLogCard(days: a.caloriesByDay),
-            ] else if (a.recentDays.isNotEmpty)
-              // No list field on the wire (older payload) but plan days exist → the trend, unchanged.
-              _CaloriesTrendCard(adherence: a)
-            else if (a.hasPlan)
+            ] else if (a.hasPlan)
               // A plan, but no closed days yet → a "log a day" nudge, not an empty trend.
               const _QuietCard(
                 text: 'Close out a day to see your calories trend.',
@@ -2565,10 +2628,12 @@ class _CaloriesTrendCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final gb = context.gb;
-    // Recent days, oldest→newest; the trend shows the trailing 7.
-    final recent = adherence.recentDays.length > 7
-        ? adherence.recentDays.sublist(adherence.recentDays.length - 7)
-        : adherence.recentDays;
+    // Recent days, oldest→newest; the trend shows the trailing 7. Sourced from the ALL-SOURCE
+    // [caloriesByDay] (ad-hoc + planned) — NOT the plan-only [recentDays] — so the bars and the
+    // "N days logged" advice agree with the all-source "this week" subtitle below.
+    final recent = adherence.caloriesByDay.length > 7
+        ? adherence.caloriesByDay.sublist(adherence.caloriesByDay.length - 7)
+        : adherence.caloriesByDay;
     // Accurate current-week count for the "this week" caption (the trend bars span the trailing
     // window, which can reach into last week — so don't label that day count "this week").
     final loggedThisWeek = adherence.loggedDaysThisWeek;
@@ -2619,7 +2684,7 @@ class _CaloriesTrendCard extends StatelessWidget {
 ///   • Targets present on most logged days → compare honestly against the target on **only the days
 ///     that have one**: "averaging ~N kcal under/over plan on logged days".
 /// A day without a target NEVER contributes a deficit/surplus number.
-String _caloriesAdvice(List<DailyAdherence> days) {
+String _caloriesAdvice(List<DayCalories> days) {
   if (days.isEmpty) return 'Log your food to see your calories trend.';
 
   // Sparse logging guard — 1–2 points isn't a trend; nudge to keep logging.
@@ -2663,7 +2728,7 @@ class _CaloriesTrend extends StatelessWidget {
     required this.target,
     required this.track,
   });
-  final List<DailyAdherence> days;
+  final List<DayCalories> days;
   final Color neutral;
   final Color under;
   final Color over;
@@ -2723,7 +2788,8 @@ class _CaloriesTrendPainter extends CustomPainter {
     for (final t in targets) {
       if (t != null && t > maxV) maxV = t;
     }
-    if (maxV <= 0) maxV = 1; // all-zero window → flat track only, no divide-by-zero
+    if (maxV <= 0)
+      maxV = 1; // all-zero window → flat track only, no divide-by-zero
 
     const gap = 5.0;
     final barW = ((size.width - gap * (n - 1)) / n).clamp(2.0, double.infinity);
