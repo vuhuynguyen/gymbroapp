@@ -2796,6 +2796,8 @@ class _GuideSheetState extends State<_GuideSheet> {
                       ? guide!.primary
                       : fallbackPrimary,
                   secondary: guide?.secondary ?? const [],
+                  detailedPrimary: guide?.detailedPrimary ?? const [],
+                  detailedSecondary: guide?.detailedSecondary ?? const [],
                 ),
               const SizedBox(height: 2),
               // ── Body ──
@@ -3125,15 +3127,43 @@ class _MediaChip extends StatelessWidget {
 }
 
 /// "TARGETS" label + muscle pills (primary tinted, secondary neutral, each with a leading dot).
+// Fine muscle-slug → human label for the TARGETS pills (e.g. `biceps` → "Biceps", `gluteal` → "Glutes").
+const Map<String, String> _kMuscleLabels = {
+  'chest': 'Chest', 'obliques': 'Obliques', 'abs': 'Abs', 'biceps': 'Biceps',
+  'triceps': 'Triceps', 'forearm': 'Forearms', 'trapezius': 'Traps',
+  'deltoids': 'Delts', 'upper-back': 'Upper back', 'lower-back': 'Lower back',
+  'adductors': 'Adductors', 'quadriceps': 'Quads', 'tibialis': 'Shins',
+  'calves': 'Calves', 'hamstring': 'Hamstrings', 'gluteal': 'Glutes',
+};
+String _muscleLabel(String slug) => _kMuscleLabels[slug] ?? _titleCase(slug);
+
 class _TargetsRow extends StatelessWidget {
-  const _TargetsRow({required this.primary, required this.secondary});
+  const _TargetsRow({
+    required this.primary,
+    required this.secondary,
+    this.detailedPrimary = const [],
+    this.detailedSecondary = const [],
+  });
   final List<String> primary;
   final List<String> secondary;
+
+  /// Specific worked muscles — preferred over the coarse [primary]/[secondary] group names when present, so
+  /// the pills read "Biceps"/"Hamstrings" (what the map highlights) instead of "Arms"/"Legs".
+  final List<String> detailedPrimary;
+  final List<String> detailedSecondary;
 
   @override
   Widget build(BuildContext context) {
     final gb = context.gb;
-    if (primary.isEmpty && secondary.isEmpty) return const SizedBox.shrink();
+    final useDetailed =
+        detailedPrimary.isNotEmpty || detailedSecondary.isNotEmpty;
+    final primaryLabels =
+        useDetailed ? detailedPrimary.map(_muscleLabel).toList() : primary;
+    final secondaryLabels =
+        useDetailed ? detailedSecondary.map(_muscleLabel).toList() : secondary;
+    if (primaryLabels.isEmpty && secondaryLabels.isEmpty) {
+      return const SizedBox.shrink();
+    }
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
       child: Row(
@@ -3154,8 +3184,9 @@ class _TargetsRow extends StatelessWidget {
               spacing: 6,
               runSpacing: 6,
               children: [
-                for (final m in primary) _MusclePill(label: m, isPrimary: true),
-                for (final m in secondary)
+                for (final m in primaryLabels)
+                  _MusclePill(label: m, isPrimary: true),
+                for (final m in secondaryLabels)
                   _MusclePill(label: m, isPrimary: false),
               ],
             ),
