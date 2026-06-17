@@ -2030,7 +2030,32 @@ class _ActionBar extends StatelessWidget {
   }
 }
 
-/// Exercise-catalog picker (substitute / add) — search + muscle filter over the global catalog.
+// Catalog filter taxonomies. Category = the API's 13 fine library codes (a superset of the 6 muscle groups);
+// equipment = the Equipment enum. Order is the chip display order; values absent from the catalog are skipped.
+const List<String> _kCategoryOrder = [
+  'chest', 'back', 'shoulders', 'biceps', 'triceps', 'quadriceps', 'hamstrings',
+  'glutes', 'calves', 'abs', 'cardio', 'full-body', 'mobility',
+];
+const Map<String, String> _kCategoryLabels = {
+  'chest': 'Chest', 'back': 'Back', 'shoulders': 'Shoulders', 'biceps': 'Biceps',
+  'triceps': 'Triceps', 'quadriceps': 'Quads', 'hamstrings': 'Hamstrings',
+  'glutes': 'Glutes', 'calves': 'Calves', 'abs': 'Abs', 'cardio': 'Cardio',
+  'full-body': 'Full Body', 'mobility': 'Mobility',
+};
+const List<String> _kEquipmentOrder = [
+  'Barbell', 'Dumbbell', 'Cable', 'Machine', 'Bodyweight', 'ResistanceBand',
+];
+
+String _categoryLabel(String c) =>
+    c == 'All' ? 'All' : (_kCategoryLabels[c] ?? _titleCase(c));
+String _equipmentLabel(String q) => q == 'All'
+    ? 'All'
+    : (q == 'ResistanceBand' ? 'Band' : q);
+String _titleCase(String s) => s.isEmpty
+    ? s
+    : s[0].toUpperCase() + s.substring(1).replaceAll('-', ' ');
+
+/// Exercise-catalog picker (substitute / add) — search + category & equipment filters over the global catalog.
 class _CatalogSheet extends ConsumerStatefulWidget {
   const _CatalogSheet({required this.title, required this.onPick});
   final String title;
@@ -2044,7 +2069,8 @@ class _CatalogSheetState extends ConsumerState<_CatalogSheet> {
   late final Future<List<ExerciseSummary>> _future;
   final TextEditingController _search = TextEditingController();
   String _query = '';
-  String _muscle = 'All';
+  String _category = 'All';
+  String _equipment = 'All';
 
   @override
   void initState() {
@@ -2056,6 +2082,29 @@ class _CatalogSheetState extends ConsumerState<_CatalogSheet> {
   void dispose() {
     _search.dispose();
     super.dispose();
+  }
+
+  /// A horizontal scrollable row of filter chips (one selected at a time).
+  Widget _filterChips(List<String> items, String selected,
+      String Function(String) label, ValueChanged<String> onSelect) {
+    return SizedBox(
+      height: 46,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(
+            horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
+        children: [
+          for (final it in items)
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: GbChip(
+                  label: label(it),
+                  selected: selected == it,
+                  onTap: () => onSelect(it)),
+            ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -2077,22 +2126,37 @@ class _CatalogSheetState extends ConsumerState<_CatalogSheet> {
             if (snap.hasError)
               return ErrorRetry(message: snap.error.toString());
             final all = snap.data ?? const [];
-            // Filter chips: All · Cardio (filtered by exercise TYPE — cardio is otherwise buried under its
-            // Legs muscle group and hard to find) · then the muscle groups present in the catalog.
-            final groups = <String>{
+            // Two filter axes: library CATEGORY (fine — Glutes/Biceps/Cardio/…, beyond the 6 coarse muscle
+            // groups) and EQUIPMENT (Barbell/Dumbbell/Cable/Machine/…). Each chip row lists only the values
+            // actually present, in a sensible order. Falls back gracefully if the API predates `category`.
+            final cats = <String>{
               for (final e in all)
-                if (e.muscleGroup.isNotEmpty) e.muscleGroup
+                if (e.category.isNotEmpty) e.category
             };
-            final hasCardio = all.any((e) => e.type.toLowerCase() == 'cardio');
-            final muscles = <String>['All', if (hasCardio) 'Cardio', ...groups];
+            final categories = <String>[
+              'All',
+              for (final c in _kCategoryOrder)
+                if (cats.contains(c)) c,
+              for (final c in cats)
+                if (!_kCategoryOrder.contains(c)) c,
+            ];
+            final eqs = <String>{
+              for (final e in all)
+                if (e.equipment.isNotEmpty) e.equipment
+            };
+            final equipments = <String>[
+              'All',
+              for (final q in _kEquipmentOrder)
+                if (eqs.contains(q)) q,
+              for (final q in eqs)
+                if (!_kEquipmentOrder.contains(q)) q,
+            ];
             final filtered = all.where((e) {
-              final byMuscle = _muscle == 'All' ||
-                  (_muscle == 'Cardio'
-                      ? e.type.toLowerCase() == 'cardio'
-                      : e.muscleGroup == _muscle);
+              final byCat = _category == 'All' || e.category == _category;
+              final byEq = _equipment == 'All' || e.equipment == _equipment;
               final byQuery = _query.isEmpty ||
                   e.name.toLowerCase().contains(_query.toLowerCase());
-              return byMuscle && byQuery;
+              return byCat && byEq && byQuery;
             }).toList();
 
             return Column(
@@ -2119,24 +2183,10 @@ class _CatalogSheetState extends ConsumerState<_CatalogSheet> {
                     onChanged: (v) => setState(() => _query = v),
                   ),
                 ),
-                SizedBox(
-                  height: 52,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
-                    children: [
-                      for (final m in muscles)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 6),
-                          child: GbChip(
-                              label: m,
-                              selected: _muscle == m,
-                              onTap: () => setState(() => _muscle = m)),
-                        ),
-                    ],
-                  ),
-                ),
+                _filterChips(categories, _category, _categoryLabel,
+                    (c) => setState(() => _category = c)),
+                _filterChips(equipments, _equipment, _equipmentLabel,
+                    (q) => setState(() => _equipment = q)),
                 Expanded(
                   child: ListView.separated(
                     controller: scroll,

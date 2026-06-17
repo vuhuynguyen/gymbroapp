@@ -116,6 +116,7 @@ class ExerciseSummary {
     this.estimatedCaloriesBurn,
     this.averageDurationSeconds,
     required this.muscleGroup,
+    this.category = '',
     this.muscles = const [],
     this.imageUrl,
   });
@@ -133,6 +134,10 @@ class ExerciseSummary {
   final int? averageDurationSeconds;
   final String muscleGroup;
 
+  /// Fine library category (one of the 13 codes, e.g. `biceps`/`glutes`/`cardio`); drives the picker's
+  /// category chips. Empty on older payloads (pre-category API).
+  final String category;
+
   /// Full targeted-muscle list (primary + secondary), primary-first. Empty on older payloads.
   final List<ExerciseMuscle> muscles;
   final String? imageUrl;
@@ -148,6 +153,7 @@ class ExerciseSummary {
         estimatedCaloriesBurn: asInt(j['estimatedCaloriesBurn']),
         averageDurationSeconds: asInt(j['averageDurationSeconds']),
         muscleGroup: asString(j['muscleGroup']) ?? '',
+        category: asString(j['category']) ?? '',
         muscles: (j['muscles'] as List<dynamic>? ?? [])
             .whereType<Map<String, dynamic>>()
             .map(ExerciseMuscle.fromJson)
