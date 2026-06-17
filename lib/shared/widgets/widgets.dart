@@ -20,6 +20,7 @@ export 'feedback.dart';
 export 'foundation.dart';
 export 'headers.dart';
 export 'inputs.dart';
+export 'muscle_map.dart';
 export 'session.dart';
 export 'sheets.dart';
 export 'stats.dart';

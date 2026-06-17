@@ -2656,10 +2656,13 @@ class _GuideSheetState extends State<_GuideSheet> {
                 child: _MediaSlot(
                   imageUrl: guide?.imageUrl,
                   equipment: equipment,
+                  exerciseName: widget.exerciseName,
                   primary: guide?.primary.isNotEmpty == true
                       ? guide!.primary
                       : fallbackPrimary,
                   secondary: guide?.secondary ?? const [],
+                  detailedPrimary: guide?.detailedPrimary ?? const [],
+                  detailedSecondary: guide?.detailedSecondary ?? const [],
                 ),
               ),
               // ── Targets ──
@@ -2774,26 +2777,85 @@ class _DifficultyBadge extends StatelessWidget {
   }
 }
 
-/// 16:9 media slot — exercise photo when available, otherwise a grey placeholder with a centered
-/// dumbbell. Equipment + "Demo loop" chips overlay the bottom corners.
-class _MediaSlot extends StatelessWidget {
+/// 16:9 media slot — a swipeable carousel of the exercise photo and the muscle-activation figure
+/// (photo first, map second) with a page-dots indicator. Falls back to whichever single page exists, or
+/// a grey dumbbell placeholder. Equipment + "Demo loop" chips overlay the bottom corners.
+class _MediaSlot extends StatefulWidget {
   const _MediaSlot({
     required this.imageUrl,
     required this.equipment,
+    required this.exerciseName,
     required this.primary,
     required this.secondary,
+    this.detailedPrimary = const [],
+    this.detailedSecondary = const [],
   });
   final String? imageUrl;
   final String equipment;
+  final String exerciseName;
 
-  /// Worked muscle names — with no photo, the slot renders a muscle-activation figure from these
-  /// (the free-layer media baseline) instead of a blank dumbbell placeholder.
+  /// Worked muscle names — the slot renders a muscle-activation figure from these as a carousel page
+  /// (the free-layer media baseline) alongside the photo.
   final List<String> primary;
   final List<String> secondary;
+
+  /// Specific (fine) muscle slugs from the catalog — drive the activation figure accurately.
+  final List<String> detailedPrimary;
+  final List<String> detailedSecondary;
+
+  @override
+  State<_MediaSlot> createState() => _MediaSlotState();
+}
+
+class _MediaSlotState extends State<_MediaSlot> {
+  final _controller = PageController();
+  int _page = 0;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final gb = context.gb;
+    // The catalog seeds ImageUrl as an EMPTY string (not null), so guard on blank too — otherwise a loaded
+    // exercise (imageUrl == "") falls into Image.network("") and the muscle map flashes then gets replaced.
+    final hasImage =
+        widget.imageUrl != null && widget.imageUrl!.trim().isNotEmpty;
+    final hasMap = muscleMapHasContent(
+      widget.primary,
+      widget.secondary,
+      detailedPrimary: widget.detailedPrimary,
+      detailedSecondary: widget.detailedSecondary,
+    );
+
+    // Carousel pages, in order: photo first, muscle-activation map second.
+    final pages = <Widget>[
+      if (hasImage)
+        Image.network(widget.imageUrl!,
+            fit: BoxFit.cover, errorBuilder: (_, __, ___) => _placeholder(gb)),
+      if (hasMap)
+        ColoredBox(
+          color: gb.grey0,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            child: MuscleMapFigure(
+              exerciseName: widget.exerciseName,
+              primary: widget.primary,
+              secondary: widget.secondary,
+              detailedPrimary: widget.detailedPrimary,
+              detailedSecondary: widget.detailedSecondary,
+            ),
+          ),
+        ),
+    ];
+    if (pages.isEmpty) pages.add(_placeholder(gb));
+
+    final activePage = _page.clamp(0, pages.length - 1);
+    final photoActive = hasImage && activePage == 0;
+
     return AspectRatio(
       aspectRatio: 16 / 9,
       child: ClipRRect(
@@ -2801,21 +2863,14 @@ class _MediaSlot extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            if (imageUrl != null)
-              Image.network(imageUrl!,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _placeholder(gb))
-            else if (muscleMapHasContent(primary, secondary))
-              ColoredBox(
-                color: gb.grey0,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                  child:
-                      MuscleMapFigure(primary: primary, secondary: secondary),
-                ),
-              )
+            if (pages.length == 1)
+              pages.first
             else
-              _placeholder(gb),
+              PageView(
+                controller: _controller,
+                onPageChanged: (i) => setState(() => _page = i),
+                children: pages,
+              ),
             // Border overlay (over the image too).
             DecoratedBox(
               decoration: BoxDecoration(
@@ -2823,22 +2878,30 @@ class _MediaSlot extends StatelessWidget {
                 border: Border.all(color: gb.borderCard),
               ),
             ),
-            // Equipment pinned to the bottom-left corner, the demo chip to the bottom-right — two
-            // separate Positioned anchors so the demo loop always sits flush in the right corner
-            // (a Row + Spacer left it floating short of the edge).
-            if (equipment.isNotEmpty)
+            // Equipment pinned to the bottom-left corner.
+            if (widget.equipment.isNotEmpty)
               Positioned(
                 left: 10,
                 bottom: 10,
-                child: _MediaChip(icon: Icons.fitness_center, label: equipment),
+                child: _MediaChip(
+                    icon: Icons.fitness_center, label: widget.equipment),
               ),
-            // The "Demo loop" affordance only makes sense over real footage — hidden when the slot
-            // shows the muscle-activation figure (there is no demo media in the free layer).
-            if (imageUrl != null)
+            // The "Demo loop" affordance only makes sense over real footage — shown only while the
+            // photo page is active (there is no demo media in the free layer).
+            if (photoActive)
               const Positioned(
                 right: 10,
                 bottom: 10,
                 child: _MediaChip(icon: Icons.play_arrow, label: 'Demo loop'),
+              ),
+            // Swipe affordance — page dots in a translucent pill so they read over both the photo and
+            // the light-grey map background.
+            if (pages.length > 1)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 10,
+                child: _CarouselDots(count: pages.length, active: activePage),
               ),
           ],
         ),
@@ -2852,6 +2915,45 @@ class _MediaSlot extends StatelessWidget {
           child: Icon(Icons.fitness_center, size: 40, color: gb.grey400),
         ),
       );
+}
+
+/// Page-indicator dots for the [_MediaSlot] carousel — wrapped in a translucent dark pill so the white
+/// dots stay legible over both the photo and the light-grey muscle-map page.
+class _CarouselDots extends StatelessWidget {
+  const _CarouselDots({required this.count, required this.active});
+  final int count;
+  final int active;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          color: AppPalette.grey900.withValues(alpha: 0.45),
+          borderRadius: BorderRadius.circular(99),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < count; i++)
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                margin: EdgeInsets.only(right: i == count - 1 ? 0 : 5),
+                width: i == active ? 14 : 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: i == active
+                      ? Colors.white
+                      : Colors.white.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// Overlaid translucent chip on the media slot (equipment / demo).

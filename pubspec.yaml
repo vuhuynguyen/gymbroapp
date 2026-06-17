@@ -40,6 +40,7 @@ dependencies:
 
   # Local meal reminders: schedule OS notifications at the day's planned meal times (no server needed).
   flutter_local_notifications: ^19.0.0
+  flutter_svg: ^2.3.0
 
 dev_dependencies:
   flutter_test:
