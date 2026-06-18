@@ -13,6 +13,46 @@ import '../log/log_providers.dart';
 import 'live_session_screen.dart' show GuideButton;
 import 'start_actions.dart';
 
+/// Session muscle heat-map data — the union of every exercise's *detailed* (fine) worked muscles across the
+/// session, primary winning over secondary. Keyed by the session's distinct exercise ids (sorted, comma-
+/// joined) so it caches per session. Best-effort: a detail that fails to load is skipped, so the map only
+/// ever lights muscles we can resolve — never fabricated. Detailed slugs live on the detail endpoint (not
+/// the summary catalog), so this fans out one `getById` per distinct exercise, lazily on sheet-open.
+final _sessionMuscleMapProvider = FutureProvider.family<
+    ({List<String> primary, List<String> secondary}), String>((ref, idsKey) async {
+  final ids = idsKey.split(',').where((s) => s.isNotEmpty).toList();
+  if (ids.isEmpty) {
+    return (primary: const <String>[], secondary: const <String>[]);
+  }
+  final repo = ref.read(exerciseRepositoryProvider);
+  final details = await Future.wait(ids.map((id) async {
+    try {
+      return await repo.getById(id);
+    } catch (_) {
+      return null;
+    }
+  }));
+  final primary = <String>{};
+  final secondary = <String>{};
+  for (final d in details) {
+    if (d == null) continue;
+    primary.addAll(d.detailedPrimaryMuscles);
+    secondary.addAll(d.detailedSecondaryMuscles);
+  }
+  secondary.removeAll(primary); // a muscle that's a primary mover in any lift shows as primary
+  return (primary: primary.toList(), secondary: secondary.toList());
+});
+
+/// One exercise's full detail (for its own muscle map), best-effort + cached per id.
+final _exerciseDetailProvider =
+    FutureProvider.family<ExerciseDetail?, String>((ref, id) async {
+  try {
+    return await ref.read(exerciseRepositoryProvider).getById(id);
+  } catch (_) {
+    return null;
+  }
+});
+
 /// Post-session summary: duration, volume, sets, RPE, PRs + per-exercise set breakdown. Reached from
 /// a history row or straight after finishing (`fromFinish`). Volume is kg (the stored unit); RPE is
 /// the stored 1-10 integer. The server applies plan visibility, so we render the payload as-is.
@@ -173,6 +213,10 @@ class _Body extends ConsumerWidget {
             musclesOf,
             (e) => e.exerciseName ?? catalog?[e.exerciseId]?.name ?? 'Exercise',
           );
+    // Distinct exercise ids (sorted) key the session heat-map fetch in the (i) detail sheet.
+    final muscleMapKey =
+        (d.exercises.map((e) => e.exerciseId).toSet().toList()..sort())
+            .join(',');
     // Progress vs the trainee's previous session (the backend ships per-exercise lastPerformed).
     final progress = cardio ? null : sessionProgress(d.exercises);
 
@@ -312,9 +356,28 @@ class _Body extends ConsumerWidget {
         // Muscles trained — working sets per muscle group, split primary vs secondary (lifting only).
         if (byMuscle.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.lg),
-          GbSectionTitle('Muscles trained', count: byMuscle.length),
+          Row(
+            children: [
+              Expanded(
+                  child: GbSectionTitle('Muscles trained',
+                      count: byMuscle.length)),
+              // (i) → the full breakdown sheet; the overview stays just the bars.
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () =>
+                    _showMuscleDetail(
+                        context, byMuscle, muscleBreakdown, muscleMapKey),
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child:
+                      Icon(Icons.info_outline, size: 18, color: gb.grey400),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: AppSpacing.sm),
-          _MuscleBars(byMuscle: byMuscle, breakdown: muscleBreakdown),
+          _MuscleBars(
+              byMuscle: byMuscle, breakdown: muscleBreakdown, compact: true),
         ],
 
         if (d.notes != null && d.notes!.isNotEmpty) ...[
@@ -562,11 +625,15 @@ class _ProgressVsLast extends StatelessWidget {
 /// (assisting) involvement. Scaled to the busiest group's total. Tap a row to reveal the exact
 /// primary/secondary split.
 class _MuscleBars extends StatefulWidget {
-  const _MuscleBars({required this.byMuscle, required this.breakdown});
+  const _MuscleBars(
+      {required this.byMuscle, required this.breakdown, this.compact = false});
   final Map<String, MuscleInvolvement> byMuscle;
 
   /// Per-group contributing exercises (working sets + primary/secondary role) — shown when expanded.
   final Map<String, List<MuscleExerciseContribution>> breakdown;
+
+  /// Overview = bars only (no tap/caret/breakdown). The (i) detail sheet (false) keeps tap-to-expand.
+  final bool compact;
 
   @override
   State<_MuscleBars> createState() => _MuscleBarsState();
@@ -574,29 +641,83 @@ class _MuscleBars extends StatefulWidget {
 
 class _MuscleBarsState extends State<_MuscleBars> {
   final _expanded = <String>{};
+  // The (i) detail sheet (compact=false) opens with only the FIRST (busiest) group expanded — the rest stay
+  // collapsed so the sheet isn't a wall of rows. Done once, then the user controls it. The overview
+  // (compact=true) stays fully collapsed.
+  bool _initialized = false;
 
   @override
   Widget build(BuildContext context) {
     final gb = context.gb;
-    final byMuscle = widget.byMuscle;
-    final maxV =
-        byMuscle.values.fold<int>(1, (a, b) => b.total > a ? b.total : a);
+    // The chart counts EXERCISES per muscle group — distinct lifts where the group was a primary mover
+    // vs a secondary (assisting) one — not sets. Derived from the breakdown (deduped by exercise, so a
+    // lift that hits a group both ways counts once, as primary). Sets stay visible as a muted number.
+    final rows = <({
+      String group,
+      List<({String exerciseId, String name, int sets, bool isPrimary})> contribs,
+      int primaryEx,
+      int secondaryEx,
+      int sets,
+    })>[];
+    for (final e in widget.byMuscle.entries) {
+      final seen =
+          <String, ({String exerciseId, String name, int sets, bool isPrimary})>{};
+      for (final c in (widget.breakdown[e.key] ??
+          const <MuscleExerciseContribution>[])) {
+        final prev = seen[c.exerciseId];
+        seen[c.exerciseId] = (
+          exerciseId: c.exerciseId,
+          name: c.name,
+          sets: c.sets,
+          isPrimary: (prev?.isPrimary ?? false) || c.isPrimary,
+        );
+      }
+      final contribs = seen.values.toList()
+        ..sort((a, b) {
+          if (a.isPrimary != b.isPrimary) return a.isPrimary ? -1 : 1;
+          return b.sets.compareTo(a.sets);
+        });
+      rows.add((
+        group: e.key,
+        contribs: contribs,
+        primaryEx: contribs.where((c) => c.isPrimary).length,
+        secondaryEx: contribs.where((c) => !c.isPrimary).length,
+        sets: e.value.total,
+      ));
+    }
+    // Order by exercise coverage (what the bars now show); sets break ties to stay stable.
+    rows.sort((a, b) {
+      final byEx =
+          (b.primaryEx + b.secondaryEx).compareTo(a.primaryEx + a.secondaryEx);
+      return byEx != 0 ? byEx : b.sets.compareTo(a.sets);
+    });
+    final maxEx = rows.fold<int>(1, (a, r) {
+      final n = r.primaryEx + r.secondaryEx;
+      return n > a ? n : a;
+    });
+    // First open only the busiest group (the top row); the rest stay collapsed until tapped.
+    if (!_initialized) {
+      _initialized = true;
+      if (!widget.compact && rows.isNotEmpty) _expanded.add(rows.first.group);
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (final e in byMuscle.entries) ...[
+        for (final r in rows) ...[
           InkWell(
             borderRadius: BorderRadius.circular(AppRadius.sm),
-            onTap: () => setState(() => _expanded.contains(e.key)
-                ? _expanded.remove(e.key)
-                : _expanded.add(e.key)),
+            onTap: widget.compact
+                ? null
+                : () => setState(() => _expanded.contains(r.group)
+                    ? _expanded.remove(r.group)
+                    : _expanded.add(r.group)),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: Row(
                 children: [
                   SizedBox(
                     width: 84,
-                    child: Text(e.key,
+                    child: Text(r.group,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
@@ -614,19 +735,19 @@ class _MuscleBarsState extends State<_MuscleBars> {
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            if (e.value.primary > 0)
+                            if (r.primaryEx > 0)
                               Expanded(
-                                  flex: e.value.primary,
+                                  flex: r.primaryEx,
                                   child: ColoredBox(color: gb.primary600)),
-                            if (e.value.secondary > 0)
+                            if (r.secondaryEx > 0)
                               Expanded(
-                                  flex: e.value.secondary,
+                                  flex: r.secondaryEx,
                                   child: ColoredBox(
                                       color: gb.primary600
                                           .withValues(alpha: 0.30))),
-                            if (maxV - e.value.total > 0)
+                            if (maxEx - (r.primaryEx + r.secondaryEx) > 0)
                               Expanded(
-                                  flex: maxV - e.value.total,
+                                  flex: maxEx - (r.primaryEx + r.secondaryEx),
                                   child: ColoredBox(color: gb.grey25)),
                           ],
                         ),
@@ -634,27 +755,38 @@ class _MuscleBarsState extends State<_MuscleBars> {
                     ),
                   ),
                   const SizedBox(width: AppSpacing.xs),
+                  // Exercise count (what the bar shows) with the set total kept beside it, muted.
                   SizedBox(
-                    width: 30,
-                    child: Text('${e.value.total}',
-                        textAlign: TextAlign.end,
-                        style: AppText.mono(const TextStyle(
-                                fontSize: 13, fontWeight: FontWeight.w700))
-                            .copyWith(color: gb.grey700)),
+                    width: 46,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('${r.primaryEx + r.secondaryEx}',
+                            style: AppText.mono(const TextStyle(
+                                    fontSize: 13, fontWeight: FontWeight.w700))
+                                .copyWith(color: gb.grey700)),
+                        Text('${r.sets} ${r.sets == 1 ? 'set' : 'sets'}',
+                            maxLines: 1,
+                            overflow: TextOverflow.clip,
+                            style: TextStyle(fontSize: 10, color: gb.grey400)),
+                      ],
+                    ),
                   ),
-                  // A quiet caret hinting the row expands to the split.
-                  Icon(
-                      _expanded.contains(e.key)
-                          ? Icons.expand_less
-                          : Icons.expand_more,
-                      size: 16,
-                      color: gb.grey400),
+                  // A quiet caret hinting the row expands to the split (overview hides it).
+                  if (!widget.compact)
+                    Icon(
+                        _expanded.contains(r.group)
+                            ? Icons.expand_less
+                            : Icons.expand_more,
+                        size: 16,
+                        color: gb.grey400),
                 ],
               ),
             ),
           ),
           // Tapped → the primary/secondary split AND which exercises drove this muscle's sets.
-          if (_expanded.contains(e.key))
+          if (!widget.compact && _expanded.contains(r.group))
             Padding(
               padding: const EdgeInsets.only(left: 84, bottom: 8),
               child: Column(
@@ -664,46 +796,54 @@ class _MuscleBarsState extends State<_MuscleBars> {
                     children: [
                       _LegendDot(
                           color: gb.primary600,
-                          label: '${e.value.primary} primary'),
-                      if (e.value.secondary > 0) ...[
+                          label: '${r.primaryEx} primary'),
+                      if (r.secondaryEx > 0) ...[
                         const SizedBox(width: AppSpacing.md),
                         _LegendDot(
                             color: gb.primary600.withValues(alpha: 0.30),
-                            label: '${e.value.secondary} secondary'),
+                            label: '${r.secondaryEx} secondary'),
                       ],
                     ],
                   ),
                   // The contributing exercises: a primary/secondary dot, the name, and its working sets.
-                  for (final c in (widget.breakdown[e.key] ??
-                      const <MuscleExerciseContribution>[]))
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: c.isPrimary
-                                  ? gb.primary600
-                                  : gb.primary600.withValues(alpha: 0.30),
-                              borderRadius: BorderRadius.circular(2.5),
+                  for (final c in r.contribs)
+                    // Tap a contributing lift to see ITS own muscle map (just that exercise).
+                    InkWell(
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
+                      onTap: () =>
+                          _showExerciseMap(context, c.exerciseId, c.name),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 5),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: c.isPrimary
+                                    ? gb.primary600
+                                    : gb.primary600.withValues(alpha: 0.30),
+                                borderRadius: BorderRadius.circular(2.5),
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(c.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                    fontSize: 12.5, color: gb.grey700)),
-                          ),
-                          const SizedBox(width: 8),
-                          Text('${c.sets} ${c.sets == 1 ? 'set' : 'sets'}',
-                              style:
-                                  AppText.mono(const TextStyle(fontSize: 11.5))
-                                      .copyWith(color: gb.grey500)),
-                        ],
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(c.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                      fontSize: 12.5, color: gb.grey700)),
+                            ),
+                            const SizedBox(width: 8),
+                            Text('${c.sets} ${c.sets == 1 ? 'set' : 'sets'}',
+                                style: AppText.mono(
+                                        const TextStyle(fontSize: 11.5))
+                                    .copyWith(color: gb.grey500)),
+                            const SizedBox(width: 3),
+                            Icon(Icons.chevron_right,
+                                size: 15, color: gb.grey400),
+                          ],
+                        ),
                       ),
                     ),
                 ],
@@ -724,6 +864,328 @@ class _MuscleBarsState extends State<_MuscleBars> {
       ],
     );
   }
+}
+
+/// The full Muscles-trained breakdown in a bottom sheet (opened from the overview's (i)) — the same
+/// two-tone bars, but tap a group to reveal its primary/secondary split and the exercises behind it.
+void _showMuscleDetail(
+  BuildContext context,
+  Map<String, MuscleInvolvement> byMuscle,
+  Map<String, List<MuscleExerciseContribution>> breakdown,
+  String muscleMapKey,
+) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: context.gb.card,
+    shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg))),
+    builder: (_) => DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.72,
+      maxChildSize: 0.94,
+      builder: (ctx, scroll) => ListView(
+        controller: scroll,
+        padding: const EdgeInsets.fromLTRB(
+            AppSpacing.md, AppSpacing.md, AppSpacing.md, AppSpacing.xl),
+        children: [
+          const GbSheetHeader(
+            title: 'Muscles trained',
+            subtitle:
+                'Exercises per muscle — tap a group for the lifts and sets behind it.',
+          ),
+          const SizedBox(height: AppSpacing.md),
+          // Whole-session body heat-map with per-group on/off toggles (filters which muscles light up).
+          _SessionMuscleMap(
+              muscleMapKey: muscleMapKey, groups: byMuscle.keys.toList()),
+          _MuscleBars(byMuscle: byMuscle, breakdown: breakdown),
+        ],
+      ),
+    ),
+  );
+}
+
+/// The whole-session body heat-map plus per-muscle-group on/off chips. Every group starts on (the full
+/// session view); toggling a group off greys its muscles on the figure so you can isolate regions. The
+/// bars below stay complete — this only filters the picture.
+class _SessionMuscleMap extends ConsumerStatefulWidget {
+  const _SessionMuscleMap({required this.muscleMapKey, required this.groups});
+  final String muscleMapKey;
+  final List<String> groups;
+  @override
+  ConsumerState<_SessionMuscleMap> createState() => _SessionMuscleMapState();
+}
+
+class _SessionMuscleMapState extends ConsumerState<_SessionMuscleMap> {
+  late final Set<String> _enabled = {...widget.groups};
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return ref.watch(_sessionMuscleMapProvider(widget.muscleMapKey)).when(
+          loading: () => const Padding(
+            padding: EdgeInsets.only(bottom: AppSpacing.md),
+            child: SizedBox(
+                height: 180,
+                child: Center(child: CircularProgressIndicator(strokeWidth: 2))),
+          ),
+          error: (_, __) => const SizedBox.shrink(),
+          data: (m) {
+            // Nothing resolvable for the whole session → no map at all.
+            if (!muscleMapHasContent(const [], const [],
+                detailedPrimary: m.primary, detailedSecondary: m.secondary)) {
+              return const SizedBox.shrink();
+            }
+            // All groups on = the full view (no filtering). Otherwise keep only slugs whose canonical muscle
+            // belongs to an enabled group.
+            final allOn = _enabled.length == widget.groups.length;
+            final allowed = <String>{
+              for (final g in _enabled) ...groupFineMuscles(g)
+            };
+            bool keep(String s) {
+              final c = canonicalMuscle(s);
+              return c != null && allowed.contains(c);
+            }
+
+            final primary = allOn ? m.primary : m.primary.where(keep).toList();
+            final secondary =
+                allOn ? m.secondary : m.secondary.where(keep).toList();
+            final hasShown = muscleMapHasContent(const [], const [],
+                detailedPrimary: primary, detailedSecondary: secondary);
+            return Column(
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: gb.grey0,
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                  ),
+                  child: SizedBox(
+                    height: 200,
+                    child: hasShown
+                        ? MuscleMapFigure(
+                            exerciseName: '',
+                            primary: const [],
+                            secondary: const [],
+                            detailedPrimary: primary,
+                            detailedSecondary: secondary,
+                          )
+                        : Center(
+                            child: Text('No muscle group selected',
+                                style: TextStyle(
+                                    fontSize: 13, color: gb.grey500))),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                // Group on/off chips — tap to isolate which groups light the figure.
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    for (final g in widget.groups)
+                      _groupToggleChip(
+                        context,
+                        g,
+                        _enabled.contains(g),
+                        () => setState(() => _enabled.contains(g)
+                            ? _enabled.remove(g)
+                            : _enabled.add(g)),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.md),
+              ],
+            );
+          },
+        );
+  }
+}
+
+/// A single exercise's muscle map in a compact sheet — opened by tapping a lift inside the Muscles-trained
+/// breakdown. Reuses [MuscleMapFigure] with that exercise's own (detailed + coarse) muscles.
+void _showExerciseMap(BuildContext context, String exerciseId, String name) {
+  showDialog<void>(
+    context: context,
+    builder: (dctx) {
+      final gb = dctx.gb;
+      return Dialog(
+        backgroundColor: gb.card,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadius.lg)),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.md),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header: exercise name + a close affordance (the barrier also dismisses).
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(name,
+                            style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800,
+                                color: gb.ink)),
+                        const SizedBox(height: 1),
+                        Text('Muscles worked',
+                            style: TextStyle(fontSize: 13, color: gb.grey500)),
+                      ],
+                    ),
+                  ),
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => Navigator.of(dctx).pop(),
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: Icon(Icons.close, size: 20, color: gb.grey400),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Consumer(builder: (ctx, ref, _) {
+                return ref.watch(_exerciseDetailProvider(exerciseId)).when(
+                      loading: () => const SizedBox(
+                          height: 200,
+                          child: Center(
+                              child: CircularProgressIndicator(strokeWidth: 2))),
+                      error: (_, __) => const SizedBox.shrink(),
+                      data: (d) {
+                        if (d == null) return const SizedBox.shrink();
+                        final primary =
+                            d.primaryMuscles.map((m) => m.name).toList();
+                        final secondary =
+                            d.secondaryMuscles.map((m) => m.name).toList();
+                        if (!muscleMapHasContent(primary, secondary,
+                            detailedPrimary: d.detailedPrimaryMuscles,
+                            detailedSecondary: d.detailedSecondaryMuscles)) {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 24),
+                            child: Text('No muscle map for this exercise.',
+                                style: TextStyle(color: gb.grey500)),
+                          );
+                        }
+                        // Name the worked muscles as chips — detailed slugs when the catalog has them, else
+                        // the coarse groups. Main mover = solid-red dot, secondary = light-red (the figure's
+                        // palette).
+                        final primaryChips =
+                            d.detailedPrimaryMuscles.isNotEmpty
+                                ? d.detailedPrimaryMuscles
+                                : primary;
+                        final secondaryChips =
+                            d.detailedSecondaryMuscles.isNotEmpty
+                                ? d.detailedSecondaryMuscles
+                                : secondary;
+                        return Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              height: 220,
+                              child: MuscleMapFigure(
+                                exerciseName: d.name,
+                                primary: primary,
+                                secondary: secondary,
+                                detailedPrimary: d.detailedPrimaryMuscles,
+                                detailedSecondary: d.detailedSecondaryMuscles,
+                              ),
+                            ),
+                            if (primaryChips.isNotEmpty ||
+                                secondaryChips.isNotEmpty) ...[
+                              const SizedBox(height: AppSpacing.sm),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 6,
+                                alignment: WrapAlignment.center,
+                                children: [
+                                  for (final mu in primaryChips)
+                                    _muscleChip(ctx, _prettyMuscle(mu), true),
+                                  for (final mu in secondaryChips)
+                                    _muscleChip(ctx, _prettyMuscle(mu), false),
+                                ],
+                              ),
+                            ],
+                          ],
+                        );
+                      },
+                    );
+              }),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
+/// A muscle slug/name → a display label (e.g. 'upper-back' → 'Upper Back', 'forearm' → 'Forearm').
+String _prettyMuscle(String s) => s
+    .replaceAll(RegExp(r'[-_]'), ' ')
+    .split(' ')
+    .where((w) => w.isNotEmpty)
+    .map((w) => '${w[0].toUpperCase()}${w.substring(1)}')
+    .join(' ');
+
+/// A compact, tappable group on/off chip for the session heat-map — sizes to its label (unlike GbChip,
+/// which fills its row inside a Wrap), so several wrap neatly. Filled when on, muted-outline when off.
+Widget _groupToggleChip(
+    BuildContext context, String label, bool on, VoidCallback onTap) {
+  final gb = context.gb;
+  return GestureDetector(
+    onTap: onTap,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
+      decoration: BoxDecoration(
+        color: on ? gb.primary600 : gb.grey0,
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: on ? gb.primary600 : gb.borderCard),
+      ),
+      child: Text(label,
+          style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+              color: on ? Colors.white : gb.grey600)),
+    ),
+  );
+}
+
+/// A worked-muscle chip for the per-exercise map dialog — a solid-red dot for the main mover, light-red
+/// for a secondary one (matching the figure), with the muscle name.
+Widget _muscleChip(BuildContext context, String label, bool primary) {
+  final gb = context.gb;
+  const primaryDot = Color(0xFFDC2626);
+  const secondaryDot = Color(0xFFF87171);
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+    decoration: BoxDecoration(
+      color: gb.grey0,
+      borderRadius: BorderRadius.circular(99),
+      border: Border.all(color: gb.borderCard),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 7,
+          height: 7,
+          decoration: BoxDecoration(
+            color: primary ? primaryDot : secondaryDot,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(label,
+            style: TextStyle(
+                fontSize: 12, fontWeight: FontWeight.w600, color: gb.grey700)),
+      ],
+    ),
+  );
 }
 
 class _LegendDot extends StatelessWidget {

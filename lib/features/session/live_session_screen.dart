@@ -29,6 +29,7 @@ const _setTypeCycle = [
   PerformedSetType.warmup,
   PerformedSetType.working,
   PerformedSetType.drop,
+  PerformedSetType.cluster,
   PerformedSetType.amrap,
 ];
 
@@ -779,8 +780,9 @@ class _PagerChip extends StatelessWidget {
       border = gb.borderCard;
       fg = gb.grey500;
     }
-    final marker =
-        skipped ? Icons.remove : (done && !current ? Icons.check : null);
+    // Done exercises read as complete from the green fill alone — no check glyph; only a skip shows a
+    // marker (the dash), so a plain green number = done.
+    final marker = skipped ? Icons.remove : null;
     final label = Text('$number',
         style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: fg));
     // A number on its own is a circle (design step indicator); a marker + number stays a pill.
@@ -1161,12 +1163,14 @@ class _LoggedSetRow extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           child: Row(
             children: [
-              // Done marker: a plain green dot (no check glyph) — the green fill alone reads as "logged".
+              // Done marker: a green check inside the dot — confirms the set is logged.
               Container(
                 width: 26,
                 height: 26,
+                alignment: Alignment.center,
                 decoration:
                     BoxDecoration(color: gb.success0, shape: BoxShape.circle),
+                child: Icon(Icons.check, size: 15, color: gb.success),
               ),
               const SizedBox(width: 12),
               SizedBox(
@@ -1360,6 +1364,7 @@ class _EditSetSheetState extends State<_EditSetSheet> {
                 PerformedSetType.warmup,
                 PerformedSetType.working,
                 PerformedSetType.drop,
+                PerformedSetType.cluster,
                 PerformedSetType.amrap,
                 PerformedSetType.failure,
               ])
@@ -1696,6 +1701,8 @@ class _EntryRow extends StatelessWidget {
           'Lighter prep — not counted as working volume.',
         PerformedSetType.working => 'Counts toward your plan and e1RM.',
         PerformedSetType.drop => 'Reduced weight right after a working set.',
+        PerformedSetType.cluster =>
+          'Short intra-set rest between mini-sets (weight may change) — reps cluster under one set.',
         PerformedSetType.amrap => 'As many reps as possible.',
         PerformedSetType.failure => 'Taken to muscular failure.',
       };
@@ -2030,7 +2037,50 @@ class _ActionBar extends StatelessWidget {
   }
 }
 
-/// Exercise-catalog picker (substitute / add) — search + muscle filter over the global catalog.
+// Catalog filter taxonomies. Category = the API's 13 fine library codes (a superset of the 6 muscle groups);
+// equipment = the Equipment enum. Order is the chip display order; values absent from the catalog are skipped.
+const List<String> _kCategoryOrder = [
+  'chest', 'back', 'shoulders', 'biceps', 'triceps', 'quadriceps', 'hamstrings',
+  'glutes', 'calves', 'abs', 'cardio', 'full-body', 'mobility',
+];
+const Map<String, String> _kCategoryLabels = {
+  'chest': 'Chest', 'back': 'Back', 'shoulders': 'Shoulders', 'biceps': 'Biceps',
+  'triceps': 'Triceps', 'quadriceps': 'Quads', 'hamstrings': 'Hamstrings',
+  'glutes': 'Glutes', 'calves': 'Calves', 'abs': 'Abs', 'cardio': 'Cardio',
+  'full-body': 'Full Body', 'mobility': 'Mobility',
+};
+const List<String> _kEquipmentOrder = [
+  'Barbell', 'Dumbbell', 'Cable', 'Machine', 'Bodyweight', 'ResistanceBand',
+];
+
+String _categoryLabel(String c) =>
+    c == 'All' ? 'All' : (_kCategoryLabels[c] ?? _titleCase(c));
+String _equipmentLabel(String q) => q == 'All'
+    ? 'All'
+    : (q == 'ResistanceBand' ? 'Band' : q);
+String _titleCase(String s) => s.isEmpty
+    ? s
+    : s[0].toUpperCase() + s.substring(1).replaceAll('-', ' ');
+
+/// Exercise-catalog picker (substitute / add) — search + category & equipment filters over the global catalog.
+/// Token-based exercise search: every word in the query must appear somewhere in the exercise's name,
+/// equipment, category, or muscle group — order-independent and punctuation-insensitive (so "dumbbell rear
+/// delt fly" matches "Rear-Delt Dumbbell Fly", and "machine leg raise" matches a Machine-equipment "… Leg
+/// Raise"). Empty query matches everything.
+bool _matchesExerciseQuery(ExerciseSummary e, String query) {
+  final q = query.trim();
+  if (q.isEmpty) return true;
+  final norm = RegExp(r'[^a-z0-9]+');
+  final hay = '${e.name} ${e.equipment} ${e.category} ${e.muscleGroup}'
+      .toLowerCase()
+      .replaceAll(norm, ' ');
+  return q
+      .toLowerCase()
+      .split(norm)
+      .where((t) => t.isNotEmpty)
+      .every((t) => hay.contains(t));
+}
+
 class _CatalogSheet extends ConsumerStatefulWidget {
   const _CatalogSheet({required this.title, required this.onPick});
   final String title;
@@ -2044,7 +2094,8 @@ class _CatalogSheetState extends ConsumerState<_CatalogSheet> {
   late final Future<List<ExerciseSummary>> _future;
   final TextEditingController _search = TextEditingController();
   String _query = '';
-  String _muscle = 'All';
+  String _category = 'All';
+  String _equipment = 'All';
 
   @override
   void initState() {
@@ -2056,6 +2107,105 @@ class _CatalogSheetState extends ConsumerState<_CatalogSheet> {
   void dispose() {
     _search.dispose();
     super.dispose();
+  }
+
+  /// Filter bar: a horizontally scrolling row of category chips (primary axis) on the left, then a pinned,
+  /// compact Equipment dropdown (secondary axis) on the right. One compact row instead of two chip rows.
+  Widget _filterBar(List<String> categories, List<String> equipments) {
+    final gb = context.gb;
+    return SizedBox(
+      height: 50,
+      child: Row(
+        children: [
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+              children: [
+                for (final c in categories)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: GbChip(
+                        label: _categoryLabel(c),
+                        selected: _category == c,
+                        onTap: () => setState(() => _category = c)),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.xs),
+          Container(width: 1, height: 22, color: gb.borderCard),
+          const SizedBox(width: AppSpacing.sm),
+          _equipmentDropdown(equipments),
+          const SizedBox(width: AppSpacing.md),
+        ],
+      ),
+    );
+  }
+
+  /// Compact equipment filter — a pill that opens a dropdown menu of the equipment present. Shows just a
+  /// filter glyph + caret until a value is picked, then turns into a filled "Cable ▾"-style active chip.
+  Widget _equipmentDropdown(List<String> equipments) {
+    final gb = context.gb;
+    final active = _equipment != 'All';
+    return PopupMenuButton<String>(
+      initialValue: _equipment,
+      position: PopupMenuPosition.under,
+      onSelected: (q) => setState(() => _equipment = q),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.md)),
+      itemBuilder: (_) => [
+        for (final q in equipments)
+          PopupMenuItem<String>(
+            value: q,
+            height: 42,
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 18,
+                  child: q == _equipment
+                      ? Icon(Icons.check, size: 16, color: gb.primary600)
+                      : null,
+                ),
+                Text(_equipmentLabel(q),
+                    style: TextStyle(
+                        fontWeight: q == _equipment
+                            ? FontWeight.w700
+                            : FontWeight.w500)),
+              ],
+            ),
+          ),
+      ],
+      child: Container(
+        padding:
+            EdgeInsets.symmetric(horizontal: active ? 9 : 7, vertical: 7),
+        decoration: BoxDecoration(
+          color: active ? gb.primary600 : gb.card,
+          borderRadius: BorderRadius.circular(99),
+          border:
+              Border.all(color: active ? gb.primary600 : gb.borderCard),
+        ),
+        // Compact: just a filter glyph + caret until a value is picked (then it shows the value).
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.tune,
+                size: 14, color: active ? Colors.white : gb.grey500),
+            if (active) ...[
+              const SizedBox(width: 4),
+              Text(_equipmentLabel(_equipment),
+                  style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white)),
+            ],
+            Icon(Icons.arrow_drop_down,
+                size: 16, color: active ? Colors.white : gb.grey500),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -2077,16 +2227,36 @@ class _CatalogSheetState extends ConsumerState<_CatalogSheet> {
             if (snap.hasError)
               return ErrorRetry(message: snap.error.toString());
             final all = snap.data ?? const [];
-            final muscles = <String>{
-              'All',
+            // Two filter axes: library CATEGORY (fine — Glutes/Biceps/Cardio/…, beyond the 6 coarse muscle
+            // groups) and EQUIPMENT (Barbell/Dumbbell/Cable/Machine/…). Each chip row lists only the values
+            // actually present, in a sensible order. Falls back gracefully if the API predates `category`.
+            final cats = <String>{
               for (final e in all)
-                if (e.muscleGroup.isNotEmpty) e.muscleGroup
+                if (e.category.isNotEmpty) e.category
             };
+            final categories = <String>[
+              'All',
+              for (final c in _kCategoryOrder)
+                if (cats.contains(c)) c,
+              for (final c in cats)
+                if (!_kCategoryOrder.contains(c)) c,
+            ];
+            final eqs = <String>{
+              for (final e in all)
+                if (e.equipment.isNotEmpty) e.equipment
+            };
+            final equipments = <String>[
+              'All',
+              for (final q in _kEquipmentOrder)
+                if (eqs.contains(q)) q,
+              for (final q in eqs)
+                if (!_kEquipmentOrder.contains(q)) q,
+            ];
             final filtered = all.where((e) {
-              final byMuscle = _muscle == 'All' || e.muscleGroup == _muscle;
-              final byQuery = _query.isEmpty ||
-                  e.name.toLowerCase().contains(_query.toLowerCase());
-              return byMuscle && byQuery;
+              final byCat = _category == 'All' || e.category == _category;
+              final byEq = _equipment == 'All' || e.equipment == _equipment;
+              final byQuery = _matchesExerciseQuery(e, _query);
+              return byCat && byEq && byQuery;
             }).toList();
 
             return Column(
@@ -2113,24 +2283,7 @@ class _CatalogSheetState extends ConsumerState<_CatalogSheet> {
                     onChanged: (v) => setState(() => _query = v),
                   ),
                 ),
-                SizedBox(
-                  height: 52,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
-                    children: [
-                      for (final m in muscles)
-                        Padding(
-                          padding: const EdgeInsets.only(right: 6),
-                          child: GbChip(
-                              label: m,
-                              selected: _muscle == m,
-                              onTap: () => setState(() => _muscle = m)),
-                        ),
-                    ],
-                  ),
-                ),
+                _filterBar(categories, equipments),
                 Expanded(
                   child: ListView.separated(
                     controller: scroll,
@@ -2672,6 +2825,8 @@ class _GuideSheetState extends State<_GuideSheet> {
                       ? guide!.primary
                       : fallbackPrimary,
                   secondary: guide?.secondary ?? const [],
+                  detailedPrimary: guide?.detailedPrimary ?? const [],
+                  detailedSecondary: guide?.detailedSecondary ?? const [],
                 ),
               const SizedBox(height: 2),
               // ── Body ──
@@ -2817,6 +2972,12 @@ class _MediaSlotState extends State<_MediaSlot> {
     super.dispose();
   }
 
+  void _go(int target, int count) {
+    if (!_controller.hasClients) return;
+    _controller.animateToPage(target.clamp(0, count - 1),
+        duration: const Duration(milliseconds: 280), curve: Curves.easeOutCubic);
+  }
+
   @override
   Widget build(BuildContext context) {
     final gb = context.gb;
@@ -2854,7 +3015,6 @@ class _MediaSlotState extends State<_MediaSlot> {
     if (pages.isEmpty) pages.add(_placeholder(gb));
 
     final activePage = _page.clamp(0, pages.length - 1);
-    final photoActive = hasImage && activePage == 0;
 
     return AspectRatio(
       aspectRatio: 16 / 9,
@@ -2866,10 +3026,26 @@ class _MediaSlotState extends State<_MediaSlot> {
             if (pages.length == 1)
               pages.first
             else
-              PageView(
-                controller: _controller,
-                onPageChanged: (i) => setState(() => _page = i),
-                children: pages,
+              // Drive paging ourselves so the swipe is reliable: the PageView's own horizontal drag loses
+              // to the nested draggable bottom sheet, so we disable it (NeverScrollable) and page on the
+              // GestureDetector's horizontal-drag (swipe) and tap (toggle) instead.
+              GestureDetector(
+                onTap: () =>
+                    _go((activePage + 1) % pages.length, pages.length),
+                onHorizontalDragEnd: (d) {
+                  final v = d.primaryVelocity ?? 0;
+                  if (v < -80) {
+                    _go(activePage + 1, pages.length); // swipe left → next
+                  } else if (v > 80) {
+                    _go(activePage - 1, pages.length); // swipe right → prev
+                  }
+                },
+                child: PageView(
+                  controller: _controller,
+                  physics: const NeverScrollableScrollPhysics(),
+                  onPageChanged: (i) => setState(() => _page = i),
+                  children: pages,
+                ),
               ),
             // Border overlay (over the image too).
             DecoratedBox(
@@ -2886,22 +3062,44 @@ class _MediaSlotState extends State<_MediaSlot> {
                 child: _MediaChip(
                     icon: Icons.fitness_center, label: widget.equipment),
               ),
-            // The "Demo loop" affordance only makes sense over real footage — shown only while the
-            // photo page is active (there is no demo media in the free layer).
-            if (photoActive)
-              const Positioned(
-                right: 10,
-                bottom: 10,
-                child: _MediaChip(icon: Icons.play_arrow, label: 'Demo loop'),
-              ),
-            // Swipe affordance — page dots in a translucent pill so they read over both the photo and
-            // the light-grey map background.
+            // Explicit Photo ⇄ Map toggle (bottom-right) — the reliable way to switch; swipe is easy to miss
+            // inside the draggable sheet. The label/icon show the view you'll switch TO.
             if (pages.length > 1)
               Positioned(
-                left: 0,
-                right: 0,
                 bottom: 10,
-                child: _CarouselDots(count: pages.length, active: activePage),
+                right: 10,
+                child: GestureDetector(
+                  onTap: () =>
+                      _go((activePage + 1) % pages.length, pages.length),
+                  child: Container(
+                    height: 28,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    decoration: BoxDecoration(
+                      color: AppPalette.grey900.withValues(alpha: 0.62),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                            activePage == 0
+                                ? Icons.accessibility_new
+                                : Icons.image_outlined,
+                            size: 13,
+                            color: Colors.white),
+                        const SizedBox(width: 5),
+                        Text(activePage == 0 ? 'Muscle map' : 'Photo',
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700)),
+                        const SizedBox(width: 3),
+                        const Icon(Icons.swap_horiz,
+                            size: 13, color: Colors.white),
+                      ],
+                    ),
+                  ),
+                ),
               ),
           ],
         ),
@@ -2915,45 +3113,6 @@ class _MediaSlotState extends State<_MediaSlot> {
           child: Icon(Icons.fitness_center, size: 40, color: gb.grey400),
         ),
       );
-}
-
-/// Page-indicator dots for the [_MediaSlot] carousel — wrapped in a translucent dark pill so the white
-/// dots stay legible over both the photo and the light-grey muscle-map page.
-class _CarouselDots extends StatelessWidget {
-  const _CarouselDots({required this.count, required this.active});
-  final int count;
-  final int active;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-        decoration: BoxDecoration(
-          color: AppPalette.grey900.withValues(alpha: 0.45),
-          borderRadius: BorderRadius.circular(99),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (var i = 0; i < count; i++)
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                margin: EdgeInsets.only(right: i == count - 1 ? 0 : 5),
-                width: i == active ? 14 : 6,
-                height: 6,
-                decoration: BoxDecoration(
-                  color: i == active
-                      ? Colors.white
-                      : Colors.white.withValues(alpha: 0.55),
-                  borderRadius: BorderRadius.circular(99),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 /// Overlaid translucent chip on the media slot (equipment / demo).
@@ -2992,15 +3151,43 @@ class _MediaChip extends StatelessWidget {
 }
 
 /// "TARGETS" label + muscle pills (primary tinted, secondary neutral, each with a leading dot).
+// Fine muscle-slug → human label for the TARGETS pills (e.g. `biceps` → "Biceps", `gluteal` → "Glutes").
+const Map<String, String> _kMuscleLabels = {
+  'chest': 'Chest', 'obliques': 'Obliques', 'abs': 'Abs', 'biceps': 'Biceps',
+  'triceps': 'Triceps', 'forearm': 'Forearms', 'trapezius': 'Traps',
+  'deltoids': 'Delts', 'upper-back': 'Upper back', 'lower-back': 'Lower back',
+  'adductors': 'Adductors', 'quadriceps': 'Quads', 'tibialis': 'Shins',
+  'calves': 'Calves', 'hamstring': 'Hamstrings', 'gluteal': 'Glutes',
+};
+String _muscleLabel(String slug) => _kMuscleLabels[slug] ?? _titleCase(slug);
+
 class _TargetsRow extends StatelessWidget {
-  const _TargetsRow({required this.primary, required this.secondary});
+  const _TargetsRow({
+    required this.primary,
+    required this.secondary,
+    this.detailedPrimary = const [],
+    this.detailedSecondary = const [],
+  });
   final List<String> primary;
   final List<String> secondary;
+
+  /// Specific worked muscles — preferred over the coarse [primary]/[secondary] group names when present, so
+  /// the pills read "Biceps"/"Hamstrings" (what the map highlights) instead of "Arms"/"Legs".
+  final List<String> detailedPrimary;
+  final List<String> detailedSecondary;
 
   @override
   Widget build(BuildContext context) {
     final gb = context.gb;
-    if (primary.isEmpty && secondary.isEmpty) return const SizedBox.shrink();
+    final useDetailed =
+        detailedPrimary.isNotEmpty || detailedSecondary.isNotEmpty;
+    final primaryLabels =
+        useDetailed ? detailedPrimary.map(_muscleLabel).toList() : primary;
+    final secondaryLabels =
+        useDetailed ? detailedSecondary.map(_muscleLabel).toList() : secondary;
+    if (primaryLabels.isEmpty && secondaryLabels.isEmpty) {
+      return const SizedBox.shrink();
+    }
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
       child: Row(
@@ -3021,8 +3208,9 @@ class _TargetsRow extends StatelessWidget {
               spacing: 6,
               runSpacing: 6,
               children: [
-                for (final m in primary) _MusclePill(label: m, isPrimary: true),
-                for (final m in secondary)
+                for (final m in primaryLabels)
+                  _MusclePill(label: m, isPrimary: true),
+                for (final m in secondaryLabels)
                   _MusclePill(label: m, isPrimary: false),
               ],
             ),

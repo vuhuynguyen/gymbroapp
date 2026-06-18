@@ -2653,7 +2653,7 @@ class _CaloriesTrendCard extends StatelessWidget {
               days: recent,
               neutral: gb.progRing, // cool / under / no-target
               under: gb.progRing, // under plan → cool
-              over: gb.progWarn, // over plan → warm (attention, never red)
+              over: const Color(0xFFFB7185), // over plan → coral (warm attention, not yellow)
               target: gb.progInk3, // dashed "Plan" line
               track: gb.progLine,
             ),
@@ -2967,10 +2967,10 @@ class _CaloriesLogRow extends StatelessWidget {
                 fontWeight: FontWeight.w700,
                 letterSpacing: 0,
               )).copyWith(
-                // Warm when over, cool when under, muted when exactly on target — never red.
+                // Coral when over, cool when under, muted when exactly on target — never alarm-red.
                 color: delta == 0
                     ? gb.progInk4
-                    : (delta > 0 ? gb.progWarn : gb.progRing),
+                    : (delta > 0 ? const Color(0xFFBE3A5B) : gb.progRing),
               ),
             ),
           ],

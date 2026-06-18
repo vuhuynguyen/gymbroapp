@@ -424,67 +424,78 @@ class NutriAdherenceCard extends StatelessWidget {
 
     return GbCard(
       padding: const EdgeInsets.all(AppSpacing.heroPad),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          GbRing(
-            value: noPlan ? 0 : (allTotal == 0 ? 0 : allDone / allTotal),
-            size: 74,
-            stroke: 8,
-            gradient: const [AppPalette.primary200, AppPalette.primary700],
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(noPlan ? '$loggedCount' : '$pct%',
-                    style: const TextStyle(
-                            fontSize: 19,
-                            fontWeight: FontWeight.w800,
-                            height: 1)
-                        .tabular),
-                Text(noPlan ? 'logged' : '$allDone of $allTotal',
-                    style: TextStyle(
-                            fontSize: 10,
-                            color: gb.grey400,
-                            fontWeight: FontWeight.w700)
-                        .tabular),
-              ],
-            ),
-          ),
-          const SizedBox(width: AppSpacing.heroPad),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Eyebrow('Today’s plan'),
-                const SizedBox(height: 3),
-                Text(headline,
-                    style: TextStyle(
-                        fontSize: 14.5,
-                        fontWeight: FontWeight.w700,
-                        color: gb.ink,
-                        letterSpacing: -0.15)),
-                const SizedBox(height: AppSpacing.sm),
-                // All-source (plan + ad-hoc) macros, consolidated here so there's one nutrition summary:
-                // calories + protein on top, carbs + fat below. Calories show logged / target when a
-                // target exists, else just logged.
-                Row(
+          // ── Plan completion: ring + status headline ──
+          Row(
+            children: [
+              GbRing(
+                value: noPlan ? 0 : (allTotal == 0 ? 0 : allDone / allTotal),
+                size: 74,
+                stroke: 8,
+                gradient: const [AppPalette.primary200, AppPalette.primary700],
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    _stat(
-                        context,
-                        hasCalTarget
-                            ? '${log.consumedKcal} / ${log.targetKcal}'
-                            : '${log.consumedKcal}',
-                        'kcal'),
-                    const SizedBox(width: 20),
-                    _stat(context, '${log.loggedProtein.round()}', 'protein g'),
+                    Text(noPlan ? '$loggedCount' : '$pct%',
+                        style: const TextStyle(
+                                fontSize: 19,
+                                fontWeight: FontWeight.w800,
+                                height: 1)
+                            .tabular),
+                    Text(noPlan ? 'logged' : '$allDone of $allTotal',
+                        style: TextStyle(
+                                fontSize: 10,
+                                color: gb.grey400,
+                                fontWeight: FontWeight.w700)
+                            .tabular),
                   ],
                 ),
-                const SizedBox(height: AppSpacing.sm),
-                Row(
+              ),
+              const SizedBox(width: AppSpacing.heroPad),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _stat(context, '${log.loggedCarbs.round()}', 'carbs g'),
-                    const SizedBox(width: 20),
-                    _stat(context, '${log.loggedFat.round()}', 'fat g'),
+                    const Eyebrow('Today’s plan'),
+                    const SizedBox(height: 3),
+                    Text(headline,
+                        style: TextStyle(
+                            fontSize: 15.5,
+                            fontWeight: FontWeight.w700,
+                            color: gb.ink,
+                            letterSpacing: -0.15)),
                   ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          // ── One unified macro strip (all-source: plan + ad-hoc). Calories lead; protein/carbs/fat are
+          // equal peers in their own row, each cell divider-separated. Mirrors the Progress Today glance.
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: _macro(context, 'Calories', '${log.consumedKcal}',
+                      hasCalTarget ? '/ ${log.targetKcal} kcal' : 'kcal'),
+                ),
+                _divider(gb),
+                Expanded(
+                  child: _macro(
+                      context, 'Protein', '${log.loggedProtein.round()}', 'g'),
+                ),
+                _divider(gb),
+                Expanded(
+                  child: _macro(
+                      context, 'Carbs', '${log.loggedCarbs.round()}', 'g'),
+                ),
+                _divider(gb),
+                Expanded(
+                  child:
+                      _macro(context, 'Fat', '${log.loggedFat.round()}', 'g'),
                 ),
               ],
             ),
@@ -494,17 +505,36 @@ class NutriAdherenceCard extends StatelessWidget {
     );
   }
 
-  Widget _stat(BuildContext context, String value, String label) {
+  Widget _divider(GbColors gb) => Container(
+        width: 1,
+        margin: const EdgeInsets.symmetric(horizontal: AppSpacing.xs - 2),
+        color: gb.borderCard,
+      );
+
+  Widget _macro(BuildContext context, String label, String value, String sub) {
     final gb = context.gb;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Text(value,
-            style: TextStyle(
-                    fontSize: 17, fontWeight: FontWeight.w800, color: gb.ink)
-                .tabular),
-        const SizedBox(height: 1),
         Eyebrow(label),
+        const SizedBox(height: 4),
+        Text(value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w800,
+                    height: 1,
+                    letterSpacing: -0.3,
+                    color: gb.ink)
+                .tabular),
+        const SizedBox(height: 2),
+        Text(sub,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+                fontSize: 10, color: gb.grey400, fontWeight: FontWeight.w600)),
       ],
     );
   }
