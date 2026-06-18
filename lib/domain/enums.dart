@@ -174,7 +174,8 @@ enum PlanSetType implements WireEnum {
   warmup('warmup', 1),
   working('working', 2),
   drop('drop', 3),
-  amrap('amrap', 4);
+  amrap('amrap', 4),
+  cluster('cluster', 6);
 
   const PlanSetType(this.wire, this.value);
   @override
