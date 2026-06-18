@@ -24,8 +24,8 @@ void main() {
 
     testWidgets('GbGlassButton exposes its semanticLabel', (tester) async {
       await tester
-          .pumpWidget(host(GbGlassButton(icon: Icons.close, semanticLabel: 'Abandon workout', onTap: () {})));
-      expect(find.bySemanticsLabel('Abandon workout'), findsOneWidget);
+          .pumpWidget(host(GbGlassButton(icon: Icons.sports_score_rounded, semanticLabel: 'Finish or end workout', onTap: () {})));
+      expect(find.bySemanticsLabel('Finish or end workout'), findsOneWidget);
     });
   });
 

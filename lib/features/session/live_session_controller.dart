@@ -444,6 +444,28 @@ class LiveSessionController extends AutoDisposeNotifier<LiveSessionState> {
     });
   }
 
+  /// Toggle the superset link between [exerciseId] and the exercise directly before it (by order).
+  /// [link] true pairs them into a rotation (they share/start a group id); false leaves the superset.
+  /// Linking the first exercise is a no-op — there's nothing before it to pair with.
+  Future<void> setSupersetWithPrevious(String exerciseId,
+      {required bool link}) async {
+    final session = state.session;
+    if (session == null) return;
+    String? peerId;
+    if (link) {
+      final ordered = [...session.exercises]
+        ..sort((a, b) => a.order.compareTo(b.order));
+      final idx = ordered.indexWhere((e) => e.id == exerciseId);
+      if (idx <= 0) return; // not found, or first exercise → no previous peer
+      peerId = ordered[idx - 1].id;
+    }
+    await _mutate(() async {
+      await _repo.setExerciseSuperset(session.sessionId, exerciseId,
+          peerExerciseId: peerId);
+      await _reload(session.sessionId);
+    });
+  }
+
   Future<bool> complete({int? rpeOverall}) async {
     final session = state.session;
     if (session == null) return false;
