@@ -3115,6 +3115,45 @@ class _MediaSlotState extends State<_MediaSlot> {
       );
 }
 
+/// Page-indicator dots for the [_MediaSlot] carousel — wrapped in a translucent dark pill so the white
+/// dots stay legible over both the photo and the light-grey muscle-map page.
+class _CarouselDots extends StatelessWidget {
+  const _CarouselDots({required this.count, required this.active});
+  final int count;
+  final int active;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          color: AppPalette.grey900.withValues(alpha: 0.45),
+          borderRadius: BorderRadius.circular(99),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < count; i++)
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                margin: EdgeInsets.only(right: i == count - 1 ? 0 : 5),
+                width: i == active ? 14 : 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: i == active
+                      ? Colors.white
+                      : Colors.white.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Overlaid translucent chip on the media slot (equipment / demo).
 class _MediaChip extends StatelessWidget {
   const _MediaChip({required this.icon, required this.label});
