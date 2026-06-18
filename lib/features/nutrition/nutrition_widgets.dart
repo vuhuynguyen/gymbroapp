@@ -402,20 +402,24 @@ class NutriAdherenceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final gb = context.gb;
-    final total = log.plannedCount;
-    final done = log.completedCount;
-    final remaining = (total - done).clamp(0, total);
-    // No plan → adherence % is meaningless (it'd read a vacuous 100%). Show the count of logged items
-    // instead, with an empty ring, so an ad-hoc day reads honestly.
-    final noPlan = total == 0 && !log.isClosed;
-    final loggedCount = log.allItems.length;
+    // All-source counts: ad-hoc items (logged as eaten) count alongside the plan, so the ring and the
+    // "X of Y" reflect everything logged today — not just plan adherence.
+    final allItems = log.allItems;
+    final allTotal = allItems.length;
+    final allDone = allItems.where((i) => i.status.isAdherent).length;
+    final remaining = (allTotal - allDone).clamp(0, allTotal);
+    final pct =
+        allTotal == 0 ? 0 : ((allDone / allTotal) * 100).round().clamp(0, 100);
+    // No plan AND nothing logged → empty ring + a plain logged count (never a vacuous 100%).
+    final noPlan = log.plannedCount == 0 && !log.isClosed;
+    final loggedCount = allTotal;
     final hasCalTarget = log.targetKcal != null && log.targetKcal! > 0;
     final headline = log.isClosed
         ? (log.adherencePct >= 80 ? 'Solid day — plan followed' : 'Day closed')
-        : (total == 0
+        : (log.plannedCount == 0
             ? 'Nothing planned today'
             : (remaining == 0
-                ? 'Plan complete — nice work'
+                ? 'All done — nice work'
                 : '$remaining ${remaining == 1 ? 'item' : 'items'} to go'));
 
     return GbCard(
@@ -423,20 +427,20 @@ class NutriAdherenceCard extends StatelessWidget {
       child: Row(
         children: [
           GbRing(
-            value: noPlan ? 0 : log.adherenceFraction,
+            value: noPlan ? 0 : (allTotal == 0 ? 0 : allDone / allTotal),
             size: 74,
             stroke: 8,
             gradient: const [AppPalette.primary200, AppPalette.primary700],
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(noPlan ? '$loggedCount' : '${log.adherencePct}%',
+                Text(noPlan ? '$loggedCount' : '$pct%',
                     style: const TextStyle(
                             fontSize: 19,
                             fontWeight: FontWeight.w800,
                             height: 1)
                         .tabular),
-                Text(noPlan ? 'logged' : '$done of $total',
+                Text(noPlan ? 'logged' : '$allDone of $allTotal',
                     style: TextStyle(
                             fontSize: 10,
                             color: gb.grey400,
@@ -459,8 +463,9 @@ class NutriAdherenceCard extends StatelessWidget {
                         color: gb.ink,
                         letterSpacing: -0.15)),
                 const SizedBox(height: AppSpacing.sm),
-                // All-source (plan + ad-hoc) calories and protein, consolidated here so there's one
-                // nutrition summary. Calories show logged / target when a target exists, else just logged.
+                // All-source (plan + ad-hoc) macros, consolidated here so there's one nutrition summary:
+                // calories + protein on top, carbs + fat below. Calories show logged / target when a
+                // target exists, else just logged.
                 Row(
                   children: [
                     _stat(
@@ -469,8 +474,16 @@ class NutriAdherenceCard extends StatelessWidget {
                             ? '${log.consumedKcal} / ${log.targetKcal}'
                             : '${log.consumedKcal}',
                         'kcal'),
-                    const SizedBox(width: 22),
+                    const SizedBox(width: 20),
                     _stat(context, '${log.loggedProtein.round()}', 'protein g'),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Row(
+                  children: [
+                    _stat(context, '${log.loggedCarbs.round()}', 'carbs g'),
+                    const SizedBox(width: 20),
+                    _stat(context, '${log.loggedFat.round()}', 'fat g'),
                   ],
                 ),
               ],

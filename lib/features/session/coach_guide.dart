@@ -21,6 +21,8 @@ class CoachGuide {
     this.mistakes = const [],
     this.safety,
     this.imageUrl,
+    this.detailedPrimary = const [],
+    this.detailedSecondary = const [],
   });
 
   final String name;
@@ -41,6 +43,10 @@ class CoachGuide {
   /// Single safety callout (yellow). API warnings collapse into this when present.
   final String? safety;
   final String? imageUrl;
+
+  /// Specific (fine) muscle slugs for the activation map (data-driven; beats the name heuristic).
+  final List<String> detailedPrimary;
+  final List<String> detailedSecondary;
 
   /// Whether there's enough content for the tabbed guide vs the "coming soon" card. Mirrors the
   /// design's `_full` gate, but our partial API-derived guides also qualify on steps/mistakes/safety.
@@ -90,6 +96,8 @@ CoachGuide resolveCoachGuide(ExerciseDetail detail) {
     safety:
         detail.warnings.isNotEmpty ? detail.warnings.join('\n') : authored?.safety,
     imageUrl: detail.heroImageUrl,
+    detailedPrimary: detail.detailedPrimaryMuscles,
+    detailedSecondary: detail.detailedSecondaryMuscles,
   );
 }
 

@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gymbroapp/core/theme/app_colors.dart';
 import 'package:gymbroapp/data/models/exercise_models.dart';
 import 'package:gymbroapp/features/session/live_session_screen.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 /// Renders the Form Coach guide sheet to golden PNGs so its styling can be eyeballed without the API.
 /// Two fixtures: an authored exercise (Barbell Bench Press — full rich guide) and a cardio exercise
@@ -157,6 +158,25 @@ void main() {
       find.byType(MaterialApp),
       matchesGoldenFile('goldens/guide_preview.png'),
     );
+  });
+
+  // Regression: the catalog seeds ImageUrl as an EMPTY string (not null). A loaded exercise with imageUrl == ""
+  // must still render the muscle map — not flash it during loading then fall back to Image.network("") + placeholder.
+  testWidgets('empty imageUrl ("") still renders the muscle map', (tester) async {
+    const benchNoImage = ExerciseDetail(
+      id: 'b1',
+      name: 'Barbell Bench Press',
+      difficulty: 'Intermediate',
+      equipment: 'Barbell',
+      muscleGroup: 'Chest',
+      imageUrl: '',
+      instructions: ['Press the bar to lockout'],
+      muscles: [ExerciseMuscle(name: 'Chest', isPrimary: true)],
+      warnings: [],
+      media: [],
+    );
+    await pumpSized(tester, host(benchNoImage));
+    expect(find.byType(SvgPicture), findsWidgets);
   });
 
   testWidgets('assault bike (API-derived) — Steps tab', (tester) async {

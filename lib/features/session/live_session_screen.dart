@@ -10,6 +10,7 @@ import '../../domain/exercise_tracking.dart';
 import '../../domain/session_metrics.dart';
 import '../../shared/superset/superset_grouping.dart';
 import '../../shared/widgets/widgets.dart';
+import '../progress/exercise_trend_sheet.dart';
 import 'coach_guide.dart';
 import 'live_session_controller.dart';
 
@@ -82,7 +83,10 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
       ..[TrackingMetric.speed] = last?.speedKph ?? 0
       ..[TrackingMetric.level] = (last?.level ?? 0).toDouble()
       // 0 = auto-capture the actual rest from the timer; the user can bump it to override.
-      ..[TrackingMetric.rest] = 0;
+      ..[TrackingMetric.rest] = 0
+      // RPE is the headline effort field — seed it from the plan's prescribed RPE (0 = let the user
+      // enter it). Never carried from the last set, since effort is per-set.
+      ..[TrackingMetric.rpe] = snapSet?.targetRpe ?? 0;
     _entryType = snapSet != null
         ? PerformedSetType.parse(snapSet.setType.wire)
         : (last?.setType ?? PerformedSetType.working);
@@ -139,10 +143,14 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
     final rest = keep.contains(TrackingMetric.rest)
         ? _val(TrackingMetric.rest).toInt()
         : 0;
+    // RPE applies to every mode (it's universal perceived effort, not a mode-specific metric), so it's
+    // read directly rather than gated by the profile's field list. 0 = not entered → omitted.
+    final rpe = _val(TrackingMetric.rpe).toInt();
     await _ctrl.logSet(
       exerciseId,
       reps: values.reps,
       weightKg: values.weightKg,
+      rpe: rpe > 0 ? rpe : null,
       setType: _entryType,
       durationSeconds: values.durationSeconds,
       distanceM: values.distanceM,
@@ -351,6 +359,8 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
     final st = ref.watch(liveSessionControllerProvider);
     final catalog = ref.watch(exerciseCatalogProvider).valueOrNull ??
         const <String, ExerciseSummary>{};
+    // Today's recovery/fuel signals for the pre-log set suggestion (fields degrade to null if absent).
+    final wellness = ref.watch(wellnessSignalsProvider);
 
     if (st.loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -472,6 +482,14 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
                         onMenu: () => _openExerciseMenu(ex),
                         onGuide: () =>
                             _openGuideSheet(ex, catalog[ex.exerciseId]),
+                        onTrend: () => showExerciseTrendSheet(
+                          context,
+                          exerciseId: ex.exerciseId,
+                          exerciseName: ex.exerciseName ??
+                              catalog[ex.exerciseId]?.name ??
+                              'Exercise',
+                        ),
+                        wellness: wellness,
                       ),
                       const SizedBox(height: AppSpacing.gap),
                       Center(
@@ -535,6 +553,7 @@ class _Header extends StatelessWidget {
   /// True only for plan sessions with a planned set target — drives the progress bar and the
   /// "logged/total" count. Ad-hoc sessions have no target, so they show a bare "N sets" instead.
   final bool hasTarget;
+
   /// Null when editing a finished workout — there's nothing to abandon, so the X is hidden.
   final VoidCallback? onAbandon;
   final VoidCallback onBack;
@@ -583,7 +602,8 @@ class _Header extends StatelessWidget {
                     onTap: onAbandon!,
                     semanticLabel: 'Abandon workout')
               else
-                const SizedBox(width: 40), // keep the title centred when editing
+                const SizedBox(
+                    width: 40), // keep the title centred when editing
             ],
           ),
           // Plan-only progress bar (full width). The elapsed timer moved to the exercise-pager row to
@@ -813,6 +833,8 @@ class _ExerciseCard extends StatelessWidget {
     required this.onMoveSet,
     required this.onMenu,
     required this.onGuide,
+    required this.onTrend,
+    required this.wellness,
   });
 
   final PerformedExercise exercise;
@@ -840,6 +862,12 @@ class _ExerciseCard extends StatelessWidget {
   final void Function(PerformedSet set, bool up) onMoveSet;
   final VoidCallback onMenu;
   final VoidCallback onGuide;
+
+  /// Opens the per-exercise trend sheet (the trend (i) button in the card header).
+  final VoidCallback onTrend;
+
+  /// Today's recovery/fuel signals — used to gently autoregulate the suggested next set.
+  final WellnessSignals wellness;
 
   /// Lead (parentless) sets — the rows that carry a reorder position; drop stages ride with their lead.
   List<PerformedSet> get _leads =>
@@ -885,6 +913,18 @@ class _ExerciseCard extends StatelessWidget {
     final name = exercise.exerciseName ?? 'Exercise ${exercise.order}';
     final isSkipped = exercise.status == ExercisePerformStatus.skipped;
     final targets = _metaTargets();
+    // The plan prescription for the set about to be logged (null past the plan / ad-hoc), and the
+    // pre-log weight × reps suggestion derived from it + last-time + today's readiness.
+    final entryTarget = snapshotSets.length >= exercise.sets.length + 1
+        ? snapshotSets[exercise.sets.length]
+        : null;
+    final suggestion = suggestNextSet(
+      trackingType: exercise.trackingType,
+      setType: entryType,
+      target: entryTarget,
+      lastPerformed: exercise.lastPerformed,
+      wellness: wellness,
+    );
     // Per-exercise set count (logged vs planned). Count EVERY logged set incl. drop stages, so it matches
     // the prescription walk below (which indexes prescribed sets by total logged count) and the rows shown —
     // otherwise a plan with prescribed drop sets sticks at e.g. "4/7" and never completes.
@@ -948,6 +988,12 @@ class _ExerciseCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 12),
+                    // Trend (i) — peek at this exercise's strength trend without leaving the workout.
+                    GbIconButton(
+                        icon: Icons.insights_outlined,
+                        onTap: onTrend,
+                        semanticLabel: 'Exercise trend'),
+                    const SizedBox(width: 6),
                     GbIconButton(
                         icon: Icons.more_horiz,
                         onTap: onMenu,
@@ -1002,9 +1048,8 @@ class _ExerciseCard extends StatelessWidget {
                     padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
                     child: _EntryRow(
                       setNumber: exercise.sets.length + 1,
-                      target: snapshotSets.length >= exercise.sets.length + 1
-                          ? snapshotSets[exercise.sets.length]
-                          : null,
+                      target: entryTarget,
+                      suggestion: suggestion,
                       profile: profile,
                       entry: entry,
                       setType: entryType,
@@ -1116,13 +1161,12 @@ class _LoggedSetRow extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           child: Row(
             children: [
+              // Done marker: a plain green dot (no check glyph) — the green fill alone reads as "logged".
               Container(
                 width: 26,
                 height: 26,
                 decoration:
                     BoxDecoration(color: gb.success0, shape: BoxShape.circle),
-                alignment: Alignment.center,
-                child: Icon(Icons.check, size: 15, color: gb.success),
               ),
               const SizedBox(width: 12),
               SizedBox(
@@ -1469,6 +1513,7 @@ class _EntryRow extends StatelessWidget {
   const _EntryRow({
     required this.setNumber,
     required this.target,
+    this.suggestion,
     required this.profile,
     required this.entry,
     required this.setType,
@@ -1482,6 +1527,10 @@ class _EntryRow extends StatelessWidget {
   });
   final int setNumber;
   final SessionSnapshotSet? target;
+
+  /// Pre-log weight × reps suggestion (plan / last-time / RPE / readiness); null when there's nothing
+  /// to suggest (cardio, or a brand-new lift with no plan or history).
+  final SetSuggestion? suggestion;
   final TrackingProfile profile;
   final Map<TrackingMetric, num> entry;
   final PerformedSetType setType;
@@ -1495,9 +1544,11 @@ class _EntryRow extends StatelessWidget {
 
   num _val(TrackingMetric m) => entry[m] ?? 0;
 
-  /// Essential steppers shown by default; secondary metrics (calories / HR / rest) appear only via "+ More".
+  /// Essential steppers + RPE — the headline effort field, shown for every mode by default (it's not in
+  /// any tracking profile because it's universal, not mode-specific). Secondary metrics (calories / HR /
+  /// rest) still appear only via "+ More".
   List<TrackingMetric> get _stepperFields =>
-      [...profile.fields, if (showMore) ...profile.extras];
+      [...profile.fields, TrackingMetric.rpe, if (showMore) ...profile.extras];
 
   static ({String label, String? unit, num step}) _metricSpec(
           TrackingMetric m) =>
@@ -1531,6 +1582,69 @@ class _EntryRow extends StatelessWidget {
     if (t.targetDistanceM != null) parts.add('${t.targetDistanceM}m');
     if (t.targetRounds != null) parts.add('${t.targetRounds} rounds');
     return parts.isEmpty ? null : 'Target ${parts.join(' · ')}';
+  }
+
+  /// Pre-log suggestion chip — "Suggested 52.5kg × 6" plus its reason, with a one-tap "Use" that
+  /// prefills the weight/reps steppers. It never auto-logs; the user still confirms with Log set below.
+  Widget _suggestionBar(BuildContext context, SetSuggestion s) {
+    final gb = context.gb;
+    final w = s.weightKg % 1 == 0
+        ? s.weightKg.toInt().toString()
+        : s.weightKg.toString();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.fromLTRB(10, 7, 7, 7),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: gb.primary500.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.auto_awesome, size: 16, color: gb.primary600),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Suggested ${w}kg × ${s.reps}',
+                    style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w800,
+                        color: gb.grey900,
+                        fontFeatures: const [FontFeature.tabularFigures()])),
+                Text(s.reason,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 11, color: gb.grey500)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          // "Use" prefills the steppers only — the user still taps Log set to confirm.
+          Material(
+            color: gb.primary500,
+            borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () {
+                onMetric(TrackingMetric.weight, s.weightKg);
+                onMetric(TrackingMetric.reps, s.reps);
+              },
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                child: Text('Use',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Renders the mode's metric steppers in a fixed two-column grid. Each stepper is left-aligned in its
@@ -1572,6 +1686,7 @@ class _EntryRow extends StatelessWidget {
       value: _val(m),
       unit: spec.unit,
       step: spec.step,
+      max: m == TrackingMetric.rpe ? 10 : 100000,
       onChanged: (v) => onMetric(m, v),
     );
   }
@@ -1696,6 +1811,7 @@ class _EntryRow extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
+          if (suggestion != null) _suggestionBar(context, suggestion!),
           _buildSteppers(gb),
           if (profile.extras.isNotEmpty)
             Padding(
@@ -1948,129 +2064,140 @@ class _CatalogSheetState extends ConsumerState<_CatalogSheet> {
       expand: false,
       initialChildSize: 0.8,
       maxChildSize: 0.95,
-      builder: (ctx, scroll) => FutureBuilder<List<ExerciseSummary>>(
-        future: _future,
-        builder: (ctx, snap) {
-          if (snap.connectionState != ConnectionState.done) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snap.hasError) return ErrorRetry(message: snap.error.toString());
-          final all = snap.data ?? const [];
-          final muscles = <String>{
-            'All',
-            for (final e in all)
-              if (e.muscleGroup.isNotEmpty) e.muscleGroup
-          };
-          final filtered = all.where((e) {
-            final byMuscle = _muscle == 'All' || e.muscleGroup == _muscle;
-            final byQuery = _query.isEmpty ||
-                e.name.toLowerCase().contains(_query.toLowerCase());
-            return byMuscle && byQuery;
-          }).toList();
+      builder: (ctx, scroll) => Padding(
+        // Lift the sheet's content above the on-screen keyboard so the search results stay visible
+        // while typing — without this the keyboard covers the exercise list.
+        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+        child: FutureBuilder<List<ExerciseSummary>>(
+          future: _future,
+          builder: (ctx, snap) {
+            if (snap.connectionState != ConnectionState.done) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            if (snap.hasError)
+              return ErrorRetry(message: snap.error.toString());
+            final all = snap.data ?? const [];
+            final muscles = <String>{
+              'All',
+              for (final e in all)
+                if (e.muscleGroup.isNotEmpty) e.muscleGroup
+            };
+            final filtered = all.where((e) {
+              final byMuscle = _muscle == 'All' || e.muscleGroup == _muscle;
+              final byQuery = _query.isEmpty ||
+                  e.name.toLowerCase().contains(_query.toLowerCase());
+              return byMuscle && byQuery;
+            }).toList();
 
-          return Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                    AppSpacing.md, AppSpacing.xs, AppSpacing.md, AppSpacing.sm),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: GbSheetHeader(
-                    title: widget.title,
-                    subtitle: widget.title == 'Substitute'
-                        ? 'Replace ${widget.title.toLowerCase()} for this session. Tap to preview the guide.'
-                        : 'Tap a movement to preview its guide — then add.',
+            return Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(AppSpacing.md,
+                      AppSpacing.xs, AppSpacing.md, AppSpacing.sm),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: GbSheetHeader(
+                      title: widget.title,
+                      subtitle: widget.title == 'Substitute'
+                          ? 'Replace ${widget.title.toLowerCase()} for this session. Tap to preview the guide.'
+                          : 'Tap a movement to preview its guide — then add.',
+                    ),
                   ),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.md),
-                child: GbSearchField(
-                  controller: _search,
-                  hint: 'Search exercises…',
-                  onChanged: (v) => setState(() => _query = v),
+                Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: AppSpacing.md),
+                  child: GbSearchField(
+                    controller: _search,
+                    hint: 'Search exercises…',
+                    onChanged: (v) => setState(() => _query = v),
+                  ),
                 ),
-              ),
-              SizedBox(
-                height: 52,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
-                  children: [
-                    for (final m in muscles)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 6),
-                        child: GbChip(
-                            label: m,
-                            selected: _muscle == m,
-                            onTap: () => setState(() => _muscle = m)),
-                      ),
-                  ],
+                SizedBox(
+                  height: 52,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.sm, vertical: AppSpacing.xs),
+                    children: [
+                      for (final m in muscles)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: GbChip(
+                              label: m,
+                              selected: _muscle == m,
+                              onTap: () => setState(() => _muscle = m)),
+                        ),
+                    ],
+                  ),
                 ),
-              ),
-              Expanded(
-                child: ListView.separated(
-                  controller: scroll,
-                  padding: const EdgeInsets.fromLTRB(AppSpacing.md,
-                      AppSpacing.xs, AppSpacing.md, AppSpacing.md),
-                  itemCount: filtered.length,
-                  separatorBuilder: (_, __) =>
-                      const SizedBox(height: AppSpacing.xs),
-                  itemBuilder: (ctx, i) {
-                    final e = filtered[i];
-                    final meta = [e.muscleGroup, e.equipment]
-                        .where((s) => s.isNotEmpty)
-                        .join(' · ');
-                    return _CatalogRow(
-                      exercise: e,
-                      meta: meta,
-                      onGuide: () => presentGuideSheet(
-                        context,
-                        _GuideSheet(
-                          exerciseId: e.id,
-                          exerciseName: e.name,
-                          catalog: e,
-                          repository: ref.read(exerciseRepositoryProvider),
-                          eyebrow: widget.title == 'Substitute'
-                              ? 'PREVIEW · SUBSTITUTE'
-                              : 'PREVIEW · BEFORE ADDING',
-                          footer: Row(
-                            children: [
-                              GbButton(
-                                label: 'Back',
-                                variant: GbButtonVariant.outlined,
-                                severity: GbButtonSeverity.secondary,
-                                onPressed: () => Navigator.of(context).pop(),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: GbButton(
-                                  label: widget.title == 'Substitute'
-                                      ? 'Use this exercise'
-                                      : 'Add to session',
-                                  icon: widget.title == 'Substitute'
-                                      ? Icons.swap_horiz
-                                      : Icons.add,
-                                  full: true,
-                                  onPressed: () {
-                                    Navigator.of(context).pop();
-                                    widget.onPick(e);
-                                  },
+                Expanded(
+                  child: ListView.separated(
+                    controller: scroll,
+                    // Dragging the list dismisses the keyboard, so the user can swipe down to see more
+                    // results without first reaching for a "done" key.
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    padding: const EdgeInsets.fromLTRB(AppSpacing.md,
+                        AppSpacing.xs, AppSpacing.md, AppSpacing.md),
+                    itemCount: filtered.length,
+                    separatorBuilder: (_, __) =>
+                        const SizedBox(height: AppSpacing.xs),
+                    itemBuilder: (ctx, i) {
+                      final e = filtered[i];
+                      final meta = [e.muscleGroup, e.equipment]
+                          .where((s) => s.isNotEmpty)
+                          .join(' · ');
+                      return _CatalogRow(
+                        exercise: e,
+                        meta: meta,
+                        onGuide: () => presentGuideSheet(
+                          context,
+                          _GuideSheet(
+                            exerciseId: e.id,
+                            exerciseName: e.name,
+                            catalog: e,
+                            repository: ref.read(exerciseRepositoryProvider),
+                            eyebrow: widget.title == 'Substitute'
+                                ? 'PREVIEW · SUBSTITUTE'
+                                : 'PREVIEW · BEFORE ADDING',
+                            footer: Row(
+                              children: [
+                                GbButton(
+                                  label: 'Back',
+                                  variant: GbButtonVariant.outlined,
+                                  severity: GbButtonSeverity.secondary,
+                                  onPressed: () => Navigator.of(context).pop(),
                                 ),
-                              ),
-                            ],
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: GbButton(
+                                    label: widget.title == 'Substitute'
+                                        ? 'Use this exercise'
+                                        : 'Add to session',
+                                    icon: widget.title == 'Substitute'
+                                        ? Icons.swap_horiz
+                                        : Icons.add,
+                                    full: true,
+                                    onPressed: () {
+                                      Navigator.of(context).pop();
+                                      widget.onPick(e);
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                      onAdd: () => widget.onPick(e),
-                    );
-                  },
+                        onAdd: () => widget.onPick(e),
+                      );
+                    },
+                  ),
                 ),
-              ),
-            ],
-          );
-        },
+              ],
+            );
+          },
+        ),
       ),
     );
   }
@@ -2529,6 +2656,13 @@ class _GuideSheetState extends State<_GuideSheet> {
                 child: _MediaSlot(
                   imageUrl: guide?.imageUrl,
                   equipment: equipment,
+                  exerciseName: widget.exerciseName,
+                  primary: guide?.primary.isNotEmpty == true
+                      ? guide!.primary
+                      : fallbackPrimary,
+                  secondary: guide?.secondary ?? const [],
+                  detailedPrimary: guide?.detailedPrimary ?? const [],
+                  detailedSecondary: guide?.detailedSecondary ?? const [],
                 ),
               ),
               // ── Targets ──
@@ -2643,16 +2777,85 @@ class _DifficultyBadge extends StatelessWidget {
   }
 }
 
-/// 16:9 media slot — exercise photo when available, otherwise a grey placeholder with a centered
-/// dumbbell. Equipment + "Demo loop" chips overlay the bottom corners.
-class _MediaSlot extends StatelessWidget {
-  const _MediaSlot({required this.imageUrl, required this.equipment});
+/// 16:9 media slot — a swipeable carousel of the exercise photo and the muscle-activation figure
+/// (photo first, map second) with a page-dots indicator. Falls back to whichever single page exists, or
+/// a grey dumbbell placeholder. Equipment + "Demo loop" chips overlay the bottom corners.
+class _MediaSlot extends StatefulWidget {
+  const _MediaSlot({
+    required this.imageUrl,
+    required this.equipment,
+    required this.exerciseName,
+    required this.primary,
+    required this.secondary,
+    this.detailedPrimary = const [],
+    this.detailedSecondary = const [],
+  });
   final String? imageUrl;
   final String equipment;
+  final String exerciseName;
+
+  /// Worked muscle names — the slot renders a muscle-activation figure from these as a carousel page
+  /// (the free-layer media baseline) alongside the photo.
+  final List<String> primary;
+  final List<String> secondary;
+
+  /// Specific (fine) muscle slugs from the catalog — drive the activation figure accurately.
+  final List<String> detailedPrimary;
+  final List<String> detailedSecondary;
+
+  @override
+  State<_MediaSlot> createState() => _MediaSlotState();
+}
+
+class _MediaSlotState extends State<_MediaSlot> {
+  final _controller = PageController();
+  int _page = 0;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final gb = context.gb;
+    // The catalog seeds ImageUrl as an EMPTY string (not null), so guard on blank too — otherwise a loaded
+    // exercise (imageUrl == "") falls into Image.network("") and the muscle map flashes then gets replaced.
+    final hasImage =
+        widget.imageUrl != null && widget.imageUrl!.trim().isNotEmpty;
+    final hasMap = muscleMapHasContent(
+      widget.primary,
+      widget.secondary,
+      detailedPrimary: widget.detailedPrimary,
+      detailedSecondary: widget.detailedSecondary,
+    );
+
+    // Carousel pages, in order: photo first, muscle-activation map second.
+    final pages = <Widget>[
+      if (hasImage)
+        Image.network(widget.imageUrl!,
+            fit: BoxFit.cover, errorBuilder: (_, __, ___) => _placeholder(gb)),
+      if (hasMap)
+        ColoredBox(
+          color: gb.grey0,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            child: MuscleMapFigure(
+              exerciseName: widget.exerciseName,
+              primary: widget.primary,
+              secondary: widget.secondary,
+              detailedPrimary: widget.detailedPrimary,
+              detailedSecondary: widget.detailedSecondary,
+            ),
+          ),
+        ),
+    ];
+    if (pages.isEmpty) pages.add(_placeholder(gb));
+
+    final activePage = _page.clamp(0, pages.length - 1);
+    final photoActive = hasImage && activePage == 0;
+
     return AspectRatio(
       aspectRatio: 16 / 9,
       child: ClipRRect(
@@ -2660,12 +2863,14 @@ class _MediaSlot extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            if (imageUrl != null)
-              Image.network(imageUrl!,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _placeholder(gb))
+            if (pages.length == 1)
+              pages.first
             else
-              _placeholder(gb),
+              PageView(
+                controller: _controller,
+                onPageChanged: (i) => setState(() => _page = i),
+                children: pages,
+              ),
             // Border overlay (over the image too).
             DecoratedBox(
               decoration: BoxDecoration(
@@ -2673,21 +2878,31 @@ class _MediaSlot extends StatelessWidget {
                 border: Border.all(color: gb.borderCard),
               ),
             ),
-            // Equipment pinned to the bottom-left corner, the demo chip to the bottom-right — two
-            // separate Positioned anchors so the demo loop always sits flush in the right corner
-            // (a Row + Spacer left it floating short of the edge).
-            if (equipment.isNotEmpty)
+            // Equipment pinned to the bottom-left corner.
+            if (widget.equipment.isNotEmpty)
               Positioned(
                 left: 10,
                 bottom: 10,
-                child:
-                    _MediaChip(icon: Icons.fitness_center, label: equipment),
+                child: _MediaChip(
+                    icon: Icons.fitness_center, label: widget.equipment),
               ),
-            const Positioned(
-              right: 10,
-              bottom: 10,
-              child: _MediaChip(icon: Icons.play_arrow, label: 'Demo loop'),
-            ),
+            // The "Demo loop" affordance only makes sense over real footage — shown only while the
+            // photo page is active (there is no demo media in the free layer).
+            if (photoActive)
+              const Positioned(
+                right: 10,
+                bottom: 10,
+                child: _MediaChip(icon: Icons.play_arrow, label: 'Demo loop'),
+              ),
+            // Swipe affordance — page dots in a translucent pill so they read over both the photo and
+            // the light-grey map background.
+            if (pages.length > 1)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 10,
+                child: _CarouselDots(count: pages.length, active: activePage),
+              ),
           ],
         ),
       ),
@@ -2700,6 +2915,45 @@ class _MediaSlot extends StatelessWidget {
           child: Icon(Icons.fitness_center, size: 40, color: gb.grey400),
         ),
       );
+}
+
+/// Page-indicator dots for the [_MediaSlot] carousel — wrapped in a translucent dark pill so the white
+/// dots stay legible over both the photo and the light-grey muscle-map page.
+class _CarouselDots extends StatelessWidget {
+  const _CarouselDots({required this.count, required this.active});
+  final int count;
+  final int active;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        decoration: BoxDecoration(
+          color: AppPalette.grey900.withValues(alpha: 0.45),
+          borderRadius: BorderRadius.circular(99),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < count; i++)
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                margin: EdgeInsets.only(right: i == count - 1 ? 0 : 5),
+                width: i == active ? 14 : 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: i == active
+                      ? Colors.white
+                      : Colors.white.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// Overlaid translucent chip on the media slot (equipment / demo).
@@ -3352,7 +3606,8 @@ class _GuideErrorBody extends StatelessWidget {
 
 // Design tokens sourced from the [AppPalette] primitives (single source of truth for the
 // design's tokens.css hex). Aliased here for the call-sites below; not surfaced on GbColors.
-const Color _kPrimaryTint = AppPalette.primaryTint; // --gb-primary-tint (0xFFE6F0FF)
+const Color _kPrimaryTint =
+    AppPalette.primaryTint; // --gb-primary-tint (0xFFE6F0FF)
 const Color _kGrey300 = AppPalette.grey300; // --inv-grey-300 (0xFF98A1B0)
 const Color _kError50 = AppPalette.error50; // --inv-error-50 (0xFFF28E8E)
 const Color _kError200 = AppPalette.error200; // --inv-error-200 (0xFFA32020)

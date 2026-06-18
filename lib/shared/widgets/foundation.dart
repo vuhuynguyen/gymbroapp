@@ -297,16 +297,29 @@ class _GbStepperState extends State<GbStepper> {
   void _beginEdit() {
     if (!widget.editable) return;
     _ctrl.text = _fmt(widget.value);
-    _ctrl.selection = TextSelection(baseOffset: 0, extentOffset: _ctrl.text.length);
+    _ctrl.selection =
+        TextSelection(baseOffset: 0, extentOffset: _ctrl.text.length);
     setState(() => _editing = true);
     _focus.requestFocus();
   }
 
   void _commit() {
     if (!_editing) return;
-    final parsed = num.tryParse(_ctrl.text.trim());
+    // Normalise a comma decimal separator to a dot: on comma-locale devices the numeric keyboard
+    // offers "," not "." — accept it so users on those locales can enter decimals.
+    final parsed = num.tryParse(_ctrl.text.trim().replaceAll(',', '.'));
     setState(() => _editing = false);
     if (parsed == null) return; // invalid → keep current value
+    final clamped = parsed.clamp(widget.min, widget.max);
+    if (clamped != widget.value) widget.onChanged(clamped);
+  }
+
+  /// Push the typed value to the parent on every keystroke (without leaving edit mode), so a number
+  /// typed right before tapping a button (e.g. "Log set") is committed even if the focus-out commit
+  /// is missed in the tap race. The display field keeps showing the raw text; only the parent updates.
+  void _pushLive(String text) {
+    final parsed = num.tryParse(text.trim().replaceAll(',', '.'));
+    if (parsed == null) return; // mid-edit / empty → wait for a valid number
     final clamped = parsed.clamp(widget.min, widget.max);
     if (clamped != widget.value) widget.onChanged(clamped);
   }
@@ -323,7 +336,8 @@ class _GbStepperState extends State<GbStepper> {
     final gb = context.gb;
     final display = _fmt(widget.value);
     final name = widget.semanticLabel ?? widget.label ?? 'value';
-    final announced = '$name $display${widget.unit != null ? ' ${widget.unit}' : ''}';
+    final announced =
+        '$name $display${widget.unit != null ? ' ${widget.unit}' : ''}';
     return Column(
       children: [
         if (widget.label != null)
@@ -342,8 +356,12 @@ class _GbStepperState extends State<GbStepper> {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _btn(gb, Icons.remove, 'Decrease $name',
-                () => widget.onChanged((widget.value - widget.step).clamp(widget.min, widget.max))),
+            _btn(
+                gb,
+                Icons.remove,
+                'Decrease $name',
+                () => widget.onChanged((widget.value - widget.step)
+                    .clamp(widget.min, widget.max))),
             const SizedBox(width: 6),
             Semantics(
               label: announced,
@@ -356,13 +374,17 @@ class _GbStepperState extends State<GbStepper> {
                         controller: _ctrl,
                         focusNode: _focus,
                         autofocus: true,
-                        textAlign: TextAlign.center,
-                        keyboardType: TextInputType.numberWithOptions(decimal: _decimal),
+                        textAlign: TextAlign.start,
+                        keyboardType:
+                            TextInputType.numberWithOptions(decimal: _decimal),
                         inputFormatters: [
+                          // Allow both "." and "," as the decimal separator (comma-locale keyboards
+                          // surface ","); _commit/_pushLive normalise it to "." before parsing.
                           FilteringTextInputFormatter.allow(
-                              RegExp(_decimal ? r'[0-9.]' : r'[0-9]')),
+                              RegExp(_decimal ? r'[0-9.,]' : r'[0-9]')),
                         ],
-                        style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800)
+                        style: const TextStyle(
+                                fontSize: 22, fontWeight: FontWeight.w800)
                             .tabular,
                         decoration: const InputDecoration(
                           isDense: true,
@@ -372,6 +394,7 @@ class _GbStepperState extends State<GbStepper> {
                           enabledBorder: InputBorder.none,
                           focusedBorder: InputBorder.none,
                         ),
+                        onChanged: _pushLive,
                         onTapOutside: (_) => _commit(),
                         onSubmitted: (_) => _commit(),
                         onEditingComplete: _commit,
@@ -381,7 +404,7 @@ class _GbStepperState extends State<GbStepper> {
                         behavior: HitTestBehavior.opaque,
                         child: FittedBox(
                           fit: BoxFit.scaleDown,
-                          alignment: Alignment.center,
+                          alignment: Alignment.centerLeft,
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             crossAxisAlignment: CrossAxisAlignment.baseline,
@@ -389,7 +412,8 @@ class _GbStepperState extends State<GbStepper> {
                             children: [
                               Text(display,
                                   style: const TextStyle(
-                                          fontSize: 26, fontWeight: FontWeight.w800)
+                                          fontSize: 26,
+                                          fontWeight: FontWeight.w800)
                                       .tabular),
                               if (widget.unit != null)
                                 Text(' ${widget.unit}',
@@ -404,8 +428,12 @@ class _GbStepperState extends State<GbStepper> {
               ),
             ),
             const SizedBox(width: 6),
-            _btn(gb, Icons.add, 'Increase $name',
-                () => widget.onChanged((widget.value + widget.step).clamp(widget.min, widget.max))),
+            _btn(
+                gb,
+                Icons.add,
+                'Increase $name',
+                () => widget.onChanged((widget.value + widget.step)
+                    .clamp(widget.min, widget.max))),
           ],
         ),
       ],

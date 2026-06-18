@@ -65,7 +65,8 @@ class _CustomFoodFormState extends State<CustomFoodForm> {
   }
 
   num _num(TextEditingController c) {
-    final v = double.tryParse(c.text.trim());
+    // Normalise a comma decimal separator to a dot (comma-locale keyboards offer "," not ".").
+    final v = double.tryParse(c.text.trim().replaceAll(',', '.'));
     return v == null || v < 0 ? 0 : v;
   }
 
@@ -313,7 +314,8 @@ class _MacroCellState extends State<_MacroCell> {
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
                   inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))
+                    // Accept "." or "," (comma-locale keyboards); _num normalises before parsing.
+                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))
                   ],
                   style: TextStyle(
                       fontSize: 17,

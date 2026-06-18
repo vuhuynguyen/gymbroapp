@@ -14,6 +14,8 @@ class ExerciseDetail {
     required this.warnings,
     required this.media,
     this.imageUrl,
+    this.detailedPrimaryMuscles = const [],
+    this.detailedSecondaryMuscles = const [],
   });
 
   final String id;
@@ -35,6 +37,10 @@ class ExerciseDetail {
   final List<ExerciseMedia> media;
 
   final String? imageUrl;
+
+  /// Specific (fine) muscle slugs for the activation map (from the API's CSV columns).
+  final List<String> detailedPrimaryMuscles;
+  final List<String> detailedSecondaryMuscles;
 
   List<ExerciseMuscle> get primaryMuscles => muscles.where((m) => m.isPrimary).toList();
   List<ExerciseMuscle> get secondaryMuscles => muscles.where((m) => !m.isPrimary).toList();
@@ -66,8 +72,13 @@ class ExerciseDetail {
             .map(ExerciseMedia.fromJson)
             .toList(growable: false),
         imageUrl: asString(j['imageUrl']),
+        detailedPrimaryMuscles: _csvMuscles(j['detailedPrimaryMuscles']),
+        detailedSecondaryMuscles: _csvMuscles(j['detailedSecondaryMuscles']),
       );
 }
+
+List<String> _csvMuscles(Object? v) =>
+    (asString(v) ?? '').split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList(growable: false);
 
 class ExerciseMuscle {
   const ExerciseMuscle({required this.name, required this.isPrimary});

@@ -11,6 +11,10 @@ import 'package:gymbroapp/shared/widgets/widgets.dart';
 /// [ProgressScreen]: a non-new-user overview renders the data ListView, the Body provider is kept quiet
 /// (empty weigh-ins), and [nutritionAdherenceProvider] carries the fixture under test.
 ///
+/// The trend + advice are now sourced from the ALL-SOURCE per-day list `caloriesByDay` (planned + ad-hoc),
+/// NOT the plan-only `recentDays` — so a self-logger with no plan sees a calories trend too. The
+/// plan-only `recentDays` field is retained on the wire/model but no longer drives this card.
+///
 /// Honesty contract under test: consumed-kcal bars render for both plan AND no-plan users (data is
 /// all-source); the dashed "Plan" target line appears ONLY where `targetKcal` is present; a day without
 /// a target never gets a fabricated target/deficit/surplus/%; and the advice line is built only from
@@ -33,18 +37,9 @@ void main() {
         ],
       );
 
-  /// One day in the trend: consumed kcal (all-source) and an optional plan target.
-  DailyAdherence day(int consumed, {int? target, int pct = 100}) =>
-      DailyAdherence(
-        pct: pct,
-        date: DateTime(2026, 6, 10),
-        consumedKcal: consumed,
-        targetKcal: target,
-      );
-
-  /// One row of the CALORIES-LOGGED LIST. A fixed prior-year [date] makes the relative-day label
-  /// deterministic regardless of when the test runs ("Mon D, YYYY", never the run-relative
-  /// "Today"/"Yesterday").
+  /// One day of the ALL-SOURCE CALORIES TREND / CALORIES-LOGGED list: consumed kcal (all-source) and an
+  /// optional plan target. A fixed prior-year [date] makes the relative-day label deterministic
+  /// regardless of when the test runs ("Mon D, YYYY", never the run-relative "Today"/"Yesterday").
   DayCalories logDay(int consumed, {int? target, DateTime? date}) => DayCalories(
         localDate: date ?? DateTime(2024, 6, 10),
         consumedKcal: consumed,
@@ -119,7 +114,7 @@ void main() {
     expect(find.textContaining('%'), findsNothing);
   });
 
-  testWidgets('hasPlan=true but no closed days → "close out a day" nudge', (tester) async {
+  testWidgets('hasPlan=true but no logged days → "close out a day" nudge', (tester) async {
     await pump(
       tester,
       const AsyncData(NutritionAdherence(hasPlan: true, recentDays: [])),
@@ -160,7 +155,7 @@ void main() {
   // ── Bars render from consumedKcal (both plan and no-plan, all-source) ─────────
 
   testWidgets('no-plan ad-hoc days → consumed-kcal bars render, no ring/%', (tester) async {
-    // Self-logging without a plan now gets the SAME consumed-kcal bars (data is all-source); the days
+    // Self-logging without a plan gets the SAME consumed-kcal bars (the trend is all-source); the days
     // carry no target, so there is NO dashed plan line and NO deficit/surplus claim.
     await pump(
       tester,
@@ -168,7 +163,13 @@ void main() {
         hasPlan: false,
         hasAnyLogging: true,
         loggedDaysThisWeek: 4,
-        recentDays: [day(2100), day(2300), day(1900), day(2200)],
+        recentDays: const [],
+        caloriesByDay: [
+          logDay(2100, date: DateTime(2024, 6, 10)),
+          logDay(2300, date: DateTime(2024, 6, 11)),
+          logDay(1900, date: DateTime(2024, 6, 12)),
+          logDay(2200, date: DateTime(2024, 6, 13)),
+        ],
       )),
     );
     await scrollTo(tester, find.text('CALORIES TREND'));
@@ -192,12 +193,13 @@ void main() {
         hasPlan: true,
         currentWeekAvgPct: 84,
         loggedDaysThisWeek: 5,
-        recentDays: [
-          day(2000, target: 2200),
-          day(2400, target: 2200),
-          day(2100, target: 2200),
-          day(2300, target: 2200),
-          day(2050, target: 2200),
+        recentDays: const [],
+        caloriesByDay: [
+          logDay(2000, target: 2200, date: DateTime(2024, 6, 10)),
+          logDay(2400, target: 2200, date: DateTime(2024, 6, 11)),
+          logDay(2100, target: 2200, date: DateTime(2024, 6, 12)),
+          logDay(2300, target: 2200, date: DateTime(2024, 6, 13)),
+          logDay(2050, target: 2200, date: DateTime(2024, 6, 14)),
         ],
       )),
     );
@@ -221,7 +223,12 @@ void main() {
         hasPlan: false,
         hasAnyLogging: true,
         loggedDaysThisWeek: 3,
-        recentDays: [day(2000), day(2100), day(2200)],
+        recentDays: const [],
+        caloriesByDay: [
+          logDay(2000, date: DateTime(2024, 6, 10)),
+          logDay(2100, date: DateTime(2024, 6, 11)),
+          logDay(2200, date: DateTime(2024, 6, 12)),
+        ],
       )),
     );
     await scrollTo(
@@ -244,11 +251,12 @@ void main() {
         hasPlan: true,
         currentWeekAvgPct: 90,
         loggedDaysThisWeek: 4,
-        recentDays: [
-          day(2000, target: 2200),
-          day(2000, target: 2200),
-          day(2000, target: 2200),
-          day(2000, target: 2200),
+        recentDays: const [],
+        caloriesByDay: [
+          logDay(2000, target: 2200, date: DateTime(2024, 6, 10)),
+          logDay(2000, target: 2200, date: DateTime(2024, 6, 11)),
+          logDay(2000, target: 2200, date: DateTime(2024, 6, 12)),
+          logDay(2000, target: 2200, date: DateTime(2024, 6, 13)),
         ],
       )),
     );
@@ -268,10 +276,11 @@ void main() {
       AsyncData(NutritionAdherence(
         hasPlan: true,
         loggedDaysThisWeek: 3,
-        recentDays: [
-          day(2500, target: 2200),
-          day(2500, target: 2200),
-          day(2500, target: 2200),
+        recentDays: const [],
+        caloriesByDay: [
+          logDay(2500, target: 2200, date: DateTime(2024, 6, 10)),
+          logDay(2500, target: 2200, date: DateTime(2024, 6, 11)),
+          logDay(2500, target: 2200, date: DateTime(2024, 6, 12)),
         ],
       )),
     );
@@ -293,11 +302,12 @@ void main() {
         hasPlan: false,
         hasAnyLogging: true,
         loggedDaysThisWeek: 4,
-        recentDays: [
-          day(2000, target: 2200),
-          day(2100),
-          day(2200),
-          day(2300),
+        recentDays: const [],
+        caloriesByDay: [
+          logDay(2000, target: 2200, date: DateTime(2024, 6, 10)),
+          logDay(2100, date: DateTime(2024, 6, 11)),
+          logDay(2200, date: DateTime(2024, 6, 12)),
+          logDay(2300, date: DateTime(2024, 6, 13)),
         ],
       )),
     );
@@ -320,7 +330,11 @@ void main() {
         hasPlan: false,
         hasAnyLogging: true,
         loggedDaysThisWeek: 2,
-        recentDays: [day(2000), day(2100)],
+        recentDays: const [],
+        caloriesByDay: [
+          logDay(2000, date: DateTime(2024, 6, 10)),
+          logDay(2100, date: DateTime(2024, 6, 11)),
+        ],
       )),
     );
     await scrollTo(
@@ -341,10 +355,11 @@ void main() {
       AsyncData(NutritionAdherence(
         hasPlan: true,
         loggedDaysThisWeek: 3,
-        recentDays: [
-          day(2210, target: 2200),
-          day(2190, target: 2200),
-          day(2200, target: 2200),
+        recentDays: const [],
+        caloriesByDay: [
+          logDay(2210, target: 2200, date: DateTime(2024, 6, 10)),
+          logDay(2190, target: 2200, date: DateTime(2024, 6, 11)),
+          logDay(2200, target: 2200, date: DateTime(2024, 6, 12)),
         ],
       )),
     );
@@ -375,23 +390,22 @@ void main() {
     expect(find.text('CALORIES TREND'), findsNothing);
   });
 
-  // ── CALORIES-LOGGED LIST (all-source companion to the trend) ─────────────────
+  // ── CALORIES TREND + CALORIES-LOGGED LIST both render from the all-source list ─
   //
-  // The list renders for EVERY day with ≥1 logged item, any source, so an ad-hoc/no-plan logger
-  // (empty plan-only `recentDays` trend) still sees what they logged. The trend card stays exactly
-  // as-is — shown only when `recentDays` is non-empty.
+  // The trend and the list both read the all-source `caloriesByDay` (every day with ≥1 logged item, any
+  // source), so an ad-hoc/no-plan logger now sees BOTH a calories trend AND the explicit per-day list —
+  // the whole point of counting ad-hoc days on the trend.
 
-  testWidgets('ad-hoc logger (empty recentDays) → calories-logged LIST with kcal, NO trend, NO target',
-      (tester) async {
+  testWidgets('ad-hoc logger (no plan) → trend AND calories-logged list both render', (tester) async {
     await pump(
       tester,
       AsyncData(NutritionAdherence(
         hasPlan: false,
         hasAnyLogging: true,
         loggedDaysThisWeek: 3,
-        // The plan-only trend series is EMPTY for a no-plan logger…
+        // No plan → the plan-only trend series is empty…
         recentDays: const [],
-        // …but the all-source list carries the logged days (no targets → kcal only).
+        // …but the all-source list now drives the trend too, so an ad-hoc logger sees a calories trend.
         caloriesByDay: [
           logDay(2100, date: DateTime(2024, 6, 10)),
           logDay(2300, date: DateTime(2024, 6, 11)),
@@ -401,16 +415,16 @@ void main() {
     );
     await scrollTo(tester, find.text('CALORIES LOGGED'));
 
-    // The list header + per-day kcal render.
+    // The trend now renders for a no-plan logger (counting ad-hoc days — ask #1).
+    expect(find.text('CALORIES TREND'), findsOneWidget);
+    // The explicit list renders too, with per-day kcal.
     expect(find.text('CALORIES LOGGED'), findsOneWidget);
     expect(find.text('2100 kcal'), findsOneWidget);
     expect(find.text('2300 kcal'), findsOneWidget);
     expect(find.text('1900 kcal'), findsOneWidget);
     // Relative day label is reused (deterministic prior-year date).
     expect(find.text('Jun 12, 2024'), findsWidgets);
-
-    // NO plan trend card (empty recentDays) and NO fabricated target / delta / ring / %.
-    expect(find.text('CALORIES TREND'), findsNothing);
+    // No fabricated target / delta / ring / %, since these ad-hoc days carry no target.
     expect(find.byType(GbRing), findsNothing);
     expect(find.textContaining('%'), findsNothing);
     expect(find.textContaining('/ '), findsNothing); // no "/ target" without a real target
@@ -423,13 +437,7 @@ void main() {
         hasPlan: true,
         currentWeekAvgPct: 84,
         loggedDaysThisWeek: 3,
-        // Plan trend series present…
-        recentDays: [
-          day(2000, target: 2200),
-          day(2100, target: 2200),
-          day(2300, target: 2200),
-        ],
-        // …and the all-source list present too.
+        recentDays: const [],
         caloriesByDay: [
           logDay(2000, target: 2200, date: DateTime(2024, 6, 10)),
           logDay(2100, target: 2200, date: DateTime(2024, 6, 11)),
@@ -439,7 +447,7 @@ void main() {
     );
     await scrollTo(tester, find.text('CALORIES LOGGED'));
 
-    // BOTH surfaces render — the trend is unchanged, the list is additive.
+    // BOTH surfaces render — the trend bar chart and the explicit list, both all-source.
     expect(find.text('CALORIES TREND'), findsOneWidget);
     expect(find.text('CALORIES LOGGED'), findsOneWidget);
     // Still no fabricated ring / %.
@@ -481,7 +489,7 @@ void main() {
       AsyncData(NutritionAdherence(
         hasPlan: true,
         loggedDaysThisWeek: 1,
-        recentDays: [day(2000, target: 2200)],
+        recentDays: const [],
         caloriesByDay: [logDay(2000, target: 2200, date: DateTime(2024, 6, 10))],
       )),
     );

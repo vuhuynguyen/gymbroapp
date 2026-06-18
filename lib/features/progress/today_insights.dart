@@ -20,6 +20,8 @@ class TodaySnapshot {
     this.consumedKcal,
     this.targetKcal,
     this.proteinG,
+    this.carbsG,
+    this.fatG,
     this.sleepHours,
     this.weightKg,
     this.sessionsThisWeek,
@@ -28,6 +30,8 @@ class TodaySnapshot {
   final int? consumedKcal;
   final int? targetKcal;
   final int? proteinG;
+  final int? carbsG;
+  final int? fatG;
   final double? sleepHours;
   final double? weightKg;
   final int? sessionsThisWeek;
@@ -65,6 +69,10 @@ TodayInsights buildTodayInsights({
     proteinG: (nutrition?.loggedProtein ?? 0) > 0
         ? nutrition!.loggedProtein.round()
         : null,
+    carbsG: (nutrition?.loggedCarbs ?? 0) > 0
+        ? nutrition!.loggedCarbs.round()
+        : null,
+    fatG: (nutrition?.loggedFat ?? 0) > 0 ? nutrition!.loggedFat.round() : null,
     sleepHours: checkin?.sleepHours?.toDouble(),
     weightKg: checkin?.weightKg?.toDouble(),
     sessionsThisWeek: week?.completedSessions,
@@ -81,19 +89,19 @@ TodayInsights buildTodayInsights({
     } else if (t != null && t > 0) {
       final c = nutrition.consumedKcal;
       if (c > t * 1.1) {
-        tips.add(
-            TodayTip(TipTone.warn, 'Over your calories', '$c / $t kcal today.'));
+        tips.add(TodayTip(
+            TipTone.warn, 'Over your calories', '$c / $t kcal today.'));
       } else if (c >= t * 0.9) {
-        tips.add(
-            TodayTip(TipTone.good, 'Calories on target', '$c / $t kcal today.'));
+        tips.add(TodayTip(
+            TipTone.good, 'Calories on target', '$c / $t kcal today.'));
       } else if (itemsLeft > 0) {
         tips.add(TodayTip(
             TipTone.info,
             '$itemsLeft item${itemsLeft == 1 ? '' : 's'} left to log',
             '$c / $t kcal so far — a few planned items to go.'));
       } else {
-        tips.add(TodayTip(
-            TipTone.info, 'Under your target', '$c / $t kcal today.'));
+        tips.add(
+            TodayTip(TipTone.info, 'Under your target', '$c / $t kcal today.'));
       }
     }
   }

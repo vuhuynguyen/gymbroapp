@@ -158,14 +158,20 @@ class _Body extends ConsumerWidget {
     // Muscle groups come from the exercise catalog (same source the live logger uses); skipped for
     // cardio. Null catalog (still loading / offline) simply yields no muscle bars.
     final catalog = ref.watch(exerciseCatalogProvider).valueOrNull;
+    List<({String group, bool isPrimary})> musclesOf(String id) => [
+          for (final m in (catalog?[id]?.muscles ?? const <ExerciseMuscle>[]))
+            (group: m.name, isPrimary: m.isPrimary)
+        ];
     final byMuscle = cardio
         ? const <String, MuscleInvolvement>{}
-        : muscleInvolvement(
+        : muscleInvolvement(d.exercises, musclesOf);
+    // Which exercises drove each muscle group's sets — revealed when a muscle row is expanded.
+    final muscleBreakdown = cardio
+        ? const <String, List<MuscleExerciseContribution>>{}
+        : muscleExerciseBreakdown(
             d.exercises,
-            (id) => [
-              for (final m in (catalog?[id]?.muscles ?? const <ExerciseMuscle>[]))
-                (group: m.name, isPrimary: m.isPrimary)
-            ],
+            musclesOf,
+            (e) => e.exerciseName ?? catalog?[e.exerciseId]?.name ?? 'Exercise',
           );
     // Progress vs the trainee's previous session (the backend ships per-exercise lastPerformed).
     final progress = cardio ? null : sessionProgress(d.exercises);
@@ -264,7 +270,8 @@ class _Body extends ConsumerWidget {
                   ? GbStatTile(
                       icon: Icons.favorite_outline,
                       label: 'Avg HR',
-                      value: ct!.avgHeartRate != null ? '${ct.avgHeartRate}' : '—',
+                      value:
+                          ct!.avgHeartRate != null ? '${ct.avgHeartRate}' : '—',
                       unit: ct.avgHeartRate != null ? 'bpm' : null,
                       accent: gb.danger,
                     )
@@ -307,7 +314,7 @@ class _Body extends ConsumerWidget {
           const SizedBox(height: AppSpacing.lg),
           GbSectionTitle('Muscles trained', count: byMuscle.length),
           const SizedBox(height: AppSpacing.sm),
-          _MuscleBars(byMuscle: byMuscle),
+          _MuscleBars(byMuscle: byMuscle, breakdown: muscleBreakdown),
         ],
 
         if (d.notes != null && d.notes!.isNotEmpty) ...[
@@ -523,8 +530,12 @@ class _ProgressVsLast extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(positive ? Icons.trending_up_rounded : Icons.trending_down_rounded,
-              size: 18, color: fg),
+          Icon(
+              positive
+                  ? Icons.trending_up_rounded
+                  : Icons.trending_down_rounded,
+              size: 18,
+              color: fg),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
             child: RichText(
@@ -551,8 +562,11 @@ class _ProgressVsLast extends StatelessWidget {
 /// (assisting) involvement. Scaled to the busiest group's total. Tap a row to reveal the exact
 /// primary/secondary split.
 class _MuscleBars extends StatefulWidget {
-  const _MuscleBars({required this.byMuscle});
+  const _MuscleBars({required this.byMuscle, required this.breakdown});
   final Map<String, MuscleInvolvement> byMuscle;
+
+  /// Per-group contributing exercises (working sets + primary/secondary role) — shown when expanded.
+  final Map<String, List<MuscleExerciseContribution>> breakdown;
 
   @override
   State<_MuscleBars> createState() => _MuscleBarsState();
@@ -639,21 +653,59 @@ class _MuscleBarsState extends State<_MuscleBars> {
               ),
             ),
           ),
-          // Tapped → the exact primary/secondary counts, aligned under the bar.
+          // Tapped → the primary/secondary split AND which exercises drove this muscle's sets.
           if (_expanded.contains(e.key))
             Padding(
-              padding: const EdgeInsets.only(left: 84, bottom: 6),
-              child: Row(
+              padding: const EdgeInsets.only(left: 84, bottom: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _LegendDot(
-                      color: gb.primary600,
-                      label: '${e.value.primary} primary'),
-                  if (e.value.secondary > 0) ...[
-                    const SizedBox(width: AppSpacing.md),
-                    _LegendDot(
-                        color: gb.primary600.withValues(alpha: 0.30),
-                        label: '${e.value.secondary} secondary'),
-                  ],
+                  Row(
+                    children: [
+                      _LegendDot(
+                          color: gb.primary600,
+                          label: '${e.value.primary} primary'),
+                      if (e.value.secondary > 0) ...[
+                        const SizedBox(width: AppSpacing.md),
+                        _LegendDot(
+                            color: gb.primary600.withValues(alpha: 0.30),
+                            label: '${e.value.secondary} secondary'),
+                      ],
+                    ],
+                  ),
+                  // The contributing exercises: a primary/secondary dot, the name, and its working sets.
+                  for (final c in (widget.breakdown[e.key] ??
+                      const <MuscleExerciseContribution>[]))
+                    Padding(
+                      padding: const EdgeInsets.only(top: 6),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: c.isPrimary
+                                  ? gb.primary600
+                                  : gb.primary600.withValues(alpha: 0.30),
+                              borderRadius: BorderRadius.circular(2.5),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(c.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    fontSize: 12.5, color: gb.grey700)),
+                          ),
+                          const SizedBox(width: 8),
+                          Text('${c.sets} ${c.sets == 1 ? 'set' : 'sets'}',
+                              style:
+                                  AppText.mono(const TextStyle(fontSize: 11.5))
+                                      .copyWith(color: gb.grey500)),
+                        ],
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -687,11 +739,10 @@ class _LegendDot extends StatelessWidget {
         Container(
             width: 10,
             height: 10,
-            decoration:
-                BoxDecoration(color: color, borderRadius: BorderRadius.circular(3))),
+            decoration: BoxDecoration(
+                color: color, borderRadius: BorderRadius.circular(3))),
         const SizedBox(width: 5),
-        Text(label,
-            style: TextStyle(fontSize: 11, color: context.gb.grey500)),
+        Text(label, style: TextStyle(fontSize: 11, color: context.gb.grey500)),
       ],
     );
   }
@@ -709,7 +760,10 @@ class _VsLastDelta extends StatelessWidget {
     final (Color c, String label) = prog.isUp
         ? (gb.emeraldInk, '↑ +${_fmtKgDelta(prog.deltaE1rmKg)} e1RM vs last')
         : prog.isDown
-            ? (gb.amberInk, '↓ −${_fmtKgDelta(prog.deltaE1rmKg.abs())} e1RM vs last')
+            ? (
+                gb.amberInk,
+                '↓ −${_fmtKgDelta(prog.deltaE1rmKg.abs())} e1RM vs last'
+              )
             : (gb.grey500, '= matched last time');
     return Text(label,
         style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: c));

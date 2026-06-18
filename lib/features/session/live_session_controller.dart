@@ -9,6 +9,7 @@ import '../../domain/enums.dart';
 import '../../domain/session_metrics.dart';
 import '../../core/notifications/nutrition_reminders.dart';
 import '../log/log_providers.dart';
+import '../nutrition/nutrition_providers.dart';
 
 class RestTimerState {
   const RestTimerState(this.remaining, this.total);
@@ -555,3 +556,17 @@ class LiveSessionController extends AutoDisposeNotifier<LiveSessionState> {
 final liveSessionControllerProvider =
     AutoDisposeNotifierProvider<LiveSessionController, LiveSessionState>(
         LiveSessionController.new);
+
+/// Today's recovery/fuel signals for the live logger's set suggestion — derived from the day's body
+/// check-in (sleep) and today's nutrition log (calories), providers the Log/Progress tabs already
+/// populate. Every field degrades to null when its source is loading/absent, so the suggestion simply
+/// falls back to the plan / last-time math. `autoDispose`: scoped to the open session screen.
+final wellnessSignalsProvider = Provider.autoDispose<WellnessSignals>((ref) {
+  final sleep = ref.watch(checkinProvider).valueOrNull?.sleepHours;
+  final day = ref.watch(todayNutritionProvider).valueOrNull;
+  return WellnessSignals(
+    sleepHoursLastNight: sleep?.toDouble(),
+    consumedKcalToday: day?.consumedKcal,
+    targetKcalToday: day?.targetKcal,
+  );
+});
