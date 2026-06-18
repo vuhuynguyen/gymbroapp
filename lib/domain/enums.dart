@@ -72,7 +72,8 @@ enum PerformedSetType implements WireEnum {
   working('working', 2),
   drop('drop', 3),
   amrap('amrap', 4),
-  failure('failure', 5);
+  failure('failure', 5),
+  cluster('cluster', 6);
 
   const PerformedSetType(this.wire, this.value);
   @override
@@ -90,6 +91,7 @@ enum PerformedSetType implements WireEnum {
         PerformedSetType.drop => 'Drop',
         PerformedSetType.amrap => 'AMRAP',
         PerformedSetType.failure => 'Failure',
+        PerformedSetType.cluster => 'Cluster',
       };
 }
 

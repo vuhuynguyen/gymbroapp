@@ -29,6 +29,7 @@ const _setTypeCycle = [
   PerformedSetType.warmup,
   PerformedSetType.working,
   PerformedSetType.drop,
+  PerformedSetType.cluster,
   PerformedSetType.amrap,
 ];
 
@@ -1360,6 +1361,7 @@ class _EditSetSheetState extends State<_EditSetSheet> {
                 PerformedSetType.warmup,
                 PerformedSetType.working,
                 PerformedSetType.drop,
+                PerformedSetType.cluster,
                 PerformedSetType.amrap,
                 PerformedSetType.failure,
               ])
@@ -1696,6 +1698,8 @@ class _EntryRow extends StatelessWidget {
           'Lighter prep — not counted as working volume.',
         PerformedSetType.working => 'Counts toward your plan and e1RM.',
         PerformedSetType.drop => 'Reduced weight right after a working set.',
+        PerformedSetType.cluster =>
+          'Short intra-set rest between mini-sets (weight may change) — reps cluster under one set.',
         PerformedSetType.amrap => 'As many reps as possible.',
         PerformedSetType.failure => 'Taken to muscular failure.',
       };

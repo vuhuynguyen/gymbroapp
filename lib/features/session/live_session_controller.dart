@@ -197,17 +197,21 @@ class LiveSessionController extends AutoDisposeNotifier<LiveSessionState> {
     final setNumber = ex.sets.length + 1;
     final snap = _snapshotFor(session, ex);
 
-    final resolvedType = parentSetId != null
-        ? PerformedSetType.drop
-        : (setType ??
-            ((snap != null && snap.sets.length >= setNumber)
+    // The picked set type wins; otherwise an explicit parent implies a Drop, else continue the plan's
+    // prescribed type (default Working).
+    final resolvedType = setType ??
+        (parentSetId != null
+            ? PerformedSetType.drop
+            : ((snap != null && snap.sets.length >= setNumber)
                 ? PerformedSetType.parse(snap.sets[setNumber - 1].setType.wire)
                 : PerformedSetType.working));
 
-    // A Drop set auto-links to the last lead set, so the cluster rolls up as ONE logical set —
-    // the user just picks "Drop" from the set-type selector (no separate "add drop" action).
+    // A Drop or Cluster set auto-links to the last lead set, so the stages roll up as ONE logical set —
+    // the user just picks "Drop"/"Cluster" from the set-type selector (no separate "add stage" action).
     var linkParent = parentSetId;
-    if (linkParent == null && resolvedType == PerformedSetType.drop) {
+    if (linkParent == null &&
+        (resolvedType == PerformedSetType.drop ||
+            resolvedType == PerformedSetType.cluster)) {
       final leads = ex.sets.where((s) => s.parentSetId == null).toList();
       if (leads.isNotEmpty) linkParent = leads.last.id;
     }
