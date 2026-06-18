@@ -83,18 +83,30 @@ final strengthLiftsProvider =
 /// Bodyweight trend for the home Body section (`/api/me/progress/metrics/series?type=weight`).
 /// `autoDispose`: loads independently of the overview call so a slow/absent metrics endpoint never
 /// blocks the page; the section degrades to an empty-state invite on no data and stays quiet on error.
+/// Watches [progressPeriodWeeksProvider] and passes `from = today − N weeks` so the trend honours the
+/// selected period (Week / 4w / 12w), like the strength + nutrition trends.
 final bodyweightSeriesProvider =
     FutureProvider.autoDispose<MetricSeries>((ref) async {
-  return ref.read(progressRepositoryProvider).metricSeries('weight');
+  final weeks = ref.watch(progressPeriodWeeksProvider);
+  final now = DateTime.now();
+  final from = DateTime(now.year, now.month, now.day)
+      .subtract(Duration(days: 7 * weeks));
+  return ref.read(progressRepositoryProvider).metricSeries('weight', from: from);
 });
 
 /// Sleep-hours trend for the home Sleep section (`/api/me/progress/metrics/series?type=sleep`). Same
 /// shape + graceful degradation as [bodyweightSeriesProvider]: loads independently of the overview, so a
 /// slow/absent metrics endpoint never blocks the page; the section shows a "log your sleep" invite on no
 /// data and stays quiet on error. The metric-series endpoint is type-agnostic, so this reuses it.
+/// Watches [progressPeriodWeeksProvider] and passes `from = today − N weeks` so the trend honours the
+/// selected period (Week / 4w / 12w).
 final sleepSeriesProvider =
     FutureProvider.autoDispose<MetricSeries>((ref) async {
-  return ref.read(progressRepositoryProvider).metricSeries('sleep');
+  final weeks = ref.watch(progressPeriodWeeksProvider);
+  final now = DateTime.now();
+  final from = DateTime(now.year, now.month, now.day)
+      .subtract(Duration(days: 7 * weeks));
+  return ref.read(progressRepositoryProvider).metricSeries('sleep', from: from);
 });
 
 /// The trainee's current goal weight (Phase 3, Decision **D12**) — read as the latest point of the

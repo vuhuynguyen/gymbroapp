@@ -63,6 +63,14 @@ bool muscleMapHasContent(
     [...detailedPrimary, ...detailedSecondary].any((m) => _canon(m) != null) ||
     [...primary, ...secondary].any((m) => _fineSetFor(m).isNotEmpty);
 
+/// Canonical fine slug for a (coarse/authored) muscle name, or null — the same 16-slug vocabulary the figure
+/// draws. Public so callers can normalise a catalog slug to compare it against [groupFineMuscles].
+String? canonicalMuscle(String s) => _canon(s);
+
+/// The fine muscle slugs a coarse group name spans (e.g. 'Legs' → quadriceps/hamstring/gluteal/calves/…).
+/// Public so a session heat-map can be filtered by muscle group.
+Set<String> groupFineMuscles(String group) => _fineSetFor(group).toSet();
+
 // Red heat-map palette (a fixed diagram palette, not theme-tinted).
 const String _primaryFill = '#DC2626';
 const String _secondaryFill = '#F87171';

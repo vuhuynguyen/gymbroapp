@@ -50,14 +50,10 @@ final routerProvider = Provider<GoRouter>((ref) {
   final tokenStore = ref.read(tokenStoreProvider);
   final tenantStore = ref.read(tenantStoreProvider);
 
-  // One-shot role landing: the first authed frame is sent to the role's home (Owner → /coach,
-  // trainee → /log). After that, both roles navigate freely — an Owner can still open Log to self-
-  // train and Progress for their own trends. Reset on sign-out so the next sign-in re-lands.
-  var landed = false;
-
   return GoRouter(
     navigatorKey: _rootKey,
-    // Universal initial location; the redirect re-homes an Owner to /coach on the first authed frame.
+    // Both roles land on /log (the shared self-train home); an Owner opens Coach from the nav when they
+    // want it. Role guards below keep each role off the other's private routes.
     initialLocation: '/log',
     refreshListenable: Listenable.merge([tokenStore, tenantStore]),
     redirect: (context, state) {
@@ -66,20 +62,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       final onAuthRoute = loc == '/login' || loc == '/forgot-password';
 
       if (!authed) {
-        landed = false;
         return onAuthRoute ? null : '/login';
       }
 
       final role = tenantStore.activeRole;
-      final home = role == TenantRole.owner ? '/coach' : '/log';
-      if (onAuthRoute) return home;
-
-      // First authed frame: re-home an Owner sitting on the universal /log landing to their hub.
-      // Guarded so an Owner who later taps Log isn't yanked back — landing fires exactly once.
-      if (!landed && role != null) {
-        landed = true;
-        if (loc == '/log' && loc != home) return home;
-      }
+      // Everyone homes to /log after auth (the default landing); an Owner reaches Coach via the nav.
+      if (onAuthRoute) return '/log';
 
       // Role guards: keep each role off the other's routes, bouncing to the shared /log home. /log,
       // /progress and /profile are shared (an Owner self-trains and tracks their own trends).

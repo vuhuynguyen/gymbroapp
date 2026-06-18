@@ -780,8 +780,9 @@ class _PagerChip extends StatelessWidget {
       border = gb.borderCard;
       fg = gb.grey500;
     }
-    final marker =
-        skipped ? Icons.remove : (done && !current ? Icons.check : null);
+    // Done exercises read as complete from the green fill alone — no check glyph; only a skip shows a
+    // marker (the dash), so a plain green number = done.
+    final marker = skipped ? Icons.remove : null;
     final label = Text('$number',
         style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: fg));
     // A number on its own is a circle (design step indicator); a marker + number stays a pill.
@@ -1162,12 +1163,14 @@ class _LoggedSetRow extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
           child: Row(
             children: [
-              // Done marker: a plain green dot (no check glyph) — the green fill alone reads as "logged".
+              // Done marker: a green check inside the dot — confirms the set is logged.
               Container(
                 width: 26,
                 height: 26,
+                alignment: Alignment.center,
                 decoration:
                     BoxDecoration(color: gb.success0, shape: BoxShape.circle),
+                child: Icon(Icons.check, size: 15, color: gb.success),
               ),
               const SizedBox(width: 12),
               SizedBox(
@@ -1204,12 +1207,17 @@ class _LoggedSetRow extends StatelessWidget {
                   ],
                 ),
               ),
-              // Single reorder affordance — move this lead set up (the down chevron was removed to
-              // declutter logged rows; move a set down by moving the one below it up). The whole row
-              // taps to edit; this wins its own taps.
-              if (onMoveUp != null) ...[
+              // Reorder arrows for a lead set (hidden when this row can't move either way — a drop
+              // stage, or the only lead). The whole row taps to edit; these win their own taps.
+              if (onMoveUp != null || onMoveDown != null) ...[
                 const SizedBox(width: 6),
-                _arrow(context, Icons.keyboard_arrow_up, onMoveUp),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _arrow(context, Icons.keyboard_arrow_up, onMoveUp),
+                    _arrow(context, Icons.keyboard_arrow_down, onMoveDown),
+                  ],
+                ),
               ],
             ],
           ),
@@ -2055,6 +2063,24 @@ String _titleCase(String s) => s.isEmpty
     : s[0].toUpperCase() + s.substring(1).replaceAll('-', ' ');
 
 /// Exercise-catalog picker (substitute / add) — search + category & equipment filters over the global catalog.
+/// Token-based exercise search: every word in the query must appear somewhere in the exercise's name,
+/// equipment, category, or muscle group — order-independent and punctuation-insensitive (so "dumbbell rear
+/// delt fly" matches "Rear-Delt Dumbbell Fly", and "machine leg raise" matches a Machine-equipment "… Leg
+/// Raise"). Empty query matches everything.
+bool _matchesExerciseQuery(ExerciseSummary e, String query) {
+  final q = query.trim();
+  if (q.isEmpty) return true;
+  final norm = RegExp(r'[^a-z0-9]+');
+  final hay = '${e.name} ${e.equipment} ${e.category} ${e.muscleGroup}'
+      .toLowerCase()
+      .replaceAll(norm, ' ');
+  return q
+      .toLowerCase()
+      .split(norm)
+      .where((t) => t.isNotEmpty)
+      .every((t) => hay.contains(t));
+}
+
 class _CatalogSheet extends ConsumerStatefulWidget {
   const _CatalogSheet({required this.title, required this.onPick});
   final String title;
@@ -2083,8 +2109,8 @@ class _CatalogSheetState extends ConsumerState<_CatalogSheet> {
     super.dispose();
   }
 
-  /// Filter bar: a pinned Equipment dropdown (secondary axis) on the left, then a horizontally
-  /// scrolling row of category chips (primary axis). One compact row instead of two chip rows.
+  /// Filter bar: a horizontally scrolling row of category chips (primary axis) on the left, then a pinned,
+  /// compact Equipment dropdown (secondary axis) on the right. One compact row instead of two chip rows.
   Widget _filterBar(List<String> categories, List<String> equipments) {
     final gb = context.gb;
     return SizedBox(
@@ -2092,10 +2118,6 @@ class _CatalogSheetState extends ConsumerState<_CatalogSheet> {
       child: Row(
         children: [
           const SizedBox(width: AppSpacing.md),
-          _equipmentDropdown(equipments),
-          const SizedBox(width: AppSpacing.sm),
-          Container(width: 1, height: 22, color: gb.borderCard),
-          const SizedBox(width: AppSpacing.xs),
           Expanded(
             child: ListView(
               scrollDirection: Axis.horizontal,
@@ -2112,13 +2134,18 @@ class _CatalogSheetState extends ConsumerState<_CatalogSheet> {
               ],
             ),
           ),
+          const SizedBox(width: AppSpacing.xs),
+          Container(width: 1, height: 22, color: gb.borderCard),
+          const SizedBox(width: AppSpacing.sm),
+          _equipmentDropdown(equipments),
+          const SizedBox(width: AppSpacing.md),
         ],
       ),
     );
   }
 
-  /// Compact equipment filter — a pill that opens a dropdown menu of the equipment present. Reads as a
-  /// neutral "Equipment ▾" until a value is picked, then turns into a filled "Cable ▾"-style active chip.
+  /// Compact equipment filter — a pill that opens a dropdown menu of the equipment present. Shows just a
+  /// filter glyph + caret until a value is picked, then turns into a filled "Cable ▾"-style active chip.
   Widget _equipmentDropdown(List<String> equipments) {
     final gb = context.gb;
     final active = _equipment != 'All';
@@ -2151,26 +2178,30 @@ class _CatalogSheetState extends ConsumerState<_CatalogSheet> {
           ),
       ],
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding:
+            EdgeInsets.symmetric(horizontal: active ? 9 : 7, vertical: 7),
         decoration: BoxDecoration(
           color: active ? gb.primary600 : gb.card,
           borderRadius: BorderRadius.circular(99),
           border:
               Border.all(color: active ? gb.primary600 : gb.borderCard),
         ),
+        // Compact: just a filter glyph + caret until a value is picked (then it shows the value).
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.tune,
-                size: 14, color: active ? Colors.white : gb.grey400),
-            const SizedBox(width: 5),
-            Text(active ? _equipmentLabel(_equipment) : 'Equipment',
-                style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: active ? Colors.white : gb.ink)),
+                size: 14, color: active ? Colors.white : gb.grey500),
+            if (active) ...[
+              const SizedBox(width: 4),
+              Text(_equipmentLabel(_equipment),
+                  style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white)),
+            ],
             Icon(Icons.arrow_drop_down,
-                size: 18, color: active ? Colors.white : gb.grey400),
+                size: 16, color: active ? Colors.white : gb.grey500),
           ],
         ),
       ),
@@ -2224,8 +2255,7 @@ class _CatalogSheetState extends ConsumerState<_CatalogSheet> {
             final filtered = all.where((e) {
               final byCat = _category == 'All' || e.category == _category;
               final byEq = _equipment == 'All' || e.equipment == _equipment;
-              final byQuery = _query.isEmpty ||
-                  e.name.toLowerCase().contains(_query.toLowerCase());
+              final byQuery = _matchesExerciseQuery(e, _query);
               return byCat && byEq && byQuery;
             }).toList();
 
