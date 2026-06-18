@@ -1204,17 +1204,12 @@ class _LoggedSetRow extends StatelessWidget {
                   ],
                 ),
               ),
-              // Reorder arrows for a lead set (hidden when this row can't move either way — a drop
-              // stage, or the only lead). The whole row taps to edit; these win their own taps.
-              if (onMoveUp != null || onMoveDown != null) ...[
+              // Single reorder affordance — move this lead set up (the down chevron was removed to
+              // declutter logged rows; move a set down by moving the one below it up). The whole row
+              // taps to edit; this wins its own taps.
+              if (onMoveUp != null) ...[
                 const SizedBox(width: 6),
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _arrow(context, Icons.keyboard_arrow_up, onMoveUp),
-                    _arrow(context, Icons.keyboard_arrow_down, onMoveDown),
-                  ],
-                ),
+                _arrow(context, Icons.keyboard_arrow_up, onMoveUp),
               ],
             ],
           ),
@@ -2990,7 +2985,6 @@ class _MediaSlotState extends State<_MediaSlot> {
     if (pages.isEmpty) pages.add(_placeholder(gb));
 
     final activePage = _page.clamp(0, pages.length - 1);
-    final photoActive = hasImage && activePage == 0;
 
     return AspectRatio(
       aspectRatio: 16 / 9,
@@ -3038,22 +3032,44 @@ class _MediaSlotState extends State<_MediaSlot> {
                 child: _MediaChip(
                     icon: Icons.fitness_center, label: widget.equipment),
               ),
-            // The "Demo loop" affordance only makes sense over real footage — shown only while the
-            // photo page is active (there is no demo media in the free layer).
-            if (photoActive)
-              const Positioned(
-                right: 10,
-                bottom: 10,
-                child: _MediaChip(icon: Icons.play_arrow, label: 'Demo loop'),
-              ),
-            // Swipe affordance — page dots in a translucent pill so they read over both the photo and
-            // the light-grey map background.
+            // Explicit Photo ⇄ Map toggle (bottom-right) — the reliable way to switch; swipe is easy to miss
+            // inside the draggable sheet. The label/icon show the view you'll switch TO.
             if (pages.length > 1)
               Positioned(
-                left: 0,
-                right: 0,
                 bottom: 10,
-                child: _CarouselDots(count: pages.length, active: activePage),
+                right: 10,
+                child: GestureDetector(
+                  onTap: () =>
+                      _go((activePage + 1) % pages.length, pages.length),
+                  child: Container(
+                    height: 28,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    decoration: BoxDecoration(
+                      color: AppPalette.grey900.withValues(alpha: 0.62),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                            activePage == 0
+                                ? Icons.accessibility_new
+                                : Icons.image_outlined,
+                            size: 13,
+                            color: Colors.white),
+                        const SizedBox(width: 5),
+                        Text(activePage == 0 ? 'Muscle map' : 'Photo',
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700)),
+                        const SizedBox(width: 3),
+                        const Icon(Icons.swap_horiz,
+                            size: 13, color: Colors.white),
+                      ],
+                    ),
+                  ),
+                ),
               ),
           ],
         ),
@@ -3067,45 +3083,6 @@ class _MediaSlotState extends State<_MediaSlot> {
           child: Icon(Icons.fitness_center, size: 40, color: gb.grey400),
         ),
       );
-}
-
-/// Page-indicator dots for the [_MediaSlot] carousel — wrapped in a translucent dark pill so the white
-/// dots stay legible over both the photo and the light-grey muscle-map page.
-class _CarouselDots extends StatelessWidget {
-  const _CarouselDots({required this.count, required this.active});
-  final int count;
-  final int active;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-        decoration: BoxDecoration(
-          color: AppPalette.grey900.withValues(alpha: 0.45),
-          borderRadius: BorderRadius.circular(99),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (var i = 0; i < count; i++)
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                margin: EdgeInsets.only(right: i == count - 1 ? 0 : 5),
-                width: i == active ? 14 : 6,
-                height: 6,
-                decoration: BoxDecoration(
-                  color: i == active
-                      ? Colors.white
-                      : Colors.white.withValues(alpha: 0.55),
-                  borderRadius: BorderRadius.circular(99),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 /// Overlaid translucent chip on the media slot (equipment / demo).

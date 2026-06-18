@@ -312,9 +312,27 @@ class _Body extends ConsumerWidget {
         // Muscles trained — working sets per muscle group, split primary vs secondary (lifting only).
         if (byMuscle.isNotEmpty) ...[
           const SizedBox(height: AppSpacing.lg),
-          GbSectionTitle('Muscles trained', count: byMuscle.length),
+          Row(
+            children: [
+              Expanded(
+                  child: GbSectionTitle('Muscles trained',
+                      count: byMuscle.length)),
+              // (i) → the full breakdown sheet; the overview stays just the bars.
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () =>
+                    _showMuscleDetail(context, byMuscle, muscleBreakdown),
+                child: Padding(
+                  padding: const EdgeInsets.all(4),
+                  child:
+                      Icon(Icons.info_outline, size: 18, color: gb.grey400),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: AppSpacing.sm),
-          _MuscleBars(byMuscle: byMuscle, breakdown: muscleBreakdown),
+          _MuscleBars(
+              byMuscle: byMuscle, breakdown: muscleBreakdown, compact: true),
         ],
 
         if (d.notes != null && d.notes!.isNotEmpty) ...[
@@ -562,11 +580,15 @@ class _ProgressVsLast extends StatelessWidget {
 /// (assisting) involvement. Scaled to the busiest group's total. Tap a row to reveal the exact
 /// primary/secondary split.
 class _MuscleBars extends StatefulWidget {
-  const _MuscleBars({required this.byMuscle, required this.breakdown});
+  const _MuscleBars(
+      {required this.byMuscle, required this.breakdown, this.compact = false});
   final Map<String, MuscleInvolvement> byMuscle;
 
   /// Per-group contributing exercises (working sets + primary/secondary role) — shown when expanded.
   final Map<String, List<MuscleExerciseContribution>> breakdown;
+
+  /// Overview = bars only (no tap/caret/breakdown). The (i) detail sheet (false) keeps tap-to-expand.
+  final bool compact;
 
   @override
   State<_MuscleBars> createState() => _MuscleBarsState();
@@ -587,9 +609,11 @@ class _MuscleBarsState extends State<_MuscleBars> {
         for (final e in byMuscle.entries) ...[
           InkWell(
             borderRadius: BorderRadius.circular(AppRadius.sm),
-            onTap: () => setState(() => _expanded.contains(e.key)
-                ? _expanded.remove(e.key)
-                : _expanded.add(e.key)),
+            onTap: widget.compact
+                ? null
+                : () => setState(() => _expanded.contains(e.key)
+                    ? _expanded.remove(e.key)
+                    : _expanded.add(e.key)),
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: Row(
@@ -642,19 +666,20 @@ class _MuscleBarsState extends State<_MuscleBars> {
                                 fontSize: 13, fontWeight: FontWeight.w700))
                             .copyWith(color: gb.grey700)),
                   ),
-                  // A quiet caret hinting the row expands to the split.
-                  Icon(
-                      _expanded.contains(e.key)
-                          ? Icons.expand_less
-                          : Icons.expand_more,
-                      size: 16,
-                      color: gb.grey400),
+                  // A quiet caret hinting the row expands to the split (overview hides it).
+                  if (!widget.compact)
+                    Icon(
+                        _expanded.contains(e.key)
+                            ? Icons.expand_less
+                            : Icons.expand_more,
+                        size: 16,
+                        color: gb.grey400),
                 ],
               ),
             ),
           ),
           // Tapped → the primary/secondary split AND which exercises drove this muscle's sets.
-          if (_expanded.contains(e.key))
+          if (!widget.compact && _expanded.contains(e.key))
             Padding(
               padding: const EdgeInsets.only(left: 84, bottom: 8),
               child: Column(
@@ -724,6 +749,41 @@ class _MuscleBarsState extends State<_MuscleBars> {
       ],
     );
   }
+}
+
+/// The full Muscles-trained breakdown in a bottom sheet (opened from the overview's (i)) — the same
+/// two-tone bars, but tap a group to reveal its primary/secondary split and the exercises behind it.
+void _showMuscleDetail(
+  BuildContext context,
+  Map<String, MuscleInvolvement> byMuscle,
+  Map<String, List<MuscleExerciseContribution>> breakdown,
+) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: context.gb.card,
+    shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.lg))),
+    builder: (_) => DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.72,
+      maxChildSize: 0.94,
+      builder: (ctx, scroll) => ListView(
+        controller: scroll,
+        padding: const EdgeInsets.fromLTRB(
+            AppSpacing.md, AppSpacing.md, AppSpacing.md, AppSpacing.xl),
+        children: [
+          const GbSheetHeader(
+            title: 'Muscles trained',
+            subtitle:
+                'Working sets per muscle — tap a group for the exercises behind it.',
+          ),
+          const SizedBox(height: AppSpacing.md),
+          _MuscleBars(byMuscle: byMuscle, breakdown: breakdown),
+        ],
+      ),
+    ),
+  );
 }
 
 class _LegendDot extends StatelessWidget {
