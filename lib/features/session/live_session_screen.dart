@@ -2943,6 +2943,12 @@ class _MediaSlotState extends State<_MediaSlot> {
     super.dispose();
   }
 
+  void _go(int target, int count) {
+    if (!_controller.hasClients) return;
+    _controller.animateToPage(target.clamp(0, count - 1),
+        duration: const Duration(milliseconds: 280), curve: Curves.easeOutCubic);
+  }
+
   @override
   Widget build(BuildContext context) {
     final gb = context.gb;
@@ -2992,16 +2998,23 @@ class _MediaSlotState extends State<_MediaSlot> {
             if (pages.length == 1)
               pages.first
             else
-              // Swipe OR tap to switch photo↔map — tap is a reliable fallback when a horizontal
-              // drag is hard to land inside the draggable sheet.
+              // Drive paging ourselves so the swipe is reliable: the PageView's own horizontal drag loses
+              // to the nested draggable bottom sheet, so we disable it (NeverScrollable) and page on the
+              // GestureDetector's horizontal-drag (swipe) and tap (toggle) instead.
               GestureDetector(
-                onTap: () => _controller.animateToPage(
-                  (activePage + 1) % pages.length,
-                  duration: const Duration(milliseconds: 280),
-                  curve: Curves.easeOutCubic,
-                ),
+                onTap: () =>
+                    _go((activePage + 1) % pages.length, pages.length),
+                onHorizontalDragEnd: (d) {
+                  final v = d.primaryVelocity ?? 0;
+                  if (v < -80) {
+                    _go(activePage + 1, pages.length); // swipe left → next
+                  } else if (v > 80) {
+                    _go(activePage - 1, pages.length); // swipe right → prev
+                  }
+                },
                 child: PageView(
                   controller: _controller,
+                  physics: const NeverScrollableScrollPhysics(),
                   onPageChanged: (i) => setState(() => _page = i),
                   children: pages,
                 ),
