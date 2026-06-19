@@ -53,6 +53,10 @@ class ProgressScreen extends ConsumerWidget {
           ),
           Expanded(
             child: overview.when(
+              // Changing the window (Week/4w/12w) re-runs this provider; keep the current content on
+              // screen while the new data loads instead of swapping the whole body for the skeleton —
+              // no flash, no relayout-under-the-finger (the skeleton stays for the first/empty load).
+              skipLoadingOnReload: true,
               // Bespoke skeleton (design `LoadingBody`), shaped to the selected view so the placeholder
               // matches what's about to load — NOT the generic GbSkeletonList.
               loading: () => _LoadingBody(range: range),
