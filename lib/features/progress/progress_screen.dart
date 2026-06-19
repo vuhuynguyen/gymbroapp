@@ -309,33 +309,28 @@ class _PeriodBar extends ConsumerWidget {
               onTap: () => setRange(ref.read(progressTrendWindowProvider)),
             ),
           ]),
-          // Window filter — only under Trends. Light underline sub-tabs (plain text, a brand underline
-          // under the active one) so the window reads as a secondary refinement of the Trends view,
-          // not a second peer toggle.
+          // Window filter — only under Trends. Left-aligned selectable chips (the same prog-toned pill
+          // as the Strength muscle filter) so the page's two filters read consistently.
           if (!isToday) ...[
             const SizedBox(height: AppSpacing.xs),
-            Align(
-              alignment: Alignment.centerRight,
-              child: Padding(
-                padding: const EdgeInsets.only(right: AppSpacing.xxs),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    for (final r in _windows) ...[
-                      _WindowTab(
-                        label: r.label,
-                        selected: r == selected,
-                        onTap: () {
-                          ref
-                              .read(progressTrendWindowProvider.notifier)
-                              .state = r;
-                          setRange(r);
-                        },
-                      ),
-                      if (r != _windows.last) const SizedBox(width: 22),
-                    ],
+            SizedBox(
+              height: AppSizes.chipHeight,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  for (var i = 0; i < _windows.length; i++) ...[
+                    if (i > 0) const SizedBox(width: AppSpacing.xs),
+                    _ProgChip(
+                      label: _windows[i].label,
+                      selected: _windows[i] == selected,
+                      onTap: () {
+                        ref.read(progressTrendWindowProvider.notifier).state =
+                            _windows[i];
+                        setRange(_windows[i]);
+                      },
+                    ),
                   ],
-                ),
+                ],
               ),
             ),
           ],
@@ -363,50 +358,6 @@ class _SegmentedRow extends StatelessWidget {
       ),
       child: Row(
         children: [for (final s in segments) Expanded(child: s)],
-      ),
-    );
-  }
-}
-
-/// A light underline sub-tab for the trend window (Week / 4w / 12w) — plain text with a brand underline
-/// under the active one, so the window reads as a secondary refinement beneath the Today / Trends tabs.
-class _WindowTab extends StatelessWidget {
-  const _WindowTab({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final gb = context.gb;
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Container(
-          padding: const EdgeInsets.only(bottom: 4),
-          decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(
-                color: selected ? gb.primary600 : Colors.transparent,
-                width: 2,
-              ),
-            ),
-          ),
-          child: Text(
-            label,
-            style: AppText.mono(const TextStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0,
-            )).copyWith(color: selected ? gb.primary600 : gb.progInk3),
-          ),
-        ),
       ),
     );
   }
@@ -1271,14 +1222,14 @@ class _MuscleChipRow extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         physics: const ClampingScrollPhysics(),
         children: [
-          _MuscleChip(
+          _ProgChip(
             label: 'All',
             selected: selected == null,
             onTap: () => onSelect(null),
           ),
           for (final m in trained) ...[
             const SizedBox(width: AppSpacing.xs),
-            _MuscleChip(
+            _ProgChip(
               label: _muscleLabel(m),
               selected: selected == m,
               onTap: () => onSelect(m),
@@ -1290,10 +1241,11 @@ class _MuscleChipRow extends StatelessWidget {
   }
 }
 
-/// One muscle chip — a prog-toned selectable pill (primary fill when selected, quiet outline otherwise).
-/// Built inline (not the grey-toned shared [GbChip]) so it stays on the Graphite paper ramp.
-class _MuscleChip extends StatelessWidget {
-  const _MuscleChip({
+/// A prog-toned selectable filter pill (primary fill when selected, quiet outline otherwise) — shared by
+/// the Strength muscle filter and the Trends window filter. Built inline (not the grey-toned shared
+/// [GbChip]) so it stays on the Graphite paper ramp.
+class _ProgChip extends StatelessWidget {
+  const _ProgChip({
     required this.label,
     required this.selected,
     required this.onTap,
@@ -2759,7 +2711,8 @@ class _CaloriesTrendCard extends StatelessWidget {
               days: recent,
               neutral: gb.progRing, // cool / under / no-target
               under: gb.progRing, // under plan → cool
-              over: const Color(0xFFFB7185), // over plan → coral (warm attention, not yellow)
+              over: const Color(
+                  0xFFFB7185), // over plan → coral (warm attention, not yellow)
               target: gb.progInk3, // dashed "Plan" line
               track: gb.progLine,
             ),
