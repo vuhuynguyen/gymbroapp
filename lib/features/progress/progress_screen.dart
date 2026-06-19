@@ -79,10 +79,13 @@ class ProgressScreen extends ConsumerWidget {
                           if (range == ProgressRange.today)
                             _TodaySection(overview: o)
                           else ...[
-                            // This Week (current-week glance) leads the Trends view on the Week window
-                            // only — it's a current-week card, so it's hidden on the 4w / 12w windows.
+                            // On the Week window the current-week glance leads; on 4w / 12w a window
+                            // summary strip takes its place — both sit above the window filter.
                             if (range == ProgressRange.week) ...[
                               _ThisWeekSection(overview: o),
+                              const SizedBox(height: AppSpacing.md),
+                            ] else ...[
+                              _PeriodStatStrip(consistency: o.consistency),
                               const SizedBox(height: AppSpacing.md),
                             ],
                             const _WindowFilter(),
@@ -550,8 +553,7 @@ class _TodaySection extends ConsumerWidget {
 
 /// Lay the snapshot tiles out in an even 3-column grid (equal widths, last row left-aligned) — tidier
 /// than a Wrap when the count isn't a multiple of three.
-Widget _snapshotGrid(List<Widget> tiles) {
-  const cols = 3;
+Widget _snapshotGrid(List<Widget> tiles, {int cols = 3}) {
   final rows = <Widget>[];
   for (var i = 0; i < tiles.length; i += cols) {
     final children = <Widget>[];
@@ -627,6 +629,79 @@ class _SnapshotTile extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(fontSize: 10.5, color: gb.progInk3)),
+        ],
+      ),
+    );
+  }
+}
+
+/// The multi-week (4w / 12w) headline glance — a compact stat strip that takes the Trends hero slot in
+/// place of the Week-only This Week card. Summarises the window from the consistency payload: total
+/// sessions and sessions/week, plus — when a goal is set — the % of weeks on goal and the current
+/// streak. All real data; the goal-relative tiles simply drop when there's no goal.
+class _PeriodStatStrip extends StatelessWidget {
+  const _PeriodStatStrip({required this.consistency});
+  final Consistency consistency;
+
+  @override
+  Widget build(BuildContext context) {
+    final weeks = consistency.windowWeeks <= 0 ? 1 : consistency.windowWeeks;
+    final sessions =
+        consistency.days.fold<int>(0, (sum, d) => sum + d.sessionCount);
+    final perWeek = sessions / weeks;
+    final pct = consistency.consistencyPct;
+    final streak = consistency.currentStreakWeeks;
+
+    String trim(double v) => v % 1 == 0 ? '${v.toInt()}' : v.toStringAsFixed(1);
+
+    return _snapshotGrid(
+      <Widget>[
+        _PeriodStat(value: '$sessions', label: 'Sessions'),
+        _PeriodStat(value: trim(perWeek), label: 'Per week'),
+        if (pct != null) ...[
+          _PeriodStat(value: '$pct%', label: 'Weeks on goal'),
+          _PeriodStat(value: '${streak}w', label: 'Streak'),
+        ],
+      ],
+      cols: 2,
+    );
+  }
+}
+
+/// One tile in the multi-week stat strip — a big value over an uppercase micro-label, in the same
+/// white card as [_SnapshotTile] (minus the icon) so the two stat surfaces read as one family.
+class _PeriodStat extends StatelessWidget {
+  const _PeriodStat({required this.value, required this.label});
+  final String value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return Container(
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm + 1, vertical: AppSpacing.sm + 2),
+      decoration: BoxDecoration(
+        color: gb.card,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: gb.progLine),
+        boxShadow: AppShadows.sm,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 21,
+                fontWeight: FontWeight.w800,
+                height: 1.0,
+                letterSpacing: -0.5,
+                color: gb.progInk,
+              )),
+          const SizedBox(height: 5),
+          _MonoLabel(label, fontSize: 9.5),
         ],
       ),
     );

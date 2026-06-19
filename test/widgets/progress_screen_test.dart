@@ -306,6 +306,37 @@ void main() {
     expect(find.text('THIS WEEK'), findsNothing);
   });
 
+  testWidgets(
+      '4w / 12w windows show the period stat strip in place of This Week',
+      (tester) async {
+    await pumpData(
+      tester,
+      overview(
+        thisWeek:
+            week(completed: 2, goal: 4, hasPlan: true, start: DateTime.now()),
+        cons: consistency(
+          days: [ConsistencyDay(date: DateTime.now(), sessionCount: 3)],
+          pct: 75,
+          streak: 4,
+        ),
+        prs: [pr(id: 'p1', name: 'Squat')],
+      ),
+    );
+
+    // Default Week: This Week leads; no period strip.
+    expect(find.text('THIS WEEK'), findsOneWidget);
+    expect(find.text('PER WEEK'), findsNothing);
+
+    // 12w: This Week drops, the multi-week summary strip takes its place.
+    await tester.tap(find.text('12w'));
+    await tester.pumpAndSettle();
+    expect(find.text('THIS WEEK'), findsNothing);
+    expect(
+        find.text('PER WEEK'), findsOneWidget); // strip tile label (uppercased)
+    expect(find.text('WEEKS ON GOAL'),
+        findsOneWidget); // goal tile shows (pct set)
+  });
+
   testWidgets('empty top-lifts → strength invite copy', (tester) async {
     await pumpData(
       tester,
