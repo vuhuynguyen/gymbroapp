@@ -92,14 +92,37 @@ void main() {
     final repo = _FakeProgressRepository(nonEmptyOverview());
     await pump(tester, repo);
 
-    // The four view options render (Today snapshot + three trend windows); Week is the default.
+    // Two top tabs — Today + the merged Trends — with Trends' window sub-filter (Week / 4w / 12w)
+    // visible because Week (a trend window) is the default.
     expect(find.text('Today'), findsOneWidget);
+    expect(find.text('Trends'), findsOneWidget);
     expect(find.text('Week'), findsOneWidget);
     expect(find.text('4w'), findsOneWidget);
     expect(find.text('12w'), findsOneWidget);
 
     // The initial overview fetch threaded the default window (Week = 1).
     expect(repo.overviewWeeks, contains(1));
+  });
+
+  testWidgets('Today hides the trend-window sub-filter; Trends restores it',
+      (tester) async {
+    final repo = _FakeProgressRepository(nonEmptyOverview());
+    await pump(tester, repo);
+
+    // Default is a trend window, so the Week / 4w / 12w sub-filter is visible.
+    expect(find.text('4w'), findsOneWidget);
+    expect(find.text('12w'), findsOneWidget);
+
+    // Today is a snapshot, not a trend window → the sub-filter is hidden.
+    await tester.tap(find.text('Today'));
+    await tester.pumpAndSettle();
+    expect(find.text('4w'), findsNothing);
+    expect(find.text('12w'), findsNothing);
+
+    // Back to Trends → the sub-filter returns (on the remembered window).
+    await tester.tap(find.text('Trends'));
+    await tester.pumpAndSettle();
+    expect(find.text('4w'), findsOneWidget);
   });
 
   testWidgets('changing the period re-requests the overview with the new weeks value',

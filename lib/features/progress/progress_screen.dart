@@ -71,8 +71,9 @@ class ProgressScreen extends ConsumerWidget {
                         padding: const EdgeInsets.fromLTRB(AppSpacing.screenH,
                             AppSpacing.md + 4, AppSpacing.screenH, 100),
                         children: [
-                          // The view control sits under the page title: Today (snapshot + advice) or a
-                          // trend window (Week / 4w / 12w). The This Week hero stays current-week.
+                          // The view control sits under the page title: Today (snapshot + advice), or
+                          // the merged Trends tab whose sub-filter picks the window (Week / 4w / 12w).
+                          // The This Week hero stays current-week.
                           const _PeriodBar(),
                           const SizedBox(height: AppSpacing.md),
                           if (range == ProgressRange.today)
@@ -275,32 +276,80 @@ class _ProgCard extends StatelessWidget {
 class _PeriodBar extends ConsumerWidget {
   const _PeriodBar();
 
+  /// The three trend windows that share the one Trends tab, picked via the sub-filter (display order).
+  static const _windows = [
+    ProgressRange.week,
+    ProgressRange.fourWeek,
+    ProgressRange.twelveWeek,
+  ];
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final gb = context.gb;
     final selected = ref.watch(progressRangeProvider);
+    final isToday = selected == ProgressRange.today;
+
+    void setRange(ProgressRange r) =>
+        ref.read(progressRangeProvider.notifier).state = r;
+
     return Semantics(
       label: 'Progress view',
-      child: Container(
-        padding: const EdgeInsets.all(3),
-        decoration: BoxDecoration(
-          color: gb.progCard2,
-          borderRadius: BorderRadius.circular(AppRadius.sm),
-          border: Border.all(color: gb.progLine),
-        ),
-        child: Row(
-          children: [
-            for (final r in ProgressRange.values)
-              Expanded(
-                child: _PeriodSegment(
-                  label: r.label,
-                  selected: r == selected,
-                  onTap: () =>
-                      ref.read(progressRangeProvider.notifier).state = r,
-                ),
-              ),
+      child: Column(
+        children: [
+          // Top level: the Today snapshot, or the merged Trends tab (Week / 4w / 12w live behind it).
+          _SegmentedRow(segments: [
+            _PeriodSegment(
+              label: 'Today',
+              selected: isToday,
+              onTap: () => setRange(ProgressRange.today),
+            ),
+            _PeriodSegment(
+              label: 'Trends',
+              selected: !isToday,
+              // Re-enter on the last window used (remembered), defaulting to Week.
+              onTap: () => setRange(ref.read(progressTrendWindowProvider)),
+            ),
+          ]),
+          // Window sub-filter — only under Trends. Picks the look-back and remembers it.
+          if (!isToday) ...[
+            const SizedBox(height: AppSpacing.xs + 2),
+            _SegmentedRow(
+              segments: [
+                for (final r in _windows)
+                  _PeriodSegment(
+                    label: r.label,
+                    selected: r == selected,
+                    onTap: () {
+                      ref.read(progressTrendWindowProvider.notifier).state = r;
+                      setRange(r);
+                    },
+                  ),
+              ],
+            ),
           ],
-        ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The pill-container that frames a row of [_PeriodSegment]s — shared by the top Today/Trends tabs and
+/// the trend-window sub-filter so both read as the same control.
+class _SegmentedRow extends StatelessWidget {
+  const _SegmentedRow({required this.segments});
+  final List<Widget> segments;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: gb.progCard2,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        border: Border.all(color: gb.progLine),
+      ),
+      child: Row(
+        children: [for (final s in segments) Expanded(child: s)],
       ),
     );
   }
