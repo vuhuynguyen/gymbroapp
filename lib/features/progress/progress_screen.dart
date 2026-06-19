@@ -53,8 +53,9 @@ class ProgressScreen extends ConsumerWidget {
           ),
           Expanded(
             child: overview.when(
-              // Bespoke hero-shaped skeleton (design `LoadingBody`) — NOT the generic GbSkeletonList.
-              loading: () => const _LoadingBody(),
+              // Bespoke skeleton (design `LoadingBody`), shaped to the selected view so the placeholder
+              // matches what's about to load — NOT the generic GbSkeletonList.
+              loading: () => _LoadingBody(range: range),
               // Neutral Graphite error panel (design `ErrorBody`) — NEVER the red ErrorRetry tile; this
               // screen's only red is a per-lift "slipping" tag (PHASE-1 §1).
               error: (e, _) => _ErrorBody(
@@ -3403,17 +3404,78 @@ class _PreviewCard extends StatelessWidget {
 
 // ── Loading (bespoke hero-shaped skeleton) ───────────────────────────────────
 
-/// The design `LoadingBody`: a hero-shaped skeleton (the navy gradient panel with translucent-white
-/// shimmer placeholders + a circle for the ring), then a surf card with 3 lift-row skeletons, then a
-/// surf card with a big bar + a 12×7 heatmap-grid skeleton. Kept inside a scrollable so pull-to-refresh
-/// stays engaged. Reuses [GbSkeleton] for the on-card shimmer; the hero placeholders are static
-/// translucent-white blocks so they read over the gradient (the grey skeleton fill would vanish there).
+/// The design `LoadingBody`, shaped to the selected view so the skeleton matches what's about to load:
+/// the **Week** goal hero, the **4w / 12w** stat strip, or the **Today** glance fill the hero slot, then
+/// the strength card (every trend window) and the consistency-heatmap card (4w / 12w only) — or grounded
+/// advice cards on Today. Kept inside a scrollable so pull-to-refresh stays engaged. Reuses [GbSkeleton]
+/// for the on-card shimmer; the hero placeholders are static translucent-white blocks so they read over
+/// the gradient (the grey skeleton fill would vanish there).
 class _LoadingBody extends StatelessWidget {
-  const _LoadingBody();
+  const _LoadingBody({required this.range});
+  final ProgressRange range;
 
   @override
   Widget build(BuildContext context) {
     final gb = context.gb;
+    final isToday = range == ProgressRange.today;
+    final isWeek = range == ProgressRange.week;
+
+    final children = <Widget>[
+      // Hero slot — matches the loaded content for this view.
+      if (isToday)
+        const _LoadingTodayGlance(key: ValueKey('loadingToday'))
+      else if (isWeek)
+        const _LoadingHero(key: ValueKey('loadingHero'))
+      else
+        const _LoadingStatStrip(key: ValueKey('loadingStatStrip')),
+      const SizedBox(height: AppSpacing.lg),
+    ];
+
+    if (isToday) {
+      // Today = grounded advice cards — no strength card, no heatmap.
+      children.addAll(const [
+        _LoadingAdviceCard(),
+        SizedBox(height: AppSpacing.sm),
+        _LoadingAdviceCard(),
+      ]);
+    } else {
+      // Strength card skeleton — 3 lift-row placeholders (shown on every trend window).
+      children.add(_ProgCard(
+        padding: EdgeInsets.zero,
+        child: Column(
+          children: [
+            for (var i = 0; i < 3; i++) ...[
+              if (i > 0) _RuleInset(color: gb.progLine2),
+              const _LoadingLiftRow(),
+            ],
+          ],
+        ),
+      ));
+      // Consistency card skeleton — a big bar + a 12×7 heatmap grid; only on the 4w / 12w windows
+      // (the Week view has no heatmap). Design `LoadingBody`: pad 17, a 42%-wide / 28px bar, grid below.
+      if (!isWeek) {
+        children.addAll(const [
+          SizedBox(height: AppSpacing.lg),
+          _ProgCard(
+            padding: EdgeInsets.all(17),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                FractionallySizedBox(
+                  widthFactor: 0.42,
+                  alignment: Alignment.centerLeft,
+                  child:
+                      GbSkeleton(width: double.infinity, height: 28, radius: 7),
+                ),
+                SizedBox(height: 18),
+                _LoadingHeatmapGrid(),
+              ],
+            ),
+          ),
+        ]);
+      }
+    }
+
     return LayoutBuilder(
       builder: (context, constraints) => SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
@@ -3424,41 +3486,7 @@ class _LoadingBody extends StatelessWidget {
                 AppSpacing.screenH, AppSpacing.md + 4, AppSpacing.screenH, 100),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const _LoadingHero(),
-                const SizedBox(height: AppSpacing.lg),
-                // Strength card skeleton — 3 lift-row placeholders.
-                _ProgCard(
-                  padding: EdgeInsets.zero,
-                  child: Column(
-                    children: [
-                      for (var i = 0; i < 3; i++) ...[
-                        if (i > 0) _RuleInset(color: gb.progLine2),
-                        const _LoadingLiftRow(),
-                      ],
-                    ],
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                // Consistency card skeleton — a big bar + a 12×7 heatmap grid.
-                // Design `LoadingBody`: pad 17, a 42%-wide / 28px bar, grid 18px below.
-                const _ProgCard(
-                  padding: EdgeInsets.all(17),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      FractionallySizedBox(
-                        widthFactor: 0.42,
-                        alignment: Alignment.centerLeft,
-                        child: GbSkeleton(
-                            width: double.infinity, height: 28, radius: 7),
-                      ),
-                      SizedBox(height: 18),
-                      _LoadingHeatmapGrid(),
-                    ],
-                  ),
-                ),
-              ],
+              children: children,
             ),
           ),
         ),
@@ -3467,10 +3495,113 @@ class _LoadingBody extends StatelessWidget {
   }
 }
 
+/// The 4w / 12w hero-slot skeleton — a 2×2 grid of tile placeholders matching [_PeriodStatStrip].
+class _LoadingStatStrip extends StatelessWidget {
+  const _LoadingStatStrip({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    Widget tile() => Container(
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm + 1, vertical: AppSpacing.sm + 2),
+          decoration: BoxDecoration(
+            color: gb.card,
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            border: Border.all(color: gb.progLine),
+            boxShadow: AppShadows.sm,
+          ),
+          child: const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              GbSkeleton(width: 42, height: 21, radius: 6),
+              SizedBox(height: 7),
+              GbSkeleton(width: 58, height: 9, radius: 5),
+            ],
+          ),
+        );
+    return _snapshotGrid([tile(), tile(), tile(), tile()], cols: 2);
+  }
+}
+
+/// The Today hero-slot skeleton — a macros-card placeholder over a 3-tile snapshot grid.
+class _LoadingTodayGlance extends StatelessWidget {
+  const _LoadingTodayGlance({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    Widget tile() => Container(
+          padding: const EdgeInsets.all(AppSpacing.sm + 1),
+          decoration: BoxDecoration(
+            color: gb.card,
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            border: Border.all(color: gb.progLine),
+            boxShadow: AppShadows.sm,
+          ),
+          child: const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              GbSkeleton(width: 30, height: 30, radius: 9),
+              SizedBox(height: 10),
+              GbSkeleton(width: 38, height: 9, radius: 5),
+              SizedBox(height: 6),
+              GbSkeleton(width: 28, height: 20, radius: 6),
+            ],
+          ),
+        );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _ProgCard(
+          child: Row(
+            children: [
+              for (var i = 0; i < 4; i++) ...[
+                if (i > 0) const SizedBox(width: AppSpacing.md),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      GbSkeleton(width: 34, height: 20, radius: 6),
+                      SizedBox(height: 6),
+                      GbSkeleton(width: 26, height: 9, radius: 5),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        _snapshotGrid([tile(), tile(), tile()], cols: 3),
+      ],
+    );
+  }
+}
+
+/// One advice-card skeleton for the Today loading state — a title line over a body line.
+class _LoadingAdviceCard extends StatelessWidget {
+  const _LoadingAdviceCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return const _ProgCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GbSkeleton(width: 150, height: 12, radius: 6),
+          SizedBox(height: 10),
+          GbSkeleton(width: double.infinity, height: 10, radius: 5),
+        ],
+      ),
+    );
+  }
+}
+
 /// The hero-panel skeleton: the navy gradient block with translucent-white shimmer lines and a circle
 /// standing in for the adherence ring.
 class _LoadingHero extends StatelessWidget {
-  const _LoadingHero();
+  const _LoadingHero({super.key});
 
   static const _heroLine = Color(0x2EFFFFFF); // --hero-line
   static const _ph1 = Color(0x1FFFFFFF); // ~0.12 white placeholder

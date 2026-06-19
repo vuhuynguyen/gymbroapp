@@ -172,13 +172,46 @@ void main() {
     await tester.pump();
 
     // The bespoke _LoadingBody (design LoadingBody) renders shimmer placeholders, NOT the generic
-    // GbSkeletonList. Several GbSkeleton shimmers are present (lift rows + the big bar + heatmap cells).
+    // GbSkeletonList. On the default Week view the goal hero + strength lift-row shimmers are present.
     expect(find.byType(GbSkeletonList), findsNothing);
     expect(find.byType(GbSkeleton), findsWidgets);
+    expect(find.byKey(const ValueKey('loadingHero')), findsOneWidget);
     // Still no page-level error tile while loading.
     expect(find.byType(ErrorRetry), findsNothing);
 
     // Resolve so the autoDispose future doesn't dangle past the test.
+    completer.complete(overview());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets(
+      'loading skeleton matches the window — stat strip on 12w, never the goal hero',
+      (tester) async {
+    final completer = Completer<ProgressOverview>();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          progressRangeProvider.overrideWith((ref) => ProgressRange.twelveWeek),
+          progressOverviewProvider.overrideWith((ref) => completer.future),
+          ...offNetworkSections,
+        ],
+        child: MaterialApp(
+          theme: AppTheme.light(),
+          home: Builder(
+            builder: (context) => MediaQuery(
+              data: MediaQuery.of(context).copyWith(disableAnimations: true),
+              child: const ProgressScreen(),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    // 12w loads the stat-strip skeleton in the hero slot — NOT the Week-only goal hero.
+    expect(find.byKey(const ValueKey('loadingStatStrip')), findsOneWidget);
+    expect(find.byKey(const ValueKey('loadingHero')), findsNothing);
+
     completer.complete(overview());
     await tester.pumpAndSettle();
   });
