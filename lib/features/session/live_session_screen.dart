@@ -423,7 +423,11 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
     final totalPlanned =
         session.snapshot?.exercises.fold<int>(0, (a, e) => a + e.sets.length) ??
             0;
-    final total = totalPlanned > logged ? totalPlanned : logged;
+    // Y in the header "X of Y" + progress bar = the per-exercise targets (plan count, lowered by deletes
+    // / raised by extra sets), not the frozen plan total — so deleting a set actually drops the goal.
+    final totalTarget = session.exercises.fold<int>(0,
+        (a, e) => a + (st.setTargets[e.id] ?? _snapshotSetsFor(st, e).length));
+    final total = totalTarget > logged ? totalTarget : logged;
     final hasRestBar = !editing && st.rest != null;
     // Superset rotation cue for the current exercise (null when standalone / not in a 2+ group).
     final supersetTag = ex == null
@@ -495,6 +499,8 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
                         supersetTag: supersetTag,
                         catalog: catalog[ex.exerciseId],
                         snapshotSets: _snapshotSetsFor(st, ex),
+                        setTarget: st.setTargets[ex.id] ??
+                            _snapshotSetsFor(st, ex).length,
                         profile: trackingProfileFor(ex.trackingType),
                         entry: _entry,
                         entryType: _entryType,
@@ -637,8 +643,7 @@ class _Header extends StatelessWidget {
                     onTap: onDone!,
                     semanticLabel: 'Done editing')
               else
-                const SizedBox(
-                    width: 40), // keep the title centred
+                const SizedBox(width: 40), // keep the title centred
             ],
           ),
           // Plan-only progress bar (full width). The elapsed timer moved to the exercise-pager row to
@@ -854,6 +859,7 @@ class _ExerciseCard extends StatelessWidget {
     this.supersetTag,
     required this.catalog,
     required this.snapshotSets,
+    required this.setTarget,
     required this.profile,
     required this.entry,
     required this.entryType,
@@ -879,6 +885,11 @@ class _ExerciseCard extends StatelessWidget {
   final SupersetTag? supersetTag;
   final ExerciseSummary? catalog;
   final List<SessionSnapshotSet> snapshotSets;
+
+  /// Target number of sets for this exercise — the plan's count, lowered by deletes / raised by extra
+  /// sets (see [LiveSessionState.setTargets]). Drives the "X/Y" count and how many upcoming planned-set
+  /// previews show, so a deleted set doesn't re-appear as a placeholder.
+  final int setTarget;
   final TrackingProfile profile;
   final Map<TrackingMetric, num> entry;
   final PerformedSetType entryType;
@@ -965,9 +976,9 @@ class _ExerciseCard extends StatelessWidget {
     // the prescription walk below (which indexes prescribed sets by total logged count) and the rows shown —
     // otherwise a plan with prescribed drop sets sticks at e.g. "4/7" and never completes.
     final loggedCount = exercise.sets.length;
-    final plannedCount = snapshotSets.length;
-    final setsLabel = plannedCount > 0
-        ? '$loggedCount/$plannedCount sets'
+    // "X/Y" Y = the (adjustable) target for a plan exercise; ad-hoc exercises just show "N sets".
+    final setsLabel = snapshotSets.isNotEmpty
+        ? '$loggedCount/$setTarget sets'
         : '$loggedCount ${loggedCount == 1 ? 'set' : 'sets'}';
     final pills = <String>[
       setsLabel,
@@ -1103,7 +1114,7 @@ class _ExerciseCard extends StatelessWidget {
                 // and RPE. The entry above covers the current set (planned index = sets.length).
                 if (!isSkipped)
                   for (var i = exercise.sets.length + 1;
-                      i < snapshotSets.length;
+                      i < setTarget && i < snapshotSets.length;
                       i++)
                     _PlannedSetRow(setNumber: i + 1, target: snapshotSets[i]),
               ],
@@ -2006,27 +2017,50 @@ class _RestBtn extends StatelessWidget {
 // Catalog filter taxonomies. Category = the API's 13 fine library codes (a superset of the 6 muscle groups);
 // equipment = the Equipment enum. Order is the chip display order; values absent from the catalog are skipped.
 const List<String> _kCategoryOrder = [
-  'chest', 'back', 'shoulders', 'biceps', 'triceps', 'quadriceps', 'hamstrings',
-  'glutes', 'calves', 'abs', 'cardio', 'full-body', 'mobility',
+  'chest',
+  'back',
+  'shoulders',
+  'biceps',
+  'triceps',
+  'quadriceps',
+  'hamstrings',
+  'glutes',
+  'calves',
+  'abs',
+  'cardio',
+  'full-body',
+  'mobility',
 ];
 const Map<String, String> _kCategoryLabels = {
-  'chest': 'Chest', 'back': 'Back', 'shoulders': 'Shoulders', 'biceps': 'Biceps',
-  'triceps': 'Triceps', 'quadriceps': 'Quads', 'hamstrings': 'Hamstrings',
-  'glutes': 'Glutes', 'calves': 'Calves', 'abs': 'Abs', 'cardio': 'Cardio',
-  'full-body': 'Full Body', 'mobility': 'Mobility',
+  'chest': 'Chest',
+  'back': 'Back',
+  'shoulders': 'Shoulders',
+  'biceps': 'Biceps',
+  'triceps': 'Triceps',
+  'quadriceps': 'Quads',
+  'hamstrings': 'Hamstrings',
+  'glutes': 'Glutes',
+  'calves': 'Calves',
+  'abs': 'Abs',
+  'cardio': 'Cardio',
+  'full-body': 'Full Body',
+  'mobility': 'Mobility',
 };
 const List<String> _kEquipmentOrder = [
-  'Barbell', 'Dumbbell', 'Cable', 'Machine', 'Bodyweight', 'ResistanceBand',
+  'Barbell',
+  'Dumbbell',
+  'Cable',
+  'Machine',
+  'Bodyweight',
+  'ResistanceBand',
 ];
 
 String _categoryLabel(String c) =>
     c == 'All' ? 'All' : (_kCategoryLabels[c] ?? _titleCase(c));
-String _equipmentLabel(String q) => q == 'All'
-    ? 'All'
-    : (q == 'ResistanceBand' ? 'Band' : q);
-String _titleCase(String s) => s.isEmpty
-    ? s
-    : s[0].toUpperCase() + s.substring(1).replaceAll('-', ' ');
+String _equipmentLabel(String q) =>
+    q == 'All' ? 'All' : (q == 'ResistanceBand' ? 'Band' : q);
+String _titleCase(String s) =>
+    s.isEmpty ? s : s[0].toUpperCase() + s.substring(1).replaceAll('-', ' ');
 
 /// Exercise-catalog picker (substitute / add) — search + category & equipment filters over the global catalog.
 /// Token-based exercise search: every word in the query must appear somewhere in the exercise's name,
@@ -2144,13 +2178,11 @@ class _CatalogSheetState extends ConsumerState<_CatalogSheet> {
           ),
       ],
       child: Container(
-        padding:
-            EdgeInsets.symmetric(horizontal: active ? 9 : 7, vertical: 7),
+        padding: EdgeInsets.symmetric(horizontal: active ? 9 : 7, vertical: 7),
         decoration: BoxDecoration(
           color: active ? gb.primary600 : gb.card,
           borderRadius: BorderRadius.circular(99),
-          border:
-              Border.all(color: active ? gb.primary600 : gb.borderCard),
+          border: Border.all(color: active ? gb.primary600 : gb.borderCard),
         ),
         // Compact: just a filter glyph + caret until a value is picked (then it shows the value).
         child: Row(
@@ -3018,7 +3050,8 @@ class _MediaSlotState extends State<_MediaSlot> {
   void _go(int target, int count) {
     if (!_controller.hasClients) return;
     _controller.animateToPage(target.clamp(0, count - 1),
-        duration: const Duration(milliseconds: 280), curve: Curves.easeOutCubic);
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOutCubic);
   }
 
   @override
@@ -3073,8 +3106,7 @@ class _MediaSlotState extends State<_MediaSlot> {
               // to the nested draggable bottom sheet, so we disable it (NeverScrollable) and page on the
               // GestureDetector's horizontal-drag (swipe) and tap (toggle) instead.
               GestureDetector(
-                onTap: () =>
-                    _go((activePage + 1) % pages.length, pages.length),
+                onTap: () => _go((activePage + 1) % pages.length, pages.length),
                 onHorizontalDragEnd: (d) {
                   final v = d.primaryVelocity ?? 0;
                   if (v < -80) {
@@ -3196,11 +3228,22 @@ class _MediaChip extends StatelessWidget {
 /// "TARGETS" label + muscle pills (primary tinted, secondary neutral, each with a leading dot).
 // Fine muscle-slug → human label for the TARGETS pills (e.g. `biceps` → "Biceps", `gluteal` → "Glutes").
 const Map<String, String> _kMuscleLabels = {
-  'chest': 'Chest', 'obliques': 'Obliques', 'abs': 'Abs', 'biceps': 'Biceps',
-  'triceps': 'Triceps', 'forearm': 'Forearms', 'trapezius': 'Traps',
-  'deltoids': 'Delts', 'upper-back': 'Upper back', 'lower-back': 'Lower back',
-  'adductors': 'Adductors', 'quadriceps': 'Quads', 'tibialis': 'Shins',
-  'calves': 'Calves', 'hamstring': 'Hamstrings', 'gluteal': 'Glutes',
+  'chest': 'Chest',
+  'obliques': 'Obliques',
+  'abs': 'Abs',
+  'biceps': 'Biceps',
+  'triceps': 'Triceps',
+  'forearm': 'Forearms',
+  'trapezius': 'Traps',
+  'deltoids': 'Delts',
+  'upper-back': 'Upper back',
+  'lower-back': 'Lower back',
+  'adductors': 'Adductors',
+  'quadriceps': 'Quads',
+  'tibialis': 'Shins',
+  'calves': 'Calves',
+  'hamstring': 'Hamstrings',
+  'gluteal': 'Glutes',
 };
 String _muscleLabel(String slug) => _kMuscleLabels[slug] ?? _titleCase(slug);
 

@@ -26,6 +26,7 @@ class LiveSessionState {
     this.elapsedSeconds = 0,
     this.rest,
     this.busy = false,
+    this.setTargets = const {},
   });
 
   final ActiveSession? session;
@@ -37,6 +38,11 @@ class LiveSessionState {
 
   /// A mutation (log/edit/skip/substitute/add/complete/abandon) is in flight.
   final bool busy;
+
+  /// Per-exercise target set count (performed-exercise id → count). Starts at the plan's prescribed
+  /// count; the user adjusts it — deleting a set lowers it (so the set stays gone instead of re-showing
+  /// as a planned placeholder), logging beyond it raises it. Kept in state so it survives a reload.
+  final Map<String, int> setTargets;
 
   List<PerformedExercise> get exercises => session?.exercises ?? const [];
 
@@ -59,6 +65,7 @@ class LiveSessionState {
     String? errorMessage,
     RestTimerState? rest,
     bool clearRest = false,
+    Map<String, int>? setTargets,
   }) =>
       LiveSessionState(
         session: session ?? this.session,
@@ -68,6 +75,7 @@ class LiveSessionState {
         elapsedSeconds: elapsedSeconds ?? this.elapsedSeconds,
         rest: clearRest ? null : (rest ?? this.rest),
         busy: busy ?? this.busy,
+        setTargets: setTargets ?? this.setTargets,
       );
 }
 
@@ -255,6 +263,13 @@ class LiveSessionController extends AutoDisposeNotifier<LiveSessionState> {
         ),
       );
       _replaceExercise(ex.id, ex.copyWith(sets: [...ex.sets, logged]));
+      // Logging beyond the current target raises it, so the prescription preview + "X/Y" keep up.
+      final planned = snap?.sets.length ?? 0;
+      final newCount = ex.sets.length + 1;
+      if (newCount > (state.setTargets[ex.id] ?? planned)) {
+        state =
+            state.copyWith(setTargets: {...state.setTargets, ex.id: newCount});
+      }
       _restStartedAt = null;
       if (isDropStage)
         return; // drop stage: no rest timer, no superset rotation
@@ -365,6 +380,15 @@ class LiveSessionController extends AutoDisposeNotifier<LiveSessionState> {
       await _repo.deleteSet(session.sessionId, exerciseId, setId);
       _replaceExercise(ex.id,
           ex.copyWith(sets: ex.sets.where((s) => s.id != setId).toList()));
+      // Lower the target so the deleted set stays gone (no planned placeholder re-fills its slot) and the
+      // count drops — but never below the sets still logged.
+      final planned = _snapshotFor(session, ex)?.sets.length ?? 0;
+      final remaining = ex.sets.length - 1;
+      final lowered = (state.setTargets[ex.id] ?? planned) - 1;
+      state = state.copyWith(setTargets: {
+        ...state.setTargets,
+        ex.id: lowered < remaining ? remaining : lowered,
+      });
     });
   }
 
