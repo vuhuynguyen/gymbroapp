@@ -315,9 +315,9 @@ class _PeriodBar extends ConsumerWidget {
           if (!isToday) ...[
             const SizedBox(height: AppSpacing.xs),
             Align(
-              alignment: Alignment.centerLeft,
+              alignment: Alignment.centerRight,
               child: Padding(
-                padding: const EdgeInsets.only(left: AppSpacing.xxs),
+                padding: const EdgeInsets.only(right: AppSpacing.xxs),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
