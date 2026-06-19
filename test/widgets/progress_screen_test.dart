@@ -250,8 +250,8 @@ void main() {
         prs: [pr(id: 'p1', name: 'Deadlift')],
       ),
     );
-    await tester.tap(find.text(
-        'Week')); // ensure the Week window (This Week leads every Trends window)
+    await tester
+        .tap(find.text('Week')); // the Week window — This Week is Week-only
     await tester.pumpAndSettle();
 
     // No-plan substitutes the GbRing with the design's big raw count: "2" + a mono "SESSIONS THIS
@@ -275,8 +275,8 @@ void main() {
         prs: [pr(id: 'p1', name: 'Squat')],
       ),
     );
-    await tester.tap(find.text(
-        'Week')); // ensure the Week window (This Week leads every Trends window)
+    await tester
+        .tap(find.text('Week')); // the Week window — This Week is Week-only
     await tester.pumpAndSettle();
 
     expect(find.byType(GbRing), findsOneWidget);
@@ -284,7 +284,7 @@ void main() {
   });
 
   testWidgets(
-      'This Week leads every Trends window; Consistency only on multi-week',
+      'This Week shows only on the Week window; Consistency only on multi-week',
       (tester) async {
     await pumpData(
       tester,
@@ -300,10 +300,10 @@ void main() {
     expect(find.text('THIS WEEK'), findsOneWidget);
     expect(find.text('Consistency'), findsNothing);
 
-    // Switch to a multi-week window: This Week stays — it leads every Trends window now.
+    // Switch to a multi-week window: the current-week hero drops away (it's Week-only).
     await tester.tap(find.text('12w'));
     await tester.pumpAndSettle();
-    expect(find.text('THIS WEEK'), findsOneWidget);
+    expect(find.text('THIS WEEK'), findsNothing);
   });
 
   testWidgets('empty top-lifts → strength invite copy', (tester) async {
@@ -468,8 +468,8 @@ void main() {
         ],
       ),
     );
-    await tester.tap(find.text(
-        'Week')); // ensure the Week window (This Week leads every Trends window)
+    await tester
+        .tap(find.text('Week')); // the Week window — This Week is Week-only
     await tester.pumpAndSettle();
 
     // The down lift renders the only red on the page — the "Slipping" tag, now on the design's honest
@@ -498,8 +498,8 @@ void main() {
         ],
       ),
     );
-    await tester.tap(find.text(
-        'Week')); // ensure the Week window (This Week leads every Trends window)
+    await tester
+        .tap(find.text('Week')); // the Week window — This Week is Week-only
     await tester.pumpAndSettle();
 
     final gb = AppTheme.light().extension<GbColors>()!;

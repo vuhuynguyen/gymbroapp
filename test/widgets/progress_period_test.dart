@@ -201,7 +201,7 @@ void main() {
     final repo = _FakeProgressRepository(nonEmptyOverview());
     await pump(tester, repo);
     await tester
-        .tap(find.text('Week')); // This Week leads every Trends window now
+        .tap(find.text('Week')); // the This Week hero is on the Week window
     await tester.pumpAndSettle();
 
     // The hero "This week" info button is at the top — no scroll needed.

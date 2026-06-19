@@ -79,10 +79,12 @@ class ProgressScreen extends ConsumerWidget {
                           if (range == ProgressRange.today)
                             _TodaySection(overview: o)
                           else ...[
-                            // This Week (current-week glance) leads the Trends view and stays on every
-                            // window, sitting above the window filter.
-                            _ThisWeekSection(overview: o),
-                            const SizedBox(height: AppSpacing.md),
+                            // This Week (current-week glance) leads the Trends view on the Week window
+                            // only — it's a current-week card, so it's hidden on the 4w / 12w windows.
+                            if (range == ProgressRange.week) ...[
+                              _ThisWeekSection(overview: o),
+                              const SizedBox(height: AppSpacing.md),
+                            ],
                             const _WindowFilter(),
                             const SizedBox(height: AppSpacing.lg),
                             _StrengthSection(lifts: o.topLifts),
