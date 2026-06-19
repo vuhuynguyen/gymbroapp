@@ -125,7 +125,8 @@ void main() {
     expect(find.text('4w'), findsOneWidget);
   });
 
-  testWidgets('changing the period re-requests the overview with the new weeks value',
+  testWidgets(
+      'changing the period re-requests the overview with the new weeks value',
       (tester) async {
     final repo = _FakeProgressRepository(nonEmptyOverview());
     await pump(tester, repo);
@@ -144,7 +145,8 @@ void main() {
     expect(repo.overviewWeeks.last, 1);
   });
 
-  testWidgets('changing the period also re-requests the nutrition trend with the new window',
+  testWidgets(
+      'changing the period also re-requests the nutrition trend with the new window',
       (tester) async {
     final repo = _FakeProgressRepository(nonEmptyOverview());
     // A tall viewport mounts the bottom Nutrition section + the top period bar together, so the
@@ -198,7 +200,8 @@ void main() {
       (tester) async {
     final repo = _FakeProgressRepository(nonEmptyOverview());
     await pump(tester, repo);
-    await tester.tap(find.text('Week')); // the This Week hero lives on the Week tab now
+    await tester
+        .tap(find.text('Week')); // This Week leads every Trends window now
     await tester.pumpAndSettle();
 
     // The hero "This week" info button is at the top — no scroll needed.

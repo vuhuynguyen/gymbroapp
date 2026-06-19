@@ -104,8 +104,8 @@ void main() {
     sleepSeriesProvider.overrideWith(
         (ref) async => const MetricSeries(type: 'sleep', points: [])),
     goalWeightProvider.overrideWith((ref) async => null),
-    nutritionAdherenceProvider.overrideWith(
-        (ref) async => const NutritionAdherence(hasPlan: false, recentDays: [])),
+    nutritionAdherenceProvider.overrideWith((ref) async =>
+        const NutritionAdherence(hasPlan: false, recentDays: [])),
     // The Strength section watches strengthLiftsProvider for its muscle chips + picker. Stub it empty
     // so these overview-focused tests stay off-network — the "All" glance strip (driven by the
     // overview's topLifts) renders unchanged regardless.
@@ -159,11 +159,14 @@ void main() {
 
   // ── §5 states ─────────────────────────────────────────────────────────────
 
-  testWidgets('loading → bespoke hero-shaped skeleton (shimmer), never the red ErrorRetry', (tester) async {
+  testWidgets(
+      'loading → bespoke hero-shaped skeleton (shimmer), never the red ErrorRetry',
+      (tester) async {
     // A never-completing future keeps the provider in AsyncLoading.
     final completer = Completer<ProgressOverview>();
     await tester.pumpWidget(
-      hostWith(progressOverviewProvider.overrideWith((ref) => completer.future)),
+      hostWith(
+          progressOverviewProvider.overrideWith((ref) => completer.future)),
     );
     // One frame only — do NOT settle (the future never resolves).
     await tester.pump();
@@ -180,7 +183,9 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('error → neutral Graphite panel with a Retry control, never the red ErrorRetry', (tester) async {
+  testWidgets(
+      'error → neutral Graphite panel with a Retry control, never the red ErrorRetry',
+      (tester) async {
     await tester.pumpWidget(
       hostWith(progressOverviewProvider
           .overrideWith((ref) async => throw Exception('boom'))),
@@ -204,7 +209,9 @@ void main() {
     expect(find.byIcon(Icons.error_outline), findsNothing);
   });
 
-  testWidgets('new user → first-run hero (headline + sub-line + Start CTA + 3 preview cards), no sections', (tester) async {
+  testWidgets(
+      'new user → first-run hero (headline + sub-line + Start CTA + 3 preview cards), no sections',
+      (tester) async {
     // isNewUser: 0 sessions, no consistency days, no lifts, no PRs.
     await pumpData(tester, overview());
 
@@ -233,7 +240,8 @@ void main() {
     expect(find.text('PERSONAL RECORDS'), findsNothing);
   });
 
-  testWidgets('no active plan → ring hidden, raw completed count shown', (tester) async {
+  testWidgets('no active plan → ring hidden, raw completed count shown',
+      (tester) async {
     await pumpData(
       tester,
       overview(
@@ -242,7 +250,8 @@ void main() {
         prs: [pr(id: 'p1', name: 'Deadlift')],
       ),
     );
-    await tester.tap(find.text('Week')); // the This Week hero lives on the Week tab now
+    await tester.tap(find.text(
+        'Week')); // ensure the Week window (This Week leads every Trends window)
     await tester.pumpAndSettle();
 
     // No-plan substitutes the GbRing with the design's big raw count: "2" + a mono "SESSIONS THIS
@@ -266,32 +275,35 @@ void main() {
         prs: [pr(id: 'p1', name: 'Squat')],
       ),
     );
-    await tester.tap(find.text('Week')); // the This Week hero lives on the Week tab now
+    await tester.tap(find.text(
+        'Week')); // ensure the Week window (This Week leads every Trends window)
     await tester.pumpAndSettle();
 
     expect(find.byType(GbRing), findsOneWidget);
     expect(find.text('3/4'), findsOneWidget); // ring center label
   });
 
-  testWidgets('This Week shows only on the Week tab; Consistency only on multi-week',
+  testWidgets(
+      'This Week leads every Trends window; Consistency only on multi-week',
       (tester) async {
     await pumpData(
       tester,
       overview(
-        thisWeek: week(completed: 2, goal: 4, hasPlan: true, start: DateTime.now()),
+        thisWeek:
+            week(completed: 2, goal: 4, hasPlan: true, start: DateTime.now()),
         prs: [pr(id: 'p1', name: 'Squat')],
       ),
     );
 
-    // Default is the Week tab: the current-week hero IS shown; the multi-week Consistency heatmap is
-    // not (it lives only on the 4w / 12w windows).
+    // Default Week: the current-week hero leads; the multi-week Consistency heatmap is not shown yet
+    // (it lives only on the 4w / 12w windows).
     expect(find.text('THIS WEEK'), findsOneWidget);
     expect(find.text('Consistency'), findsNothing);
 
-    // Switch to a multi-week window: the hero drops away entirely from the tree.
+    // Switch to a multi-week window: This Week stays — it leads every Trends window now.
     await tester.tap(find.text('12w'));
     await tester.pumpAndSettle();
-    expect(find.text('THIS WEEK'), findsNothing);
+    expect(find.text('THIS WEEK'), findsOneWidget);
   });
 
   testWidgets('empty top-lifts → strength invite copy', (tester) async {
@@ -316,7 +328,12 @@ void main() {
       overview(
         thisWeek: week(completed: 1, hasPlan: false),
         // A lift keeps us out of the new-user hero; recentPrs is empty.
-        lifts: [lift(id: 'e1', name: 'Overhead Press', direction: LiftTrendDirection.flat)],
+        lifts: [
+          lift(
+              id: 'e1',
+              name: 'Overhead Press',
+              direction: LiftTrendDirection.flat)
+        ],
       ),
     );
     await scrollTo(tester, find.text('Your PRs will appear here.'));
@@ -378,11 +395,14 @@ void main() {
     expect(find.byIcon(Icons.local_fire_department), findsNothing);
   });
 
-  testWidgets('with goal (pct set) → "% HIT GOAL" + streak chip render unchanged', (tester) async {
+  testWidgets(
+      'with goal (pct set) → "% HIT GOAL" + streak chip render unchanged',
+      (tester) async {
     await pumpData(
       tester,
       overview(
-        thisWeek: week(completed: 3, goal: 4, hasPlan: true, start: DateTime.now()),
+        thisWeek:
+            week(completed: 3, goal: 4, hasPlan: true, start: DateTime.now()),
         cons: consistency(
           pct: 78,
           streak: 5,
@@ -406,12 +426,14 @@ void main() {
     expect(find.text('SESSIONS · LAST 12 WKS'), findsNothing);
   });
 
-  testWidgets('consistency "% hit goal" caption reflects the selected window (not a frozen 12)',
+  testWidgets(
+      'consistency "% hit goal" caption reflects the selected window (not a frozen 12)',
       (tester) async {
     await pumpData(
       tester,
       overview(
-        thisWeek: week(completed: 3, goal: 4, hasPlan: true, start: DateTime.now()),
+        thisWeek:
+            week(completed: 3, goal: 4, hasPlan: true, start: DateTime.now()),
         cons: consistency(
           windowWeeks: 8,
           pct: 78,
@@ -432,17 +454,22 @@ void main() {
 
   // ── §1 red discipline + direction tags ──────────────────────────────────────
 
-  testWidgets('direction down → red "Slipping" tag; headline never red', (tester) async {
+  testWidgets('direction down → red "Slipping" tag; headline never red',
+      (tester) async {
     await pumpData(
       tester,
       overview(
         thisWeek: week(completed: 1, hasPlan: false),
         lifts: [
-          lift(id: 'e1', name: 'Bench Press', direction: LiftTrendDirection.down),
+          lift(
+              id: 'e1',
+              name: 'Bench Press',
+              direction: LiftTrendDirection.down),
         ],
       ),
     );
-    await tester.tap(find.text('Week')); // the This Week hero lives on the Week tab now
+    await tester.tap(find.text(
+        'Week')); // ensure the Week window (This Week leads every Trends window)
     await tester.pumpAndSettle();
 
     // The down lift renders the only red on the page — the "Slipping" tag, now on the design's honest
@@ -457,17 +484,22 @@ void main() {
     expect(headline.style?.color, isNot(gb.danger));
   });
 
-  testWidgets('up lift → green headline mentioning the lift, never red', (tester) async {
+  testWidgets('up lift → green headline mentioning the lift, never red',
+      (tester) async {
     await pumpData(
       tester,
       overview(
         thisWeek: week(completed: 2, hasPlan: false),
         lifts: [
-          lift(id: 'e1', name: 'Barbell Bench Press', direction: LiftTrendDirection.up),
+          lift(
+              id: 'e1',
+              name: 'Barbell Bench Press',
+              direction: LiftTrendDirection.up),
         ],
       ),
     );
-    await tester.tap(find.text('Week')); // the This Week hero lives on the Week tab now
+    await tester.tap(find.text(
+        'Week')); // ensure the Week window (This Week leads every Trends window)
     await tester.pumpAndSettle();
 
     final gb = AppTheme.light().extension<GbColors>()!;
@@ -492,7 +524,8 @@ void main() {
     expect(tag.style?.color, isNot(gb.danger));
   });
 
-  testWidgets('flat stalled lift → "Flat N×" tag in warn-amber', (tester) async {
+  testWidgets('flat stalled lift → "Flat N×" tag in warn-amber',
+      (tester) async {
     await pumpData(
       tester,
       overview(
@@ -517,7 +550,8 @@ void main() {
     expect(tag.style?.color, isNot(gb.danger));
   });
 
-  testWidgets('PR rows are display-only — no chevron leaks through', (tester) async {
+  testWidgets('PR rows are display-only — no chevron leaks through',
+      (tester) async {
     await pumpData(
       tester,
       overview(

@@ -72,18 +72,19 @@ class ProgressScreen extends ConsumerWidget {
                             AppSpacing.md + 4, AppSpacing.screenH, 100),
                         children: [
                           // The view control sits under the page title: Today (snapshot + advice), or
-                          // the merged Trends tab whose sub-filter picks the window (Week / 4w / 12w).
-                          // The This Week hero stays current-week.
+                          // the Trends tab. On Trends the This Week glance leads, then a window
+                          // sub-filter (Week / 4w / 12w) scopes the trends below it.
                           const _PeriodBar(),
                           const SizedBox(height: AppSpacing.md),
                           if (range == ProgressRange.today)
                             _TodaySection(overview: o)
                           else ...[
-                            // This Week is a current-week glance → only on the Week tab.
-                            if (range == ProgressRange.week) ...[
-                              _ThisWeekSection(overview: o),
-                              const SizedBox(height: AppSpacing.lg),
-                            ],
+                            // This Week (current-week glance) leads the Trends view and stays on every
+                            // window, sitting above the window filter.
+                            _ThisWeekSection(overview: o),
+                            const SizedBox(height: AppSpacing.md),
+                            const _WindowFilter(),
+                            const SizedBox(height: AppSpacing.lg),
                             _StrengthSection(lifts: o.topLifts),
                             const SizedBox(height: AppSpacing.lg),
                             // Consistency is a multi-week heatmap → only on the 4w / 12w windows.
@@ -268,15 +269,45 @@ class _ProgCard extends StatelessWidget {
 
 // ── Period control (Today / Week / 4w / 12w segmented) ───────────────────────
 
-/// The Progress page's view control — a compact prog-toned segmented track (Today / Week / 4w / 12w)
-/// sitting under the page title. Reads/writes [progressRangeProvider]; **Today** switches to the
-/// snapshot+advice dashboard, while the three trend windows re-request the overview, per-lift e1RM
-/// series, and nutrition trend with the new window. Built inline (not the grey-toned shared
-/// [GbSegmented]) so it stays on the Graphite paper ramp.
+/// The Progress page's top view control — a prog-toned segmented track (Today / Trends) under the page
+/// title. Reads/writes [progressRangeProvider]: **Today** is the snapshot+advice dashboard; **Trends**
+/// re-enters the last window (the window itself is picked by [_WindowFilter] below the This Week card).
+/// Built inline (not the grey-toned shared [GbSegmented]) so it stays on the Graphite paper ramp.
 class _PeriodBar extends ConsumerWidget {
   const _PeriodBar();
 
-  /// The three trend windows that share the one Trends tab, picked via the sub-filter (display order).
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isToday = ref.watch(progressRangeProvider) == ProgressRange.today;
+
+    void setRange(ProgressRange r) =>
+        ref.read(progressRangeProvider.notifier).state = r;
+
+    return Semantics(
+      label: 'Progress view',
+      child: _SegmentedRow(segments: [
+        _PeriodSegment(
+          label: 'Today',
+          selected: isToday,
+          onTap: () => setRange(ProgressRange.today),
+        ),
+        _PeriodSegment(
+          label: 'Trends',
+          selected: !isToday,
+          // Re-enter on the last window used (remembered), defaulting to Week.
+          onTap: () => setRange(ref.read(progressTrendWindowProvider)),
+        ),
+      ]),
+    );
+  }
+}
+
+/// The trend-window filter (Week / 4w / 12w) — light underline sub-tabs shown beneath the This Week
+/// card on the Trends view. Picks the look-back window and remembers it (so toggling Today <-> Trends
+/// restores it).
+class _WindowFilter extends ConsumerWidget {
+  const _WindowFilter();
+
   static const _windows = [
     ProgressRange.week,
     ProgressRange.fourWeek,
@@ -286,55 +317,68 @@ class _PeriodBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final selected = ref.watch(progressRangeProvider);
-    final isToday = selected == ProgressRange.today;
-
-    void setRange(ProgressRange r) =>
-        ref.read(progressRangeProvider.notifier).state = r;
-
-    return Semantics(
-      label: 'Progress view',
-      child: Column(
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // Top level: the Today snapshot, or the merged Trends tab (Week / 4w / 12w live behind it).
-          _SegmentedRow(segments: [
-            _PeriodSegment(
-              label: 'Today',
-              selected: isToday,
-              onTap: () => setRange(ProgressRange.today),
-            ),
-            _PeriodSegment(
-              label: 'Trends',
-              selected: !isToday,
-              // Re-enter on the last window used (remembered), defaulting to Week.
-              onTap: () => setRange(ref.read(progressTrendWindowProvider)),
-            ),
-          ]),
-          // Window filter — only under Trends. Left-aligned selectable chips (the same prog-toned pill
-          // as the Strength muscle filter) so the page's two filters read consistently.
-          if (!isToday) ...[
-            const SizedBox(height: AppSpacing.xs),
-            SizedBox(
-              height: AppSizes.chipHeight,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (var i = 0; i < _windows.length; i++) ...[
-                    if (i > 0) const SizedBox(width: AppSpacing.xs),
-                    _ProgChip(
-                      label: _windows[i].label,
-                      selected: _windows[i] == selected,
-                      onTap: () {
-                        ref.read(progressTrendWindowProvider.notifier).state =
-                            _windows[i];
-                        setRange(_windows[i]);
-                      },
-                    ),
-                  ],
-                ],
-              ),
+          for (var i = 0; i < _windows.length; i++) ...[
+            if (i > 0) const SizedBox(width: 22),
+            _WindowTab(
+              label: _windows[i].label,
+              selected: _windows[i] == selected,
+              onTap: () {
+                ref.read(progressTrendWindowProvider.notifier).state =
+                    _windows[i];
+                ref.read(progressRangeProvider.notifier).state = _windows[i];
+              },
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+/// A light underline sub-tab for the trend window — plain text with a brand underline under the active
+/// one, so the window reads as a secondary refinement of the Trends view.
+class _WindowTab extends StatelessWidget {
+  const _WindowTab({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Container(
+          padding: const EdgeInsets.only(bottom: 4),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: selected ? gb.primary600 : Colors.transparent,
+                width: 2,
+              ),
+            ),
+          ),
+          child: Text(
+            label,
+            style: AppText.mono(const TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0,
+            )).copyWith(color: selected ? gb.primary600 : gb.progInk3),
+          ),
+        ),
       ),
     );
   }
@@ -1241,9 +1285,9 @@ class _MuscleChipRow extends StatelessWidget {
   }
 }
 
-/// A prog-toned selectable filter pill (primary fill when selected, quiet outline otherwise) — shared by
-/// the Strength muscle filter and the Trends window filter. Built inline (not the grey-toned shared
-/// [GbChip]) so it stays on the Graphite paper ramp.
+/// A prog-toned selectable filter pill (primary fill when selected, quiet outline otherwise) — the
+/// Strength muscle filter's chip. Built inline (not the grey-toned shared [GbChip]) so it stays on the
+/// Graphite paper ramp.
 class _ProgChip extends StatelessWidget {
   const _ProgChip({
     required this.label,
