@@ -309,28 +309,33 @@ class _PeriodBar extends ConsumerWidget {
               onTap: () => setRange(ref.read(progressTrendWindowProvider)),
             ),
           ]),
-          // Window filter — only under Trends. A compact, right-aligned control (not a second full-
-          // width bar) so it reads as a secondary refinement of the Trends view, not a peer toggle.
+          // Window filter — only under Trends. Light underline sub-tabs (plain text, a brand underline
+          // under the active one) so the window reads as a secondary refinement of the Trends view,
+          // not a second peer toggle.
           if (!isToday) ...[
-            const SizedBox(height: AppSpacing.xs + 2),
+            const SizedBox(height: AppSpacing.xs),
             Align(
-              alignment: Alignment.centerRight,
-              child: _SegmentedRow(
-                compact: true,
-                segments: [
-                  for (final r in _windows)
-                    _PeriodSegment(
-                      label: r.label,
-                      selected: r == selected,
-                      compact: true,
-                      onTap: () {
-                        ref
-                            .read(progressTrendWindowProvider.notifier)
-                            .state = r;
-                        setRange(r);
-                      },
-                    ),
-                ],
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.only(left: AppSpacing.xxs),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (final r in _windows) ...[
+                      _WindowTab(
+                        label: r.label,
+                        selected: r == selected,
+                        onTap: () {
+                          ref
+                              .read(progressTrendWindowProvider.notifier)
+                              .state = r;
+                          setRange(r);
+                        },
+                      ),
+                      if (r != _windows.last) const SizedBox(width: 22),
+                    ],
+                  ],
+                ),
               ),
             ),
           ],
@@ -343,12 +348,8 @@ class _PeriodBar extends ConsumerWidget {
 /// The pill-container that frames a row of [_PeriodSegment]s — shared by the top Today/Trends tabs and
 /// the trend-window sub-filter so both read as the same control.
 class _SegmentedRow extends StatelessWidget {
-  const _SegmentedRow({required this.segments, this.compact = false});
+  const _SegmentedRow({required this.segments});
   final List<Widget> segments;
-
-  /// Compact = the row shrink-wraps its segments (a small inline control); otherwise each segment is
-  /// [Expanded] to share the full width equally (the top-level Today / Trends tabs).
-  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -361,10 +362,51 @@ class _SegmentedRow extends StatelessWidget {
         border: Border.all(color: gb.progLine),
       ),
       child: Row(
-        mainAxisSize: compact ? MainAxisSize.min : MainAxisSize.max,
-        children: compact
-            ? segments
-            : [for (final s in segments) Expanded(child: s)],
+        children: [for (final s in segments) Expanded(child: s)],
+      ),
+    );
+  }
+}
+
+/// A light underline sub-tab for the trend window (Week / 4w / 12w) — plain text with a brand underline
+/// under the active one, so the window reads as a secondary refinement beneath the Today / Trends tabs.
+class _WindowTab extends StatelessWidget {
+  const _WindowTab({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Container(
+          padding: const EdgeInsets.only(bottom: 4),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: selected ? gb.primary600 : Colors.transparent,
+                width: 2,
+              ),
+            ),
+          ),
+          child: Text(
+            label,
+            style: AppText.mono(const TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0,
+            )).copyWith(color: selected ? gb.primary600 : gb.progInk3),
+          ),
+        ),
       ),
     );
   }
@@ -376,15 +418,10 @@ class _PeriodSegment extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
-    this.compact = false,
   });
   final String label;
   final bool selected;
   final VoidCallback onTap;
-
-  /// Compact segments size to their label (+ horizontal padding) instead of filling an [Expanded]
-  /// slot — used by the right-aligned trend-window control.
-  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -396,9 +433,6 @@ class _PeriodSegment extends StatelessWidget {
         duration: AppDurations.fast,
         height: 32,
         alignment: Alignment.center,
-        padding: compact
-            ? const EdgeInsets.symmetric(horizontal: 16)
-            : EdgeInsets.zero,
         decoration: BoxDecoration(
           color: selected ? gb.card : Colors.transparent,
           borderRadius: BorderRadius.circular(AppRadius.sm - 3),
