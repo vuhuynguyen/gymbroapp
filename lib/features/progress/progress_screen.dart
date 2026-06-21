@@ -116,13 +116,10 @@ class ProgressScreen extends ConsumerWidget {
                             ],
                             _PrSection(prs: o.recentPrs),
                             const SizedBox(height: AppSpacing.lg),
-                            // Bodyweight is noisy over 4 weeks — a 12-week (phase) trajectory signal, so it's
-                            // shown on Week and 12w, demoted off the 4w block. Each section watches its own
+                            // Body, sleep & nutrition trends show on every trend window. Each watches its own
                             // provider, so a slow/absent metrics/nutrition endpoint never blocks the overview.
-                            if (range != ProgressRange.fourWeek) ...[
-                              const _BodySection(),
-                              const SizedBox(height: AppSpacing.lg),
-                            ],
+                            const _BodySection(),
+                            const SizedBox(height: AppSpacing.lg),
                             const _SleepSection(),
                             const SizedBox(height: AppSpacing.lg),
                             const _NutritionSection(),
@@ -1602,11 +1599,13 @@ class _MuscleLiftList extends StatefulWidget {
 }
 
 class _MuscleLiftListState extends State<_MuscleLiftList> {
-  /// Show up to this many lifts inline; beyond it, the list scrolls inside a fixed-height card.
-  static const int _maxInline = 4;
+  /// The card is at most this many rows tall; a longer group scrolls INSIDE.
+  static const int _maxRows = 4;
 
-  /// ~Four rows tall — enough to read a few and reveal that the rest scroll.
-  static const double _scrollMaxHeight = 380;
+  /// Fixed per-row height — so the capped card shows EXACTLY [_maxRows] rows, never a partial peek. Each
+  /// [_LiftRow] is a single ellipsized name line + the e1RM line (~85pt natural); 88 clears it with a hair
+  /// of breathing room (the row is centered in a Stack, which clips harmlessly rather than overflowing).
+  static const double _rowExtent = 88;
 
   final ScrollController _controller = ScrollController();
 
@@ -1625,28 +1624,50 @@ class _MuscleLiftListState extends State<_MuscleLiftList> {
         text: 'Log a few working sets to see your strength trend.',
       );
     }
-    final rows = <Widget>[
-      for (var i = 0; i < lifts.length; i++) ...[
-        if (i > 0) _RuleInset(color: gb.progLine2),
-        _LiftRow.fromStrength(lifts[i]),
-      ],
-    ];
-    // Few lifts → render inline. Many → cap the height and scroll inside the card. _ProgCard already clips
-    // to its radius, so the scrolled rows stay within the rounded card; a persistent thumb hints at scroll.
-    final Widget body = lifts.length <= _maxInline
-        ? Column(children: rows)
-        : ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: _scrollMaxHeight),
-            child: Scrollbar(
-              controller: _controller,
-              thumbVisibility: true,
-              child: SingleChildScrollView(
-                controller: _controller,
-                child: Column(children: rows),
-              ),
+    // Every row is a fixed [_rowExtent] tall, so the viewport (an exact multiple of it) always cuts on a
+    // row boundary — no half-visible "next" lift. The rows are eagerly built (SingleChildScrollView →
+    // Column) so all of them stay in the tree (find/scroll work) — only the visible four are on screen.
+    final scrolls = lifts.length > _maxRows;
+    final content = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < lifts.length; i++)
+          SizedBox(
+            height: _rowExtent,
+            // Row at its natural height, centered; the inset rule pinned to the bottom. Stack (not a
+            // forced Expanded) so a slightly-taller row clips harmlessly instead of throwing an overflow.
+            child: Stack(
+              children: [
+                Align(
+                  alignment: Alignment.center,
+                  child: _LiftRow.fromStrength(lifts[i]),
+                ),
+                if (i != lifts.length - 1)
+                  Align(
+                    alignment: Alignment.bottomCenter,
+                    child: _RuleInset(color: gb.progLine2),
+                  ),
+              ],
             ),
-          );
-    return _ProgCard(padding: EdgeInsets.zero, child: body);
+          ),
+      ],
+    );
+    return _ProgCard(
+      padding: EdgeInsets.zero,
+      child: scrolls
+          ? SizedBox(
+              height: _rowExtent * _maxRows,
+              child: Scrollbar(
+                controller: _controller,
+                thumbVisibility: true,
+                child: SingleChildScrollView(
+                  controller: _controller,
+                  child: content,
+                ),
+              ),
+            )
+          : content,
+    );
   }
 }
 
