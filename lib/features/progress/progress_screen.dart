@@ -1591,29 +1591,62 @@ class _GlanceStrip extends StatelessWidget {
 /// The filtered lift list for a selected muscle chip — every lift in that group (reusing [_LiftRow],
 /// which is honest about thin lifts: a `hasTrend == false` lift shows name + e1RM + "N sessions" with
 /// no direction tag / spark). An empty group shows the existing honest empty state (the [_QuietCard]).
-class _MuscleLiftList extends StatelessWidget {
+/// A busy group (more than [_maxInline] lifts) is capped to a fixed-height card that scrolls INSIDE, so a
+/// long list never runs the whole page down.
+class _MuscleLiftList extends StatefulWidget {
   const _MuscleLiftList({required this.lifts});
   final List<StrengthLift> lifts;
 
   @override
+  State<_MuscleLiftList> createState() => _MuscleLiftListState();
+}
+
+class _MuscleLiftListState extends State<_MuscleLiftList> {
+  /// Show up to this many lifts inline; beyond it, the list scrolls inside a fixed-height card.
+  static const int _maxInline = 4;
+
+  /// ~Four rows tall — enough to read a few and reveal that the rest scroll.
+  static const double _scrollMaxHeight = 380;
+
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final gb = context.gb;
+    final lifts = widget.lifts;
     if (lifts.isEmpty) {
       return const _QuietCard(
         text: 'Log a few working sets to see your strength trend.',
       );
     }
-    return _ProgCard(
-      padding: EdgeInsets.zero,
-      child: Column(
-        children: [
-          for (var i = 0; i < lifts.length; i++) ...[
-            if (i > 0) _RuleInset(color: gb.progLine2),
-            _LiftRow.fromStrength(lifts[i]),
-          ],
-        ],
-      ),
-    );
+    final rows = <Widget>[
+      for (var i = 0; i < lifts.length; i++) ...[
+        if (i > 0) _RuleInset(color: gb.progLine2),
+        _LiftRow.fromStrength(lifts[i]),
+      ],
+    ];
+    // Few lifts → render inline. Many → cap the height and scroll inside the card. _ProgCard already clips
+    // to its radius, so the scrolled rows stay within the rounded card; a persistent thumb hints at scroll.
+    final Widget body = lifts.length <= _maxInline
+        ? Column(children: rows)
+        : ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: _scrollMaxHeight),
+            child: Scrollbar(
+              controller: _controller,
+              thumbVisibility: true,
+              child: SingleChildScrollView(
+                controller: _controller,
+                child: Column(children: rows),
+              ),
+            ),
+          );
+    return _ProgCard(padding: EdgeInsets.zero, child: body);
   }
 }
 
