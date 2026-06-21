@@ -391,8 +391,6 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
     final st = ref.watch(liveSessionControllerProvider);
     final catalog = ref.watch(exerciseCatalogProvider).valueOrNull ??
         const <String, ExerciseSummary>{};
-    // Today's recovery/fuel signals for the pre-log set suggestion (fields degrade to null if absent).
-    final wellness = ref.watch(wellnessSignalsProvider);
 
     if (st.loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -537,7 +535,6 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
                               catalog[ex.exerciseId]?.name ??
                               'Exercise',
                         ),
-                        wellness: wellness,
                       ),
                       const SizedBox(height: AppSpacing.gap),
                       Center(
@@ -876,7 +873,6 @@ class _ExerciseCard extends StatelessWidget {
     required this.onMenu,
     required this.onGuide,
     required this.onTrend,
-    required this.wellness,
   });
 
   final PerformedExercise exercise;
@@ -912,9 +908,6 @@ class _ExerciseCard extends StatelessWidget {
 
   /// Opens the per-exercise trend sheet (the trend (i) button in the card header).
   final VoidCallback onTrend;
-
-  /// Today's recovery/fuel signals — used to gently autoregulate the suggested next set.
-  final WellnessSignals wellness;
 
   /// Lead (parentless) sets — the rows that carry a reorder position; drop stages ride with their lead.
   List<PerformedSet> get _leads =>
@@ -970,7 +963,7 @@ class _ExerciseCard extends StatelessWidget {
       setType: entryType,
       target: entryTarget,
       lastPerformed: exercise.lastPerformed,
-      wellness: wellness,
+      performedSets: exercise.sets,
     );
     // Per-exercise set count (logged vs planned). Count EVERY logged set incl. drop stages, so it matches
     // the prescription walk below (which indexes prescribed sets by total logged count) and the rows shown —

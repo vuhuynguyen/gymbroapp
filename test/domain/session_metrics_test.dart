@@ -57,7 +57,8 @@ void main() {
 
   test('resolveTargetSetCount picks the max, with the active entry row', () {
     expect(resolveTargetSetCount(2, 4, false), 4); // planned dominates
-    expect(resolveTargetSetCount(4, 3, true), 5); // logged + active row dominates
+    expect(
+        resolveTargetSetCount(4, 3, true), 5); // logged + active row dominates
     expect(resolveTargetSetCount(0, 0, true), 1); // never below 1 when active
   });
 
@@ -65,7 +66,8 @@ void main() {
     final ex = _ex([_set(), _set()]);
     expect(isPerformedExerciseComplete(ex, 3), isFalse);
     expect(isPerformedExerciseComplete(ex, 2), isTrue);
-    expect(isPerformedExerciseComplete(_ex([]), 0), isFalse); // planned 0 never complete
+    expect(isPerformedExerciseComplete(_ex([]), 0),
+        isFalse); // planned 0 never complete
   });
 
   test('epleyOneRepMax matches the server formula (Epley, 1dp)', () {
@@ -111,6 +113,14 @@ void main() {
     expect(formatLoggedSet(weightedPlank), '10kg · 01:00');
   });
 
+  test('performedSetChip appends RPE only when logged', () {
+    // Logged RPE shows; absent/zero RPE is omitted (never fabricated).
+    expect(performedSetChip(_set(reps: 6, weightKg: 25, rpe: 8), 4),
+        '4 · Working · 25kg × 6 · RPE 8');
+    expect(performedSetChip(_set(reps: 12, weightKg: 10), 1),
+        '1 · Working · 10kg × 12');
+  });
+
   group('session-summary aggregates', () {
     PerformedSet st({
       PerformedSetType type = PerformedSetType.working,
@@ -140,7 +150,8 @@ void main() {
           isPr: false,
         );
 
-    PerformedExercise exr(String id, ExerciseTrackingType tt, List<PerformedSet> sets,
+    PerformedExercise exr(
+            String id, ExerciseTrackingType tt, List<PerformedSet> sets,
             {LastPerformed? last}) =>
         PerformedExercise(
           id: 'e-$id',
@@ -178,12 +189,14 @@ void main() {
 
     test('isCardioSession only when there is no lifting', () {
       expect(
-          isCardioSession(
-              [exr('run', ExerciseTrackingType.cardio, [st(duration: 600)])]),
+          isCardioSession([
+            exr('run', ExerciseTrackingType.cardio, [st(duration: 600)])
+          ]),
           isTrue);
       expect(
           isCardioSession([
-            exr('bench', ExerciseTrackingType.strength, [st(reps: 5, weight: 80)])
+            exr('bench', ExerciseTrackingType.strength,
+                [st(reps: 5, weight: 80)])
           ]),
           isFalse);
       expect(isCardioSession(const []), isFalse);
@@ -198,8 +211,8 @@ void main() {
           st(reps: 8, weight: 20),
         ]),
       ];
-      final byM =
-          workingSetsByMuscle(exs, (id) => {'a': 'Chest', 'b': 'Shoulders'}[id]);
+      final byM = workingSetsByMuscle(
+          exs, (id) => {'a': 'Chest', 'b': 'Shoulders'}[id]);
       expect(byM, {'Chest': 2, 'Shoulders': 1});
       expect(byM.keys.first, 'Chest'); // busiest first
     });
@@ -227,7 +240,10 @@ void main() {
         ]),
       ];
       final muscles = {
-        'bench': [(group: 'Chest', isPrimary: true), (group: 'Arms', isPrimary: false)],
+        'bench': [
+          (group: 'Chest', isPrimary: true),
+          (group: 'Arms', isPrimary: false)
+        ],
         'raise': [(group: 'Shoulders', isPrimary: true)],
       };
       final inv = muscleInvolvement(exs, (id) => muscles[id] ?? const []);
@@ -236,29 +252,30 @@ void main() {
       expect(inv['Arms']!.secondary, 2); // bench credits triceps as secondary
       expect(inv['Arms']!.primary, 0);
       expect(inv['Shoulders']!.primary, 1); // warmup excluded
-      expect(inv.keys.first, anyOf('Chest', 'Arms')); // both total 2, ahead of Shoulders
+      expect(inv.keys.first,
+          anyOf('Chest', 'Arms')); // both total 2, ahead of Shoulders
     });
 
     test('liftProgress compares this top set vs lastPerformed e1RM', () {
-      final up = liftProgress(exr('a', ExerciseTrackingType.strength,
-          [st(reps: 5, weight: 100)],
+      final up = liftProgress(exr(
+          'a', ExerciseTrackingType.strength, [st(reps: 5, weight: 100)],
           last: const LastPerformed(weightKg: 95, reps: 5)));
       expect(up!.isUp, isTrue);
 
-      final same = liftProgress(exr('a', ExerciseTrackingType.strength,
-          [st(reps: 5, weight: 100)],
+      final same = liftProgress(exr(
+          'a', ExerciseTrackingType.strength, [st(reps: 5, weight: 100)],
           last: const LastPerformed(weightKg: 100, reps: 5)));
       expect(same!.isSame, isTrue);
 
-      final down = liftProgress(exr('a', ExerciseTrackingType.strength,
-          [st(reps: 5, weight: 90)],
+      final down = liftProgress(exr(
+          'a', ExerciseTrackingType.strength, [st(reps: 5, weight: 90)],
           last: const LastPerformed(weightKg: 100, reps: 5)));
       expect(down!.isDown, isTrue);
 
       // No prior reference → null (never fabricated).
       expect(
-          liftProgress(
-              exr('a', ExerciseTrackingType.strength, [st(reps: 5, weight: 100)])),
+          liftProgress(exr(
+              'a', ExerciseTrackingType.strength, [st(reps: 5, weight: 100)])),
           isNull);
     });
 
@@ -289,6 +306,21 @@ void main() {
           restSeconds: 60,
         );
 
+    // An already-logged in-session set of any type, for the [performedSets] feed.
+    PerformedSet logged(PerformedSetType type,
+            {required double weight, required int reps, int? rpe}) =>
+        PerformedSet(
+          id: 's',
+          setNumber: 1,
+          setType: type,
+          reps: reps,
+          weightKg: weight,
+          rpe: rpe,
+          isCompleted: true,
+          loggedAt: null,
+          isPr: false,
+        );
+
     test('an explicit plan weight × reps wins (coach prescription)', () {
       final s = suggestNextSet(
         trackingType: ExerciseTrackingType.strength,
@@ -302,7 +334,8 @@ void main() {
       expect(s.reason, 'Plan target');
     });
 
-    test('reps + RPE without a plan weight autoregulates off the last-set e1RM', () {
+    test('reps + RPE without a plan weight autoregulates off the last-set e1RM',
+        () {
       // last 100×5 → e1RM 116.7; reps 5 @ RPE 8 ≈ max set of 5+(10-8)=7 reps →
       // 116.7 / (1 + 7/30) ≈ 94.6 → rounds to 95kg.
       final s = suggestNextSet(
@@ -317,7 +350,9 @@ void main() {
       expect(s.reason, 'RPE 8 target');
     });
 
-    test('no usable plan → last time + double-progression at the top of the range', () {
+    test(
+        'no usable plan → last time + double-progression at the top of the range',
+        () {
       final s = suggestNextSet(
         trackingType: ExerciseTrackingType.strength,
         setType: PerformedSetType.working,
@@ -339,18 +374,6 @@ void main() {
       expect(s.reason, 'Last time + 1 rep');
     });
 
-    test('short sleep eases the suggested weight (and says why)', () {
-      // Plan target 100×5, slept 5h vs a 7.5h default baseline → ×0.95 → 95kg.
-      final s = suggestNextSet(
-        trackingType: ExerciseTrackingType.strength,
-        setType: PerformedSetType.working,
-        target: snap(reps: 5, weight: 100),
-        wellness: const WellnessSignals(sleepHoursLastNight: 5),
-      );
-      expect(s!.weightKg, 95);
-      expect(s.reason, contains('short sleep'));
-    });
-
     test('cardio gets no weight × reps suggestion', () {
       expect(
         suggestNextSet(
@@ -370,6 +393,142 @@ void main() {
         ),
         isNull,
       );
+    });
+
+    // ── Closed-loop: the suggestion must read the CURRENT session, not just last week. ──
+
+    test(
+        'regression: a hard, missed RPE-10 set pulls the next suggestion DOWN, '
+        'not up off a stale last-session e1RM', () {
+      // Last session top set 40×9 (e1RM 52) alone would suggest 37.5×12 for a 12 @ RPE10 target.
+      // But today the lifter is grinding: warmup 25×12, then working 35×9 @ RPE10 (missed the 12).
+      final s = suggestNextSet(
+        trackingType: ExerciseTrackingType.strength,
+        setType: PerformedSetType.working,
+        target: snap(reps: 12, rpe: 10),
+        lastPerformed: const LastPerformed(weightKg: 40, reps: 9),
+        performedSets: [
+          logged(PerformedSetType.warmup, weight: 25, reps: 12, rpe: 7),
+          logged(PerformedSetType.working, weight: 35, reps: 9, rpe: 10),
+        ],
+      );
+      // Anchored on today's 35×9 @ RPE10 (e1RM 45.5) → 45.5/1.4 = 32.5, never the stale 37.5.
+      expect(s!.weightKg, 32.5);
+      expect(s.reps, 12);
+      expect(s.weightKg,
+          lessThan(35)); // never heavier than the set you just ground out
+      expect(s.reason, 'RPE 10 · this session');
+    });
+
+    test(
+        'regression: a drop set is a fraction of the working weight, '
+        'not the last-session working number', () {
+      // Last session 40×9; today 35×9, 30×12, then a first drop 25×15. Entering a 2nd drop, no plan
+      // target for that index → must NOT echo the 40×9 verbatim.
+      final s = suggestNextSet(
+        trackingType: ExerciseTrackingType.strength,
+        setType: PerformedSetType.drop,
+        lastPerformed: const LastPerformed(weightKg: 40, reps: 9),
+        performedSets: [
+          logged(PerformedSetType.working, weight: 35, reps: 9, rpe: 10),
+          logged(PerformedSetType.working, weight: 30, reps: 12, rpe: 10),
+          logged(PerformedSetType.drop, weight: 25, reps: 15, rpe: 9),
+        ],
+      );
+      expect(s!.weightKg, 20); // steps ~20% down from the previous drop (25)
+      expect(s.weightKg, lessThan(30)); // below the working sets
+      expect(s.reason, 'Drop ~20% lighter');
+    });
+
+    test("today's in-session set overrides a stale, heavier last-session e1RM",
+        () {
+      // Last session was strong (100×5, e1RM 116.7) — naively 95kg — but today is only 60×5 @ RPE10.
+      final s = suggestNextSet(
+        trackingType: ExerciseTrackingType.strength,
+        setType: PerformedSetType.working,
+        target: snap(reps: 5, rpe: 8),
+        lastPerformed: const LastPerformed(weightKg: 100, reps: 5),
+        performedSets: [
+          logged(PerformedSetType.working, weight: 60, reps: 5, rpe: 10),
+        ],
+      );
+      expect(s!.reps, 5);
+      expect(s.weightKg,
+          57.5); // off today's 60×5 (e1RM 70), not last week's 116.7
+      expect(s.reason, 'RPE 8 · this session');
+    });
+
+    test('drop with no prior drop steps ~20% down from the working weight', () {
+      final s = suggestNextSet(
+        trackingType: ExerciseTrackingType.strength,
+        setType: PerformedSetType.drop,
+        performedSets: [
+          logged(PerformedSetType.working, weight: 30, reps: 12, rpe: 10),
+        ],
+      );
+      expect(s!.weightKg, 25); // 30 × 0.80 = 24 → nearest 2.5kg plate = 25
+      expect(s.reps, 12);
+      expect(s.reason, 'Drop ~20% lighter');
+    });
+
+    test('warmup is ~50% of the working weight', () {
+      final s = suggestNextSet(
+        trackingType: ExerciseTrackingType.strength,
+        setType: PerformedSetType.warmup,
+        lastPerformed: const LastPerformed(weightKg: 60, reps: 5),
+      );
+      expect(s!.weightKg, 30); // 60 × 0.5
+      expect(s.reason, 'Warmup ~50%');
+    });
+
+    test(
+        'no plan, already lifting: an easy last set adds a rep at the same load',
+        () {
+      final s = suggestNextSet(
+        trackingType: ExerciseTrackingType.strength,
+        setType: PerformedSetType.working,
+        performedSets: [
+          logged(PerformedSetType.working, weight: 50, reps: 8, rpe: 6),
+        ],
+      );
+      expect(s!.weightKg, 50); // hold the bar
+      expect(s.reps, 9); // room to push
+      expect(s.reason, 'Maintain · room to push');
+    });
+
+    test(
+        'no plan, already lifting: a hard last set eases a rep at the same load',
+        () {
+      final s = suggestNextSet(
+        trackingType: ExerciseTrackingType.strength,
+        setType: PerformedSetType.working,
+        performedSets: [
+          logged(PerformedSetType.working, weight: 50, reps: 8, rpe: 10),
+        ],
+      );
+      expect(s!.weightKg, 50);
+      expect(s.reps, 7); // ease a rep
+      expect(s.reason, 'Maintain · ease a rep');
+    });
+
+    test(
+        'reps left in reserve correctly license a heavier true-rep-max load (RIR method)',
+        () {
+      // 30×12 @ RPE8 = 2 reps in reserve → behaves like a 14-rep max → e1RM ≈ 44 (Epley). A true 12-rep
+      // max (RPE10) off that e1RM is 44 / (1 + 12/30) = 31.4 → 32.5. Going slightly heavier than the easy
+      // 30 is the standard RIR prescription, NOT an over-suggestion — the bug was the OPPOSITE (going
+      // heavier after a maxed-out set, which the closed-loop anchor now prevents).
+      final s = suggestNextSet(
+        trackingType: ExerciseTrackingType.strength,
+        setType: PerformedSetType.working,
+        target: snap(reps: 12, rpe: 10),
+        performedSets: [
+          logged(PerformedSetType.working, weight: 30, reps: 12, rpe: 8),
+        ],
+      );
+      expect(s!.weightKg, 32.5);
+      expect(s.reps, 12);
+      expect(s.reason, 'RPE 10 · this session');
     });
   });
 
