@@ -340,7 +340,7 @@ void main() {
   });
 
   testWidgets(
-      '4w / 12w windows show the period stat strip in place of This Week',
+      '4w / 12w windows show the window scorecard in place of This Week',
       (tester) async {
     await pumpData(
       tester,
@@ -356,18 +356,24 @@ void main() {
       ),
     );
 
-    // Default Week: This Week leads; no period strip.
+    // Default Week: This Week leads; neither window scorecard is shown.
     expect(find.text('THIS WEEK'), findsOneWidget);
-    expect(find.text('PER WEEK'), findsNothing);
+    expect(find.text('VOLUME TREND'), findsNothing); // phase scorecard tile
+    expect(find.text('LIFTS IMPROVING'), findsNothing); // block scorecard tile
 
-    // 12w: This Week drops, the multi-week summary strip takes its place.
+    // 12w: This Week drops, the phase scorecard (trajectory) takes its place.
     await tester.tap(find.text('12w'));
     await tester.pumpAndSettle();
     expect(find.text('THIS WEEK'), findsNothing);
-    expect(
-        find.text('PER WEEK'), findsOneWidget); // strip tile label (uppercased)
+    expect(find.text('VOLUME TREND'), findsOneWidget); // phase scorecard tile
     expect(find.text('WEEKS ON GOAL'),
         findsOneWidget); // goal tile shows (pct set)
+
+    // 4w: the block scorecard (momentum vs last block) replaces the phase one.
+    await tester.tap(find.text('4w'));
+    await tester.pumpAndSettle();
+    expect(find.text('LIFTS IMPROVING'), findsOneWidget); // block scorecard tile
+    expect(find.text('VOLUME TREND'), findsNothing);
   });
 
   testWidgets('empty top-lifts → strength invite copy', (tester) async {

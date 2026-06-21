@@ -84,19 +84,31 @@ class ProgressScreen extends ConsumerWidget {
                           if (range == ProgressRange.today)
                             _TodaySection(overview: o)
                           else ...[
-                            // On the Week window the current-week glance leads; on 4w / 12w a window
-                            // summary strip takes its place — both sit above the window filter.
+                            // Week leads with the current-week glance. 4w/12w are two DISTINCT dashboards
+                            // (WINDOW-DIFFERENTIATION.md): both lead with the coach's-read verdict, then a
+                            // window-specific scorecard — 4w "this block" (deltas vs last block) vs 12w
+                            // "this phase" (trajectory).
                             if (range == ProgressRange.week) ...[
                               _ThisWeekSection(overview: o),
                               const SizedBox(height: AppSpacing.md),
                             ] else ...[
-                              _PeriodStatStrip(consistency: o.consistency),
+                              _CoachReadBanner(coach: o.coach),
+                              const SizedBox(height: AppSpacing.md),
+                              if (range == ProgressRange.fourWeek)
+                                _BlockScorecard(overview: o)
+                              else
+                                _PhaseScorecard(overview: o),
                               const SizedBox(height: AppSpacing.md),
                             ],
                             const _WindowFilter(),
                             const SizedBox(height: AppSpacing.lg),
                             _StrengthSection(lifts: o.topLifts),
                             const SizedBox(height: AppSpacing.lg),
+                            // Structural balance is a PHASE concern — the 12-week strategic hero only.
+                            if (range == ProgressRange.twelveWeek) ...[
+                              _MuscleBalanceCard(muscles: o.muscleVolume),
+                              const SizedBox(height: AppSpacing.lg),
+                            ],
                             // Consistency is a multi-week heatmap → only on the 4w / 12w windows.
                             if (range != ProgressRange.week) ...[
                               _ConsistencySection(consistency: o.consistency),
@@ -104,10 +116,13 @@ class ProgressScreen extends ConsumerWidget {
                             ],
                             _PrSection(prs: o.recentPrs),
                             const SizedBox(height: AppSpacing.lg),
-                            // Section 5 (conditional). Each watches its own provider, so a slow/absent
-                            // metrics/nutrition endpoint never blocks the overview above.
-                            const _BodySection(),
-                            const SizedBox(height: AppSpacing.lg),
+                            // Bodyweight is noisy over 4 weeks — a 12-week (phase) trajectory signal, so it's
+                            // shown on Week and 12w, demoted off the 4w block. Each section watches its own
+                            // provider, so a slow/absent metrics/nutrition endpoint never blocks the overview.
+                            if (range != ProgressRange.fourWeek) ...[
+                              const _BodySection(),
+                              const SizedBox(height: AppSpacing.lg),
+                            ],
                             const _SleepSection(),
                             const SizedBox(height: AppSpacing.lg),
                             const _NutritionSection(),
@@ -640,45 +655,121 @@ class _SnapshotTile extends StatelessWidget {
   }
 }
 
-/// The multi-week (4w / 12w) headline glance — a compact stat strip that takes the Trends hero slot in
-/// place of the Week-only This Week card. Summarises the window from the consistency payload: total
-/// sessions and sessions/week, plus — when a goal is set — the % of weeks on goal and the current
-/// streak. All real data; the goal-relative tiles simply drop when there's no goal.
-class _PeriodStatStrip extends StatelessWidget {
-  const _PeriodStatStrip({required this.consistency});
-  final Consistency consistency;
+// ── v2 window differentiation: coach's-read · block/phase scorecards · muscle balance ──
+// (gymbro/docs/progress/WINDOW-DIFFERENTIATION.md) — 4w answers "how's this block?", 12w "how's the phase?".
+
+String _trim(double v) => v % 1 == 0 ? '${v.toInt()}' : v.toStringAsFixed(1);
+String _fmtVolume(double kg) =>
+    kg >= 1000 ? '${(kg / 1000).toStringAsFixed(1)}t' : '${kg.round()}kg';
+String _cap(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
+
+enum _VolTrend { rising, steady, falling }
+
+/// Coarse rising/steady/falling slope: last third of the weekly-volume series vs the first third
+/// (mirrors the backend's WeeklyTrend so the chip and the coach's-read never disagree).
+_VolTrend _volTrend(List<double> weekly) {
+  if (weekly.length < 4) return _VolTrend.steady;
+  final third = (weekly.length ~/ 3).clamp(1, weekly.length);
+  double avg(Iterable<double> xs) =>
+      xs.isEmpty ? 0 : xs.reduce((a, b) => a + b) / xs.length;
+  final first = avg(weekly.take(third));
+  final last = avg(weekly.skip(weekly.length - third));
+  if (first <= 0) return last > 0 ? _VolTrend.rising : _VolTrend.steady;
+  final change = (last - first) / first;
+  if (change > 0.1) return _VolTrend.rising;
+  if (change < -0.1) return _VolTrend.falling;
+  return _VolTrend.steady;
+}
+
+/// The rule-based coach's-read banner — one-line verdict + supporting detail + the single top action,
+/// tinted by tone. Leads BOTH the 4w (block) and 12w (phase) views; hidden when there's nothing to say.
+class _CoachReadBanner extends StatelessWidget {
+  const _CoachReadBanner({required this.coach});
+  final CoachRead coach;
 
   @override
   Widget build(BuildContext context) {
-    final weeks = consistency.windowWeeks <= 0 ? 1 : consistency.windowWeeks;
-    final sessions =
-        consistency.days.fold<int>(0, (sum, d) => sum + d.sessionCount);
-    final perWeek = sessions / weeks;
-    final pct = consistency.consistencyPct;
-    final streak = consistency.currentStreakWeeks;
-
-    String trim(double v) => v % 1 == 0 ? '${v.toInt()}' : v.toStringAsFixed(1);
-
-    return _snapshotGrid(
-      <Widget>[
-        _PeriodStat(value: '$sessions', label: 'Sessions'),
-        _PeriodStat(value: trim(perWeek), label: 'Per week'),
-        if (pct != null) ...[
-          _PeriodStat(value: '$pct%', label: 'Weeks on goal'),
-          _PeriodStat(value: '${streak}w', label: 'Streak'),
+    if (!coach.hasContent) return const SizedBox.shrink();
+    final gb = context.gb;
+    final (Color bg, Color accent) = switch (coach.tone) {
+      CoachTone.positive => (gb.progBrandSoft, gb.progPos),
+      CoachTone.watch => (gb.warning0, gb.progWarn),
+      CoachTone.neutral => (gb.progCard2, gb.progRing),
+    };
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(color: gb.progLine),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.auto_awesome, size: 16, color: accent),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(coach.headline,
+                    style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        height: 1.2,
+                        color: gb.progInk)),
+              ),
+            ],
+          ),
+          if (coach.detail.isNotEmpty) ...[
+            const SizedBox(height: 5),
+            Text(coach.detail,
+                style:
+                    TextStyle(fontSize: 12.5, height: 1.35, color: gb.progInk2)),
+          ],
+          if (coach.action != null && coach.action!.isNotEmpty) ...[
+            const SizedBox(height: 11),
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: gb.card,
+                borderRadius: BorderRadius.circular(AppRadius.md),
+                border: Border.all(color: gb.progLine),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.arrow_forward_rounded, size: 14, color: accent),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Text(coach.action!,
+                        style: TextStyle(
+                            fontSize: 12,
+                            height: 1.3,
+                            fontWeight: FontWeight.w600,
+                            color: gb.progInk)),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
-      ],
-      cols: 2,
+      ),
     );
   }
 }
 
-/// One tile in the multi-week stat strip — a big value over an uppercase micro-label, in the same
-/// white card as [_SnapshotTile] (minus the icon) so the two stat surfaces read as one family.
-class _PeriodStat extends StatelessWidget {
-  const _PeriodStat({required this.value, required this.label});
+/// One scorecard tile — a big (optionally accent-coloured) value over an uppercase micro-label, with an
+/// optional sub-line. Same white card as [_SnapshotTile] so every stat surface reads as one family.
+class _ScoreTile extends StatelessWidget {
+  const _ScoreTile(
+      {required this.value, required this.label, this.sub, this.accent});
   final String value;
   final String label;
+  final String? sub;
+  final Color? accent;
 
   @override
   Widget build(BuildContext context) {
@@ -699,16 +790,221 @@ class _PeriodStat extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                fontSize: 21,
+                fontSize: 20,
                 fontWeight: FontWeight.w800,
                 height: 1.0,
                 letterSpacing: -0.5,
-                color: gb.progInk,
+                color: accent ?? gb.progInk,
               )),
           const SizedBox(height: 5),
           _MonoLabel(label, fontSize: 9.5),
+          if (sub != null) ...[
+            const SizedBox(height: 3),
+            Text(sub!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 10.5, color: gb.progInk3)),
+          ],
         ],
       ),
+    );
+  }
+}
+
+/// 4-week "block" scorecard — recent execution & momentum, everything read against the PREVIOUS block.
+class _BlockScorecard extends StatelessWidget {
+  const _BlockScorecard({required this.overview});
+  final ProgressOverview overview;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    final o = overview;
+    final up = o.topLifts.where((l) => l.direction == LiftTrendDirection.up).length;
+    final down =
+        o.topLifts.where((l) => l.direction == LiftTrendDirection.down).length;
+    final p = o.period;
+    final weeks = o.consistency.windowWeeks <= 0 ? 1 : o.consistency.windowWeeks;
+    final perWeek = p.sessions / weeks;
+
+    final delta = p.volumeDelta;
+    final volSub = delta == null
+        ? 'this block'
+        : '${delta >= 0 ? '▲' : '▼'} ${(delta.abs() * 100).round()}% vs last 4w';
+
+    return _snapshotGrid(
+      <Widget>[
+        _ScoreTile(
+          value: o.topLifts.isEmpty ? '—' : '$up/${o.topLifts.length}',
+          label: 'Lifts improving',
+          accent: up > 0 ? gb.progPos : (down > 0 ? gb.progNeg : null),
+        ),
+        _ScoreTile(
+          value: _fmtVolume(p.volumeKg),
+          label: 'Volume',
+          sub: volSub,
+          accent: delta == null ? null : (delta >= 0 ? gb.progPos : gb.progNeg),
+        ),
+        _ScoreTile(value: '${p.prCount}', label: 'PRs', sub: 'this block'),
+        _ScoreTile(
+            value: '${p.sessions}', label: 'Sessions', sub: '${_trim(perWeek)}/wk'),
+      ],
+      cols: 2,
+    );
+  }
+}
+
+/// 12-week "phase" scorecard — adaptation & trajectory: cumulative strength gain, the weekly-volume slope,
+/// PRs banked this phase, and weeks-on-goal (the denominator finally means something over a quarter).
+class _PhaseScorecard extends StatelessWidget {
+  const _PhaseScorecard({required this.overview});
+  final ProgressOverview overview;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    final o = overview;
+    final gain = o.strengthGain.avgGainPct;
+    final hasGain = o.strengthGain.lifts.isNotEmpty;
+    final gainVal = !hasGain
+        ? '—'
+        : gain > 0
+            ? '▲${_trim(gain)}%'
+            : gain < 0
+                ? '▼${_trim(gain.abs())}%'
+                : 'flat';
+
+    final trend = _volTrend(o.period.weeklyVolumeKg);
+    final trendVal = switch (trend) {
+      _VolTrend.rising => 'Rising',
+      _VolTrend.falling => 'Falling',
+      _VolTrend.steady => 'Steady',
+    };
+    final trendAccent = switch (trend) {
+      _VolTrend.rising => gb.progPos,
+      _VolTrend.falling => gb.progNeg,
+      _VolTrend.steady => null,
+    };
+
+    final pct = o.consistency.consistencyPct;
+    final streak = o.consistency.currentStreakWeeks;
+
+    return _snapshotGrid(
+      <Widget>[
+        _ScoreTile(
+          value: gainVal,
+          label: 'Est. 1RM gain',
+          sub: 'last ${o.consistency.windowWeeks} wks',
+          accent: !hasGain ? null : (gain > 0 ? gb.progPos : gain < 0 ? gb.progNeg : null),
+        ),
+        _ScoreTile(value: trendVal, label: 'Volume trend', accent: trendAccent),
+        _ScoreTile(value: '${o.period.prCount}', label: 'PRs', sub: 'this phase'),
+        _ScoreTile(
+          value: pct != null ? '$pct%' : '—',
+          label: 'Weeks on goal',
+          sub: pct != null ? 'streak ${streak}w' : null,
+        ),
+      ],
+      cols: 2,
+    );
+  }
+}
+
+/// 12-week structural-balance card — hard sets / muscle / week against the soft 10–20 "growth zone"
+/// (six coarse groups; under-dosed groups render amber). Honest empty state when there's no strength work.
+class _MuscleBalanceCard extends StatelessWidget {
+  const _MuscleBalanceCard({required this.muscles});
+  final List<MuscleVolume> muscles;
+  static const double _scaleMax = 24;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: gb.card,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(color: gb.progLine),
+        boxShadow: AppShadows.sm,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(Icons.fitness_center, size: 15, color: gb.progInk2),
+            const SizedBox(width: 6),
+            const _MonoLabel('Sets / muscle · per week'),
+          ]),
+          const SizedBox(height: 4),
+          Text('10–20 = growth zone',
+              style: TextStyle(fontSize: 11, color: gb.progInk3)),
+          const SizedBox(height: 13),
+          if (muscles.isEmpty)
+            Text('Not enough strength work logged to map muscle balance yet.',
+                style: TextStyle(fontSize: 12.5, height: 1.35, color: gb.progInk3))
+          else
+            ...muscles.map((m) => Padding(
+                  padding: const EdgeInsets.only(bottom: 9),
+                  child: _row(gb, m),
+                )),
+        ],
+      ),
+    );
+  }
+
+  Widget _row(GbColors gb, MuscleVolume m) {
+    final under = m.setsPerWeek < 10;
+    return Row(
+      children: [
+        SizedBox(
+          width: 70,
+          child: Text(_cap(m.muscle),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 12, color: gb.progInk2)),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: LayoutBuilder(builder: (_, c) {
+            final w = c.maxWidth;
+            final fillW = (w * (m.setsPerWeek / _scaleMax)).clamp(0.0, w);
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(5),
+              child: SizedBox(
+                height: 10,
+                child: Stack(children: [
+                  Positioned.fill(child: ColoredBox(color: gb.progPaper)),
+                  Positioned(
+                    left: w * 10 / _scaleMax,
+                    width: w * 10 / _scaleMax,
+                    top: 0,
+                    bottom: 0,
+                    child: ColoredBox(
+                        color: gb.progPos.withValues(alpha: 0.18)),
+                  ),
+                  Positioned(
+                    left: 0,
+                    width: fillW,
+                    top: 0,
+                    bottom: 0,
+                    child: ColoredBox(color: under ? gb.progWarn : gb.progRing),
+                  ),
+                ]),
+              ),
+            );
+          }),
+        ),
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 26,
+          child: Text(_trim(m.setsPerWeek),
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                  fontSize: 12, fontWeight: FontWeight.w700, color: gb.progInk)),
+        ),
+      ],
     );
   }
 }

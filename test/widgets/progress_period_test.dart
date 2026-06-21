@@ -44,6 +44,73 @@ void main() {
         ],
       );
 
+  /// A v2 overview with the window-differentiation payload populated, for the 4w/12w split test.
+  ProgressOverview v2Overview() => const ProgressOverview(
+        thisWeek:
+            WeekAdherence(completedSessions: 3, goal: 4, hasActivePlan: true),
+        consistency: Consistency(
+            windowWeeks: 12, days: [], consistencyPct: 80, currentStreakWeeks: 3),
+        topLifts: [
+          LiftDirection(
+            exerciseId: 'e1',
+            exerciseName: 'Bench Press',
+            currentE1rmKg: 100,
+            direction: LiftTrendDirection.up,
+            stalled: false,
+            stallSessions: 0,
+            sparkE1rmKg: [90, 95, 98, 100],
+          ),
+        ],
+        recentPrs: [
+          PersonalRecord(
+            exerciseId: 'p1',
+            exerciseName: 'Deadlift',
+            weightKg: 140,
+            reps: 3,
+            estimatedOneRepMaxKg: 153,
+          ),
+        ],
+        period: PeriodStats(
+          sessions: 6,
+          prevSessions: 5,
+          volumeKg: 12400,
+          prevVolumeKg: 11000,
+          workingSets: 60,
+          prevWorkingSets: 52,
+          prCount: 3,
+          weeklyVolumeKg: [2000, 2500, 3000, 4900],
+        ),
+        strengthGain: StrengthGain(
+          avgGainPct: 9,
+          lifts: [
+            LiftGain(
+              exerciseId: 'e1',
+              exerciseName: 'Bench Press',
+              startE1rmKg: 92,
+              currentE1rmKg: 100,
+              gainKg: 8,
+              gainPct: 8.7,
+              plateauWeeks: 0,
+            ),
+          ],
+        ),
+        muscleVolume: [
+          MuscleVolume(muscle: 'chest', setsPerWeek: 14, prevSetsPerWeek: 12),
+          MuscleVolume(muscle: 'legs', setsPerWeek: 8, prevSetsPerWeek: 7),
+        ],
+        load: LoadBalance(
+          acuteVolumeKg: 4900,
+          chronicWeeklyVolumeKg: 3000,
+          trend: LoadTrend.ramping,
+        ),
+        coach: CoachRead(
+          headline: "Momentum's with you",
+          detail: '2 lifts trending up, volume up 13% on the last block.',
+          action: 'Legs is light this block — add a set.',
+          tone: CoachTone.positive,
+        ),
+      );
+
   /// Finds an info button by the `label` on its [Semantics] widget (robust against semantics-node
   /// merging in the dark hero). Each Progress section's info button is `_InfoButton`, which wraps its
   /// tap target in `Semantics(button: true, label: 'How <Section> is counted')`.
@@ -166,6 +233,30 @@ void main() {
     expect(repo.nutritionFroms.length, greaterThan(before));
     final (from, to) = repo.nutritionFroms.last;
     expect(to!.difference(from!).inDays, 28); // 7 * 4 weeks
+  });
+
+  // ── v2 window differentiation: 4w block vs 12w phase ────────────────────────
+
+  testWidgets('4w shows the block scorecard; 12w shows the phase + muscle balance',
+      (tester) async {
+    final repo = _FakeProgressRepository(v2Overview());
+    await pump(tester, repo, tallViewport: true);
+
+    // 4w (block): the coach's-read verdict leads, a block tile is present, and the structural-balance
+    // card — a PHASE concern — is absent.
+    await tester.tap(find.text('4w'));
+    await tester.pumpAndSettle();
+    expect(find.text("Momentum's with you"), findsOneWidget);
+    expect(find.text('LIFTS IMPROVING'), findsOneWidget);
+    expect(find.text('SETS / MUSCLE · PER WEEK'), findsNothing);
+
+    // 12w (phase): the phase tile + the structural-balance hero appear; the block-only tile is gone.
+    await tester.tap(find.text('12w'));
+    await tester.pumpAndSettle();
+    expect(find.text("Momentum's with you"), findsOneWidget);
+    expect(find.text('VOLUME TREND'), findsOneWidget);
+    expect(find.text('SETS / MUSCLE · PER WEEK'), findsOneWidget);
+    expect(find.text('LIFTS IMPROVING'), findsNothing);
   });
 
   // ── "How this is counted" transparency sheets ────────────────────────────────
