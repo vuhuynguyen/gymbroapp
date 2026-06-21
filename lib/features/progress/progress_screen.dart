@@ -53,8 +53,13 @@ class ProgressScreen extends ConsumerWidget {
           ),
           Expanded(
             child: overview.when(
-              // Bespoke hero-shaped skeleton (design `LoadingBody`) — NOT the generic GbSkeletonList.
-              loading: () => const _LoadingBody(),
+              // Changing the window (Week/4w/12w) re-runs this provider; keep the current content on
+              // screen while the new data loads instead of swapping the whole body for the skeleton —
+              // no flash, no relayout-under-the-finger (the skeleton stays for the first/empty load).
+              skipLoadingOnReload: true,
+              // Bespoke skeleton (design `LoadingBody`), shaped to the selected view so the placeholder
+              // matches what's about to load — NOT the generic GbSkeletonList.
+              loading: () => _LoadingBody(range: range),
               // Neutral Graphite error panel (design `ErrorBody`) — NEVER the red ErrorRetry tile; this
               // screen's only red is a per-lift "slipping" tag (PHASE-1 §1).
               error: (e, _) => _ErrorBody(
@@ -71,20 +76,39 @@ class ProgressScreen extends ConsumerWidget {
                         padding: const EdgeInsets.fromLTRB(AppSpacing.screenH,
                             AppSpacing.md + 4, AppSpacing.screenH, 100),
                         children: [
-                          // The view control sits under the page title: Today (snapshot + advice) or a
-                          // trend window (Week / 4w / 12w). The This Week hero stays current-week.
+                          // The view control sits under the page title: Today (snapshot + advice), or
+                          // the Trends tab. On Trends the This Week glance leads, then a window
+                          // sub-filter (Week / 4w / 12w) scopes the trends below it.
                           const _PeriodBar(),
                           const SizedBox(height: AppSpacing.md),
                           if (range == ProgressRange.today)
                             _TodaySection(overview: o)
                           else ...[
-                            // This Week is a current-week glance → only on the Week tab.
+                            // Week leads with the current-week glance. 4w/12w are two DISTINCT dashboards
+                            // (WINDOW-DIFFERENTIATION.md): both lead with the coach's-read verdict, then a
+                            // window-specific scorecard — 4w "this block" (deltas vs last block) vs 12w
+                            // "this phase" (trajectory).
                             if (range == ProgressRange.week) ...[
                               _ThisWeekSection(overview: o),
-                              const SizedBox(height: AppSpacing.lg),
+                              const SizedBox(height: AppSpacing.md),
+                            ] else ...[
+                              _CoachReadBanner(coach: o.coach),
+                              const SizedBox(height: AppSpacing.md),
+                              if (range == ProgressRange.fourWeek)
+                                _BlockScorecard(overview: o)
+                              else
+                                _PhaseScorecard(overview: o),
+                              const SizedBox(height: AppSpacing.md),
                             ],
+                            const _WindowFilter(),
+                            const SizedBox(height: AppSpacing.lg),
                             _StrengthSection(lifts: o.topLifts),
                             const SizedBox(height: AppSpacing.lg),
+                            // Structural balance is a PHASE concern — the 12-week strategic hero only.
+                            if (range == ProgressRange.twelveWeek) ...[
+                              _MuscleBalanceCard(muscles: o.muscleVolume),
+                              const SizedBox(height: AppSpacing.lg),
+                            ],
                             // Consistency is a multi-week heatmap → only on the 4w / 12w windows.
                             if (range != ProgressRange.week) ...[
                               _ConsistencySection(consistency: o.consistency),
@@ -92,8 +116,8 @@ class ProgressScreen extends ConsumerWidget {
                             ],
                             _PrSection(prs: o.recentPrs),
                             const SizedBox(height: AppSpacing.lg),
-                            // Section 5 (conditional). Each watches its own provider, so a slow/absent
-                            // metrics/nutrition endpoint never blocks the overview above.
+                            // Body, sleep & nutrition trends show on every trend window. Each watches its own
+                            // provider, so a slow/absent metrics/nutrition endpoint never blocks the overview.
                             const _BodySection(),
                             const SizedBox(height: AppSpacing.lg),
                             const _SleepSection(),
@@ -267,40 +291,139 @@ class _ProgCard extends StatelessWidget {
 
 // ── Period control (Today / Week / 4w / 12w segmented) ───────────────────────
 
-/// The Progress page's view control — a compact prog-toned segmented track (Today / Week / 4w / 12w)
-/// sitting under the page title. Reads/writes [progressRangeProvider]; **Today** switches to the
-/// snapshot+advice dashboard, while the three trend windows re-request the overview, per-lift e1RM
-/// series, and nutrition trend with the new window. Built inline (not the grey-toned shared
-/// [GbSegmented]) so it stays on the Graphite paper ramp.
+/// The Progress page's top view control — a prog-toned segmented track (Today / Trends) under the page
+/// title. Reads/writes [progressRangeProvider]: **Today** is the snapshot+advice dashboard; **Trends**
+/// re-enters the last window (the window itself is picked by [_WindowFilter] below the This Week card).
+/// Built inline (not the grey-toned shared [GbSegmented]) so it stays on the Graphite paper ramp.
 class _PeriodBar extends ConsumerWidget {
   const _PeriodBar();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final gb = context.gb;
-    final selected = ref.watch(progressRangeProvider);
+    final isToday = ref.watch(progressRangeProvider) == ProgressRange.today;
+
+    void setRange(ProgressRange r) =>
+        ref.read(progressRangeProvider.notifier).state = r;
+
     return Semantics(
       label: 'Progress view',
-      child: Container(
-        padding: const EdgeInsets.all(3),
-        decoration: BoxDecoration(
-          color: gb.progCard2,
-          borderRadius: BorderRadius.circular(AppRadius.sm),
-          border: Border.all(color: gb.progLine),
+      child: _SegmentedRow(segments: [
+        _PeriodSegment(
+          label: 'Today',
+          selected: isToday,
+          onTap: () => setRange(ProgressRange.today),
         ),
-        child: Row(
-          children: [
-            for (final r in ProgressRange.values)
-              Expanded(
-                child: _PeriodSegment(
-                  label: r.label,
-                  selected: r == selected,
-                  onTap: () =>
-                      ref.read(progressRangeProvider.notifier).state = r,
-                ),
-              ),
+        _PeriodSegment(
+          label: 'Trends',
+          selected: !isToday,
+          // Re-enter on the last window used (remembered), defaulting to Week.
+          onTap: () => setRange(ref.read(progressTrendWindowProvider)),
+        ),
+      ]),
+    );
+  }
+}
+
+/// The trend-window filter (Week / 4w / 12w) — light underline sub-tabs shown beneath the This Week
+/// card on the Trends view. Picks the look-back window and remembers it (so toggling Today <-> Trends
+/// restores it).
+class _WindowFilter extends ConsumerWidget {
+  const _WindowFilter();
+
+  static const _windows = [
+    ProgressRange.week,
+    ProgressRange.fourWeek,
+    ProgressRange.twelveWeek,
+  ];
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final selected = ref.watch(progressRangeProvider);
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (var i = 0; i < _windows.length; i++) ...[
+            if (i > 0) const SizedBox(width: 22),
+            _WindowTab(
+              label: _windows[i].label,
+              selected: _windows[i] == selected,
+              onTap: () {
+                ref.read(progressTrendWindowProvider.notifier).state =
+                    _windows[i];
+                ref.read(progressRangeProvider.notifier).state = _windows[i];
+              },
+            ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// A light underline sub-tab for the trend window — plain text with a brand underline under the active
+/// one, so the window reads as a secondary refinement of the Trends view.
+class _WindowTab extends StatelessWidget {
+  const _WindowTab({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Container(
+          padding: const EdgeInsets.only(bottom: 4),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: selected ? gb.primary600 : Colors.transparent,
+                width: 2,
+              ),
+            ),
+          ),
+          child: Text(
+            label,
+            style: AppText.mono(const TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0,
+            )).copyWith(color: selected ? gb.primary600 : gb.progInk3),
+          ),
         ),
+      ),
+    );
+  }
+}
+
+/// The pill-container that frames a row of [_PeriodSegment]s — shared by the top Today/Trends tabs and
+/// the trend-window sub-filter so both read as the same control.
+class _SegmentedRow extends StatelessWidget {
+  const _SegmentedRow({required this.segments});
+  final List<Widget> segments;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: gb.progCard2,
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        border: Border.all(color: gb.progLine),
+      ),
+      child: Row(
+        children: [for (final s in segments) Expanded(child: s)],
       ),
     );
   }
@@ -447,8 +570,7 @@ class _TodaySection extends ConsumerWidget {
 
 /// Lay the snapshot tiles out in an even 3-column grid (equal widths, last row left-aligned) — tidier
 /// than a Wrap when the count isn't a multiple of three.
-Widget _snapshotGrid(List<Widget> tiles) {
-  const cols = 3;
+Widget _snapshotGrid(List<Widget> tiles, {int cols = 3}) {
   final rows = <Widget>[];
   for (var i = 0; i < tiles.length; i += cols) {
     final children = <Widget>[];
@@ -526,6 +648,360 @@ class _SnapshotTile extends StatelessWidget {
               style: TextStyle(fontSize: 10.5, color: gb.progInk3)),
         ],
       ),
+    );
+  }
+}
+
+// ── v2 window differentiation: coach's-read · block/phase scorecards · muscle balance ──
+// (gymbro/docs/progress/WINDOW-DIFFERENTIATION.md) — 4w answers "how's this block?", 12w "how's the phase?".
+
+String _trim(double v) => v % 1 == 0 ? '${v.toInt()}' : v.toStringAsFixed(1);
+String _fmtVolume(double kg) =>
+    kg >= 1000 ? '${(kg / 1000).toStringAsFixed(1)}t' : '${kg.round()}kg';
+String _cap(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
+
+enum _VolTrend { rising, steady, falling }
+
+/// Coarse rising/steady/falling slope: last third of the weekly-volume series vs the first third
+/// (mirrors the backend's WeeklyTrend so the chip and the coach's-read never disagree).
+_VolTrend _volTrend(List<double> weekly) {
+  if (weekly.length < 4) return _VolTrend.steady;
+  final third = (weekly.length ~/ 3).clamp(1, weekly.length);
+  double avg(Iterable<double> xs) =>
+      xs.isEmpty ? 0 : xs.reduce((a, b) => a + b) / xs.length;
+  final first = avg(weekly.take(third));
+  final last = avg(weekly.skip(weekly.length - third));
+  if (first <= 0) return last > 0 ? _VolTrend.rising : _VolTrend.steady;
+  final change = (last - first) / first;
+  if (change > 0.1) return _VolTrend.rising;
+  if (change < -0.1) return _VolTrend.falling;
+  return _VolTrend.steady;
+}
+
+/// The rule-based coach's-read banner — one-line verdict + supporting detail + the single top action,
+/// tinted by tone. Leads BOTH the 4w (block) and 12w (phase) views; hidden when there's nothing to say.
+class _CoachReadBanner extends StatelessWidget {
+  const _CoachReadBanner({required this.coach});
+  final CoachRead coach;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!coach.hasContent) return const SizedBox.shrink();
+    final gb = context.gb;
+    final (Color bg, Color accent) = switch (coach.tone) {
+      CoachTone.positive => (gb.progBrandSoft, gb.progPos),
+      CoachTone.watch => (gb.warning0, gb.progWarn),
+      CoachTone.neutral => (gb.progCard2, gb.progRing),
+    };
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(color: gb.progLine),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.auto_awesome, size: 16, color: accent),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(coach.headline,
+                    style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        height: 1.2,
+                        color: gb.progInk)),
+              ),
+            ],
+          ),
+          if (coach.detail.isNotEmpty) ...[
+            const SizedBox(height: 5),
+            Text(coach.detail,
+                style:
+                    TextStyle(fontSize: 12.5, height: 1.35, color: gb.progInk2)),
+          ],
+          if (coach.action != null && coach.action!.isNotEmpty) ...[
+            const SizedBox(height: 11),
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: gb.card,
+                borderRadius: BorderRadius.circular(AppRadius.md),
+                border: Border.all(color: gb.progLine),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.arrow_forward_rounded, size: 14, color: accent),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Text(coach.action!,
+                        style: TextStyle(
+                            fontSize: 12,
+                            height: 1.3,
+                            fontWeight: FontWeight.w600,
+                            color: gb.progInk)),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// One scorecard tile — a big (optionally accent-coloured) value over an uppercase micro-label, with an
+/// optional sub-line. Same white card as [_SnapshotTile] so every stat surface reads as one family.
+class _ScoreTile extends StatelessWidget {
+  const _ScoreTile(
+      {required this.value, required this.label, this.sub, this.accent});
+  final String value;
+  final String label;
+  final String? sub;
+  final Color? accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return Container(
+      padding: const EdgeInsets.symmetric(
+          horizontal: AppSpacing.sm + 1, vertical: AppSpacing.sm + 2),
+      decoration: BoxDecoration(
+        color: gb.card,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: gb.progLine),
+        boxShadow: AppShadows.sm,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                height: 1.0,
+                letterSpacing: -0.5,
+                color: accent ?? gb.progInk,
+              )),
+          const SizedBox(height: 5),
+          _MonoLabel(label, fontSize: 9.5),
+          if (sub != null) ...[
+            const SizedBox(height: 3),
+            Text(sub!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 10.5, color: gb.progInk3)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// 4-week "block" scorecard — recent execution & momentum, everything read against the PREVIOUS block.
+class _BlockScorecard extends StatelessWidget {
+  const _BlockScorecard({required this.overview});
+  final ProgressOverview overview;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    final o = overview;
+    final up = o.topLifts.where((l) => l.direction == LiftTrendDirection.up).length;
+    final down =
+        o.topLifts.where((l) => l.direction == LiftTrendDirection.down).length;
+    final p = o.period;
+    final weeks = o.consistency.windowWeeks <= 0 ? 1 : o.consistency.windowWeeks;
+    final perWeek = p.sessions / weeks;
+
+    final delta = p.volumeDelta;
+    final volSub = delta == null
+        ? 'this block'
+        : '${delta >= 0 ? '▲' : '▼'} ${(delta.abs() * 100).round()}% vs last 4w';
+
+    return _snapshotGrid(
+      <Widget>[
+        _ScoreTile(
+          value: o.topLifts.isEmpty ? '—' : '$up/${o.topLifts.length}',
+          label: 'Lifts improving',
+          accent: up > 0 ? gb.progPos : (down > 0 ? gb.progNeg : null),
+        ),
+        _ScoreTile(
+          value: _fmtVolume(p.volumeKg),
+          label: 'Volume',
+          sub: volSub,
+          accent: delta == null ? null : (delta >= 0 ? gb.progPos : gb.progNeg),
+        ),
+        _ScoreTile(value: '${p.prCount}', label: 'PRs', sub: 'this block'),
+        _ScoreTile(
+            value: '${p.sessions}', label: 'Sessions', sub: '${_trim(perWeek)}/wk'),
+      ],
+      cols: 2,
+    );
+  }
+}
+
+/// 12-week "phase" scorecard — adaptation & trajectory: cumulative strength gain, the weekly-volume slope,
+/// PRs banked this phase, and weeks-on-goal (the denominator finally means something over a quarter).
+class _PhaseScorecard extends StatelessWidget {
+  const _PhaseScorecard({required this.overview});
+  final ProgressOverview overview;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    final o = overview;
+    final gain = o.strengthGain.avgGainPct;
+    final hasGain = o.strengthGain.lifts.isNotEmpty;
+    final gainVal = !hasGain
+        ? '—'
+        : gain > 0
+            ? '▲${_trim(gain)}%'
+            : gain < 0
+                ? '▼${_trim(gain.abs())}%'
+                : 'flat';
+
+    final trend = _volTrend(o.period.weeklyVolumeKg);
+    final trendVal = switch (trend) {
+      _VolTrend.rising => 'Rising',
+      _VolTrend.falling => 'Falling',
+      _VolTrend.steady => 'Steady',
+    };
+    final trendAccent = switch (trend) {
+      _VolTrend.rising => gb.progPos,
+      _VolTrend.falling => gb.progNeg,
+      _VolTrend.steady => null,
+    };
+
+    final pct = o.consistency.consistencyPct;
+    final streak = o.consistency.currentStreakWeeks;
+
+    return _snapshotGrid(
+      <Widget>[
+        _ScoreTile(
+          value: gainVal,
+          label: 'Est. 1RM gain',
+          sub: 'last ${o.consistency.windowWeeks} wks',
+          accent: !hasGain ? null : (gain > 0 ? gb.progPos : gain < 0 ? gb.progNeg : null),
+        ),
+        _ScoreTile(value: trendVal, label: 'Volume trend', accent: trendAccent),
+        _ScoreTile(value: '${o.period.prCount}', label: 'PRs', sub: 'this phase'),
+        _ScoreTile(
+          value: pct != null ? '$pct%' : '—',
+          label: 'Weeks on goal',
+          sub: pct != null ? 'streak ${streak}w' : null,
+        ),
+      ],
+      cols: 2,
+    );
+  }
+}
+
+/// 12-week structural-balance card — hard sets / muscle / week against the soft 10–20 "growth zone"
+/// (six coarse groups; under-dosed groups render amber). Honest empty state when there's no strength work.
+class _MuscleBalanceCard extends StatelessWidget {
+  const _MuscleBalanceCard({required this.muscles});
+  final List<MuscleVolume> muscles;
+  static const double _scaleMax = 24;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: gb.card,
+        borderRadius: BorderRadius.circular(AppRadius.lg),
+        border: Border.all(color: gb.progLine),
+        boxShadow: AppShadows.sm,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(Icons.fitness_center, size: 15, color: gb.progInk2),
+            const SizedBox(width: 6),
+            const _MonoLabel('Sets / muscle · per week'),
+          ]),
+          const SizedBox(height: 4),
+          Text('10–20 = growth zone',
+              style: TextStyle(fontSize: 11, color: gb.progInk3)),
+          const SizedBox(height: 13),
+          if (muscles.isEmpty)
+            Text('Not enough strength work logged to map muscle balance yet.',
+                style: TextStyle(fontSize: 12.5, height: 1.35, color: gb.progInk3))
+          else
+            ...muscles.map((m) => Padding(
+                  padding: const EdgeInsets.only(bottom: 9),
+                  child: _row(gb, m),
+                )),
+        ],
+      ),
+    );
+  }
+
+  Widget _row(GbColors gb, MuscleVolume m) {
+    final under = m.setsPerWeek < 10;
+    return Row(
+      children: [
+        SizedBox(
+          width: 70,
+          child: Text(_cap(m.muscle),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 12, color: gb.progInk2)),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: LayoutBuilder(builder: (_, c) {
+            final w = c.maxWidth;
+            final fillW = (w * (m.setsPerWeek / _scaleMax)).clamp(0.0, w);
+            return ClipRRect(
+              borderRadius: BorderRadius.circular(5),
+              child: SizedBox(
+                height: 10,
+                child: Stack(children: [
+                  Positioned.fill(child: ColoredBox(color: gb.progPaper)),
+                  Positioned(
+                    left: w * 10 / _scaleMax,
+                    width: w * 10 / _scaleMax,
+                    top: 0,
+                    bottom: 0,
+                    child: ColoredBox(
+                        color: gb.progPos.withValues(alpha: 0.18)),
+                  ),
+                  Positioned(
+                    left: 0,
+                    width: fillW,
+                    top: 0,
+                    bottom: 0,
+                    child: ColoredBox(color: under ? gb.progWarn : gb.progRing),
+                  ),
+                ]),
+              ),
+            );
+          }),
+        ),
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 26,
+          child: Text(_trim(m.setsPerWeek),
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                  fontSize: 12, fontWeight: FontWeight.w700, color: gb.progInk)),
+        ),
+      ],
     );
   }
 }
@@ -1112,28 +1588,85 @@ class _GlanceStrip extends StatelessWidget {
 /// The filtered lift list for a selected muscle chip — every lift in that group (reusing [_LiftRow],
 /// which is honest about thin lifts: a `hasTrend == false` lift shows name + e1RM + "N sessions" with
 /// no direction tag / spark). An empty group shows the existing honest empty state (the [_QuietCard]).
-class _MuscleLiftList extends StatelessWidget {
+/// A busy group (more than [_maxInline] lifts) is capped to a fixed-height card that scrolls INSIDE, so a
+/// long list never runs the whole page down.
+class _MuscleLiftList extends StatefulWidget {
   const _MuscleLiftList({required this.lifts});
   final List<StrengthLift> lifts;
 
   @override
+  State<_MuscleLiftList> createState() => _MuscleLiftListState();
+}
+
+class _MuscleLiftListState extends State<_MuscleLiftList> {
+  /// The card is at most this many rows tall; a longer group scrolls INSIDE.
+  static const int _maxRows = 4;
+
+  /// Fixed per-row height — so the capped card shows EXACTLY [_maxRows] rows, never a partial peek. Each
+  /// [_LiftRow] is a single ellipsized name line + the e1RM line (~85pt natural); 88 clears it with a hair
+  /// of breathing room (the row is centered in a Stack, which clips harmlessly rather than overflowing).
+  static const double _rowExtent = 88;
+
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final gb = context.gb;
+    final lifts = widget.lifts;
     if (lifts.isEmpty) {
       return const _QuietCard(
         text: 'Log a few working sets to see your strength trend.',
       );
     }
+    // Every row is a fixed [_rowExtent] tall, so the viewport (an exact multiple of it) always cuts on a
+    // row boundary — no half-visible "next" lift. The rows are eagerly built (SingleChildScrollView →
+    // Column) so all of them stay in the tree (find/scroll work) — only the visible four are on screen.
+    final scrolls = lifts.length > _maxRows;
+    final content = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < lifts.length; i++)
+          SizedBox(
+            height: _rowExtent,
+            // Row at its natural height, centered; the inset rule pinned to the bottom. Stack (not a
+            // forced Expanded) so a slightly-taller row clips harmlessly instead of throwing an overflow.
+            child: Stack(
+              children: [
+                Align(
+                  alignment: Alignment.center,
+                  child: _LiftRow.fromStrength(lifts[i]),
+                ),
+                if (i != lifts.length - 1)
+                  Align(
+                    alignment: Alignment.bottomCenter,
+                    child: _RuleInset(color: gb.progLine2),
+                  ),
+              ],
+            ),
+          ),
+      ],
+    );
     return _ProgCard(
       padding: EdgeInsets.zero,
-      child: Column(
-        children: [
-          for (var i = 0; i < lifts.length; i++) ...[
-            if (i > 0) _RuleInset(color: gb.progLine2),
-            _LiftRow.fromStrength(lifts[i]),
-          ],
-        ],
-      ),
+      child: scrolls
+          ? SizedBox(
+              height: _rowExtent * _maxRows,
+              child: Scrollbar(
+                controller: _controller,
+                thumbVisibility: true,
+                child: SingleChildScrollView(
+                  controller: _controller,
+                  child: content,
+                ),
+              ),
+            )
+          : content,
     );
   }
 }
@@ -1165,14 +1698,14 @@ class _MuscleChipRow extends StatelessWidget {
         scrollDirection: Axis.horizontal,
         physics: const ClampingScrollPhysics(),
         children: [
-          _MuscleChip(
+          _ProgChip(
             label: 'All',
             selected: selected == null,
             onTap: () => onSelect(null),
           ),
           for (final m in trained) ...[
             const SizedBox(width: AppSpacing.xs),
-            _MuscleChip(
+            _ProgChip(
               label: _muscleLabel(m),
               selected: selected == m,
               onTap: () => onSelect(m),
@@ -1184,10 +1717,11 @@ class _MuscleChipRow extends StatelessWidget {
   }
 }
 
-/// One muscle chip — a prog-toned selectable pill (primary fill when selected, quiet outline otherwise).
-/// Built inline (not the grey-toned shared [GbChip]) so it stays on the Graphite paper ramp.
-class _MuscleChip extends StatelessWidget {
-  const _MuscleChip({
+/// A prog-toned selectable filter pill (primary fill when selected, quiet outline otherwise) — the
+/// Strength muscle filter's chip. Built inline (not the grey-toned shared [GbChip]) so it stays on the
+/// Graphite paper ramp.
+class _ProgChip extends StatelessWidget {
+  const _ProgChip({
     required this.label,
     required this.selected,
     required this.onTap,
@@ -2653,7 +3187,8 @@ class _CaloriesTrendCard extends StatelessWidget {
               days: recent,
               neutral: gb.progRing, // cool / under / no-target
               under: gb.progRing, // under plan → cool
-              over: const Color(0xFFFB7185), // over plan → coral (warm attention, not yellow)
+              over: const Color(
+                  0xFFFB7185), // over plan → coral (warm attention, not yellow)
               target: gb.progInk3, // dashed "Plan" line
               track: gb.progLine,
             ),
@@ -3223,17 +3758,78 @@ class _PreviewCard extends StatelessWidget {
 
 // ── Loading (bespoke hero-shaped skeleton) ───────────────────────────────────
 
-/// The design `LoadingBody`: a hero-shaped skeleton (the navy gradient panel with translucent-white
-/// shimmer placeholders + a circle for the ring), then a surf card with 3 lift-row skeletons, then a
-/// surf card with a big bar + a 12×7 heatmap-grid skeleton. Kept inside a scrollable so pull-to-refresh
-/// stays engaged. Reuses [GbSkeleton] for the on-card shimmer; the hero placeholders are static
-/// translucent-white blocks so they read over the gradient (the grey skeleton fill would vanish there).
+/// The design `LoadingBody`, shaped to the selected view so the skeleton matches what's about to load:
+/// the **Week** goal hero, the **4w / 12w** stat strip, or the **Today** glance fill the hero slot, then
+/// the strength card (every trend window) and the consistency-heatmap card (4w / 12w only) — or grounded
+/// advice cards on Today. Kept inside a scrollable so pull-to-refresh stays engaged. Reuses [GbSkeleton]
+/// for the on-card shimmer; the hero placeholders are static translucent-white blocks so they read over
+/// the gradient (the grey skeleton fill would vanish there).
 class _LoadingBody extends StatelessWidget {
-  const _LoadingBody();
+  const _LoadingBody({required this.range});
+  final ProgressRange range;
 
   @override
   Widget build(BuildContext context) {
     final gb = context.gb;
+    final isToday = range == ProgressRange.today;
+    final isWeek = range == ProgressRange.week;
+
+    final children = <Widget>[
+      // Hero slot — matches the loaded content for this view.
+      if (isToday)
+        const _LoadingTodayGlance(key: ValueKey('loadingToday'))
+      else if (isWeek)
+        const _LoadingHero(key: ValueKey('loadingHero'))
+      else
+        const _LoadingStatStrip(key: ValueKey('loadingStatStrip')),
+      const SizedBox(height: AppSpacing.lg),
+    ];
+
+    if (isToday) {
+      // Today = grounded advice cards — no strength card, no heatmap.
+      children.addAll(const [
+        _LoadingAdviceCard(),
+        SizedBox(height: AppSpacing.sm),
+        _LoadingAdviceCard(),
+      ]);
+    } else {
+      // Strength card skeleton — 3 lift-row placeholders (shown on every trend window).
+      children.add(_ProgCard(
+        padding: EdgeInsets.zero,
+        child: Column(
+          children: [
+            for (var i = 0; i < 3; i++) ...[
+              if (i > 0) _RuleInset(color: gb.progLine2),
+              const _LoadingLiftRow(),
+            ],
+          ],
+        ),
+      ));
+      // Consistency card skeleton — a big bar + a 12×7 heatmap grid; only on the 4w / 12w windows
+      // (the Week view has no heatmap). Design `LoadingBody`: pad 17, a 42%-wide / 28px bar, grid below.
+      if (!isWeek) {
+        children.addAll(const [
+          SizedBox(height: AppSpacing.lg),
+          _ProgCard(
+            padding: EdgeInsets.all(17),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                FractionallySizedBox(
+                  widthFactor: 0.42,
+                  alignment: Alignment.centerLeft,
+                  child:
+                      GbSkeleton(width: double.infinity, height: 28, radius: 7),
+                ),
+                SizedBox(height: 18),
+                _LoadingHeatmapGrid(),
+              ],
+            ),
+          ),
+        ]);
+      }
+    }
+
     return LayoutBuilder(
       builder: (context, constraints) => SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
@@ -3244,41 +3840,7 @@ class _LoadingBody extends StatelessWidget {
                 AppSpacing.screenH, AppSpacing.md + 4, AppSpacing.screenH, 100),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const _LoadingHero(),
-                const SizedBox(height: AppSpacing.lg),
-                // Strength card skeleton — 3 lift-row placeholders.
-                _ProgCard(
-                  padding: EdgeInsets.zero,
-                  child: Column(
-                    children: [
-                      for (var i = 0; i < 3; i++) ...[
-                        if (i > 0) _RuleInset(color: gb.progLine2),
-                        const _LoadingLiftRow(),
-                      ],
-                    ],
-                  ),
-                ),
-                const SizedBox(height: AppSpacing.lg),
-                // Consistency card skeleton — a big bar + a 12×7 heatmap grid.
-                // Design `LoadingBody`: pad 17, a 42%-wide / 28px bar, grid 18px below.
-                const _ProgCard(
-                  padding: EdgeInsets.all(17),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      FractionallySizedBox(
-                        widthFactor: 0.42,
-                        alignment: Alignment.centerLeft,
-                        child: GbSkeleton(
-                            width: double.infinity, height: 28, radius: 7),
-                      ),
-                      SizedBox(height: 18),
-                      _LoadingHeatmapGrid(),
-                    ],
-                  ),
-                ),
-              ],
+              children: children,
             ),
           ),
         ),
@@ -3287,10 +3849,113 @@ class _LoadingBody extends StatelessWidget {
   }
 }
 
+/// The 4w / 12w hero-slot skeleton — a 2×2 grid of tile placeholders matching [_PeriodStatStrip].
+class _LoadingStatStrip extends StatelessWidget {
+  const _LoadingStatStrip({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    Widget tile() => Container(
+          padding: const EdgeInsets.symmetric(
+              horizontal: AppSpacing.sm + 1, vertical: AppSpacing.sm + 2),
+          decoration: BoxDecoration(
+            color: gb.card,
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            border: Border.all(color: gb.progLine),
+            boxShadow: AppShadows.sm,
+          ),
+          child: const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              GbSkeleton(width: 42, height: 21, radius: 6),
+              SizedBox(height: 7),
+              GbSkeleton(width: 58, height: 9, radius: 5),
+            ],
+          ),
+        );
+    return _snapshotGrid([tile(), tile(), tile(), tile()], cols: 2);
+  }
+}
+
+/// The Today hero-slot skeleton — a macros-card placeholder over a 3-tile snapshot grid.
+class _LoadingTodayGlance extends StatelessWidget {
+  const _LoadingTodayGlance({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    Widget tile() => Container(
+          padding: const EdgeInsets.all(AppSpacing.sm + 1),
+          decoration: BoxDecoration(
+            color: gb.card,
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            border: Border.all(color: gb.progLine),
+            boxShadow: AppShadows.sm,
+          ),
+          child: const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              GbSkeleton(width: 30, height: 30, radius: 9),
+              SizedBox(height: 10),
+              GbSkeleton(width: 38, height: 9, radius: 5),
+              SizedBox(height: 6),
+              GbSkeleton(width: 28, height: 20, radius: 6),
+            ],
+          ),
+        );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _ProgCard(
+          child: Row(
+            children: [
+              for (var i = 0; i < 4; i++) ...[
+                if (i > 0) const SizedBox(width: AppSpacing.md),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      GbSkeleton(width: 34, height: 20, radius: 6),
+                      SizedBox(height: 6),
+                      GbSkeleton(width: 26, height: 9, radius: 5),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        _snapshotGrid([tile(), tile(), tile()], cols: 3),
+      ],
+    );
+  }
+}
+
+/// One advice-card skeleton for the Today loading state — a title line over a body line.
+class _LoadingAdviceCard extends StatelessWidget {
+  const _LoadingAdviceCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return const _ProgCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GbSkeleton(width: 150, height: 12, radius: 6),
+          SizedBox(height: 10),
+          GbSkeleton(width: double.infinity, height: 10, radius: 5),
+        ],
+      ),
+    );
+  }
+}
+
 /// The hero-panel skeleton: the navy gradient block with translucent-white shimmer lines and a circle
 /// standing in for the adherence ring.
 class _LoadingHero extends StatelessWidget {
-  const _LoadingHero();
+  const _LoadingHero({super.key});
 
   static const _heroLine = Color(0x2EFFFFFF); // --hero-line
   static const _ph1 = Color(0x1FFFFFFF); // ~0.12 white placeholder

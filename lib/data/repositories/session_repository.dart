@@ -132,6 +132,20 @@ class SessionRepository {
         );
       });
 
+  /// Superset this exercise with another in the live session (`SetExerciseSupersetCommand`): they
+  /// share/start a group id and rotate together. Pass `peerExerciseId: null` to leave the superset.
+  Future<void> setExerciseSuperset(
+    String sessionId,
+    String exerciseId, {
+    required String? peerExerciseId,
+  }) =>
+      apiCall(() async {
+        await _dio.put<dynamic>(
+          '$_base/$sessionId/exercises/$exerciseId/superset',
+          data: {'peerExerciseId': peerExerciseId},
+        );
+      });
+
   Future<PerformedSet> logSet(
           String sessionId, String exerciseId, LogSetRequest body) =>
       apiCall(() async {

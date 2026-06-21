@@ -37,8 +37,14 @@ String formatLoggedSet(PerformedSet set) {
 
 /// A logged set as a chip label that leads with its position and type, e.g. "1 · Warmup · 30kg × 12".
 /// Used everywhere sets are shown as chips so the number/type are always visible, not just the result.
-String performedSetChip(PerformedSet set, int number) =>
-    '$number · ${set.setType.label} · ${formatLoggedSet(set)}';
+/// The stored RPE (1-10 effort) is appended when logged — "1 · Working · 30kg × 12 · RPE 8" — so the
+/// Session Detail breakdown shows how hard each set felt; an absent/zero RPE is simply omitted (never
+/// fabricated, matching [formatLoggedSet]'s zero-suppression).
+String performedSetChip(PerformedSet set, int number) {
+  final base = '$number · ${set.setType.label} · ${formatLoggedSet(set)}';
+  final rpe = set.rpe ?? 0;
+  return rpe > 0 ? '$base · RPE $rpe' : base;
+}
 
 /// Format elapsed seconds as `H:MM:SS`, or `MM:SS` when under an hour.
 String formatDuration(int seconds) {
@@ -131,6 +137,19 @@ double? epleyOneRepMax(double? weightKg, int? reps) {
   if (weightKg == null || reps == null || weightKg <= 0 || reps <= 0)
     return null;
   return ((weightKg * (1 + reps / 30)) * 10).round() / 10;
+}
+
+/// e1RM of an ACTUAL logged set, corrected for effort via the standard reps-in-reserve relationship
+/// (RIR = 10 − RPE; Zourdos et al. 2016, NSCA Strength & Conditioning Journal): a set of `reps` at RPE
+/// `rpe` stops `(10 − rpe)` reps short of failure, so it behaves like a max set of `reps + (10 − rpe)`,
+/// fed into the same Epley model the app already uses for e1RM. So an easy 12 @ RPE 7 implies a higher
+/// max than a grinding 12 @ RPE 10 at the same load. Falls back to plain Epley (assumes max effort) when
+/// RPE wasn't logged, biasing the estimate *down* — the safe direction. Null unless reps & weight > 0.
+double? effortAdjustedOneRepMax(double? weightKg, int? reps, int? rpe) {
+  if (weightKg == null || reps == null || weightKg <= 0 || reps <= 0)
+    return null;
+  final rir = rpe == null ? 0 : (10 - rpe).clamp(0, 10);
+  return ((weightKg * (1 + (reps + rir) / 30)) * 10).round() / 10;
 }
 
 // ── Session-summary aggregates (post-workout review) ─────────────────────────
@@ -394,38 +413,12 @@ LiftProgress? liftProgress(PerformedExercise ex) {
 // ── Suggested next set (pre-log "use this weight × reps") ─────────────────────
 // Surfaces a starting weight × reps BEFORE the user logs, so they can accept ("Use") or fine-tune it.
 // Layered, honest, and never auto-logged: plan target → last-time + small progression → RPE
-// autoregulation → a gentle sleep/fuel readiness nudge. Pure (no Flutter, no I/O) so it's unit-testable.
-
-/// Today's recovery/fuel signals used to gently autoregulate a suggested set. Every field is optional —
-/// a missing signal contributes no adjustment, so the suggestion degrades cleanly to the plan/last-time
-/// math. There is no readiness/HRV model behind this; these are the only signals the app actually tracks.
-class WellnessSignals {
-  const WellnessSignals({
-    this.sleepHoursLastNight,
-    this.sleepBaselineHours,
-    this.consumedKcalToday,
-    this.targetKcalToday,
-  });
-
-  /// Hours slept last night (the day's `sleep` check-in), or null if not logged.
-  final double? sleepHoursLastNight;
-
-  /// The user's typical sleep (trailing average) if known; null falls back to a 7.5h default.
-  final double? sleepBaselineHours;
-
-  /// Calories logged so far today (all-source), or null when nothing's logged / no nutrition surface.
-  final int? consumedKcalToday;
-
-  /// Plan-derived calorie target, or null for a self-logger with no plan.
-  final int? targetKcalToday;
-
-  static const none = WellnessSignals();
-}
+// autoregulation, all from recognized standards. Pure (no Flutter, no I/O) so it's unit-testable.
 
 /// A suggested next set surfaced *before* logging — a starting weight × reps the user can accept ("Use")
 /// or adjust with the steppers. Strength/bodyweight only (where weight × reps is meaningful); null for
-/// cardio/timed/etc. [reason] is a short, honest basis ("Plan target", "Last time + 2.5kg", "RPE 8",
-/// "…· easier — short sleep") so the user can judge the number rather than trust a black box.
+/// cardio/timed/etc. [reason] is a short, honest basis ("Plan target", "Last time + 2.5kg", "RPE 8")
+/// so the user can judge the number rather than trust a black box.
 class SetSuggestion {
   const SetSuggestion(
       {required this.weightKg, required this.reps, required this.reason});
@@ -438,41 +431,22 @@ class SetSuggestion {
 double roundToStep(double kg, {double step = 2.5}) =>
     (kg / step).round() * step;
 
-/// A multiplier (≤ 1.0) that gently EASES the load on a low-recovery / under-fuelled day, with a short
-/// reason; never inflates (good sleep doesn't license over-reaching). Empty note when nothing applies.
-({double factor, String note}) readinessModifier(WellnessSignals w) {
-  var factor = 1.0;
-  final notes = <String>[];
-  final sleep = w.sleepHoursLastNight;
-  final base = w.sleepBaselineHours ?? 7.5;
-  // Notably short sleep (>1h under baseline) → ~one plate lighter.
-  if (sleep != null && sleep > 0 && sleep < base - 1.0) {
-    factor -= 0.05;
-    notes.add('short sleep');
-  }
-  // Clearly under-fuelled for the day (logged < 35% of target) → a small extra easing.
-  final consumed = w.consumedKcalToday;
-  final target = w.targetKcalToday;
-  if (consumed != null &&
-      target != null &&
-      target > 0 &&
-      consumed < target * 0.35) {
-    factor -= 0.03;
-    notes.add('under-fuelled');
-  }
-  factor = factor.clamp(0.90, 1.0).toDouble();
-  return (
-    factor: factor,
-    note: notes.isEmpty ? '' : 'easier — ${notes.join(', ')}'
-  );
-}
-
-/// Suggest the next set's weight × reps from the strongest available signal:
-///   1a. plan prescribes an explicit weight → trust the coach's number.
-///   2.  plan prescribes reps + RPE but no weight → autoregulate off the last-set e1RM via the Epley
-///       RIR relationship (a set of r reps @ RPE e ≈ a max set of r + (10 − e) reps).
-///   1b. no usable plan → repeat last time, with a small double-progression bump on a working set.
-///   3.  finally, ease the result on a low-sleep / under-fuelled day (see [readinessModifier]).
+/// Suggest the next set's weight × reps from recognized strength-training standards (not bespoke math):
+/// Epley e1RM (the model the logger already labels "Est. 1RM · Epley"), the reps-in-reserve / RPE scale
+/// (RIR = 10 − RPE; Zourdos et al. 2016, NSCA S&C Journal), classic double progression, and the standard
+/// accessory-load ranges (warm-up ~40–60%, drop set ~10–30%/≈20%). The engine is **closed-loop**: it
+/// reads [performedSets] — the sets already logged for THIS exercise THIS session — so the number tracks
+/// today's readiness and accumulated fatigue, not just a stale last-session reference. Priority:
+///   1. plan prescribes an explicit weight → trust the coach's number (any set type).
+///   2. accessory set → derive from the working weight, never a standalone heavy number:
+///      warmup ≈ 50% of working; drop ≈ 20% below the set it follows (chained drops step down again).
+///   3. plan prescribes reps + RPE but no weight → RIR-based autoregulation: treat `r` reps @ RPE `e`
+///      as an `r + (10 − e)`-rep max and read the load off the e1RM anchor. The anchor is the most
+///      recent in-session working set (effort-adjusted) when one exists, else the last-session top set
+///      — so a hard/missed set today pulls the next suggestion DOWN.
+///   4. no plan but a working set already done today → maintain the load and progress reps off the last
+///      set's actual RPE (room left → +1 rep; already hard → ease a rep).
+///   5. no plan, no in-session work → repeat last session with a small double-progression bump.
 /// Returns null when there's nothing honest to anchor on (cardio/timed mode, or a brand-new lift with no
 /// plan and no history). The UI renders it as a tappable chip; "Use" just prefills the steppers.
 SetSuggestion? suggestNextSet({
@@ -480,7 +454,7 @@ SetSuggestion? suggestNextSet({
   required PerformedSetType setType,
   SessionSnapshotSet? target,
   LastPerformed? lastPerformed,
-  WellnessSignals wellness = WellnessSignals.none,
+  List<PerformedSet> performedSets = const [],
 }) {
   // Weight × reps only makes sense for lifting; conditioning/timed/mobility modes get no weight suggestion.
   if (trackingType != ExerciseTrackingType.strength &&
@@ -488,31 +462,93 @@ SetSuggestion? suggestNextSet({
     return null;
   }
 
-  // e1RM estimate from the most recent top set — the anchor for the RPE math.
-  final lastE1rm = epleyOneRepMax(lastPerformed?.weightKg, lastPerformed?.reps);
+  // --- Today's reality (this session, this exercise). ---
+  // Working sets logged so far, in order; the most recent is the live read of current capacity+fatigue.
+  final todayWorking = performedSets
+      .where((s) =>
+          s.setType == PerformedSetType.working &&
+          (s.weightKg ?? 0) > 0 &&
+          (s.reps ?? 0) > 0)
+      .toList();
+  final lastTodayWorking = todayWorking.isEmpty ? null : todayWorking.last;
+  final lastTodaySet = performedSets.isEmpty ? null : performedSets.last;
+  // Effort-adjusted e1RM of the most recent working set (tracks today's trajectory); fall back to the
+  // last completed session's top set when nothing's been logged yet.
+  final todayAnchorE1rm = effortAdjustedOneRepMax(lastTodayWorking?.weightKg,
+      lastTodayWorking?.reps, lastTodayWorking?.rpe);
+  final priorE1rm =
+      epleyOneRepMax(lastPerformed?.weightKg, lastPerformed?.reps);
+  final anchorE1rm = todayAnchorE1rm ?? priorE1rm;
+
   final planW = target?.targetWeightKg ?? 0;
   final planR = target?.targetReps ?? 0;
   final planRpe = target?.targetRpe ?? 0;
   final lastW = lastPerformed?.weightKg ?? 0;
   final lastR = lastPerformed?.reps ?? 0;
+  // The working load to scale an accessory (warmup/drop) off: today's last working set first.
+  final workingAnchorW =
+      lastTodayWorking?.weightKg ?? (planW > 0 ? planW : lastW);
 
   double? weight;
   int? reps;
   String reason;
 
   if (planW > 0 && planR > 0) {
-    // 1a. Explicit plan prescription.
+    // 1. Explicit plan prescription — trust the coach for any set type.
     weight = planW;
     reps = planR;
     reason = 'Plan target';
-  } else if (planR > 0 && planRpe > 0 && lastE1rm != null) {
-    // 2. RPE autoregulation from e1RM.
+  } else if (setType == PerformedSetType.warmup) {
+    // 2a. Warmup set ≈ 50% of the working load — a general warm-up set sits in the standard ~40–60% range.
+    if (workingAnchorW <= 0) return null;
+    weight = roundToStep(workingAnchorW * 0.5);
+    reps = planR > 0 ? planR : (lastTodayWorking?.reps ?? 10);
+    reason = 'Warmup ~50%';
+  } else if (setType == PerformedSetType.drop) {
+    // 2b. Drop set ≈ 20% below the set it follows. The evidence-based reduction is ~10–30% per drop,
+    // with ~20% the common recommendation (drop-set hypertrophy reviews; NASM/Sci-Fit guidelines). A
+    // chained drop steps down again from the previous drop, else from the working weight — never the
+    // last-session working number verbatim.
+    final dropFrom = (lastTodaySet?.setType == PerformedSetType.drop &&
+            (lastTodaySet?.weightKg ?? 0) > 0)
+        ? lastTodaySet!.weightKg!
+        : workingAnchorW;
+    if (dropFrom <= 0) return null;
+    weight = roundToStep(dropFrom * 0.80);
+    reps = planR > 0
+        ? planR
+        : (lastTodaySet?.reps ?? lastTodayWorking?.reps ?? 10);
+    reason = 'Drop ~20% lighter';
+  } else if (planR > 0 && planRpe > 0 && anchorE1rm != null) {
+    // 3. RIR-based RPE autoregulation — the standard method (Zourdos et al. 2016, NSCA Strength &
+    // Conditioning Journal): RIR = 10 − RPE, so prescribing `planR` reps at `planRpe` means stopping
+    // (10 − planRpe) reps short of failure → treat it as an `equivReps`-rep max and read the load off
+    // the e1RM with Epley (the same model the logger shows as "Est. 1RM · Epley"). Anchored on today's
+    // most-recent working set so the load tracks current readiness rather than a stale reference.
     reps = planR;
     final equivReps = planR + (10 - planRpe);
-    weight = roundToStep(lastE1rm / (1 + equivReps / 30));
-    reason = 'RPE $planRpe target';
+    weight = roundToStep(anchorE1rm / (1 + equivReps / 30));
+    reason = todayAnchorE1rm != null
+        ? 'RPE $planRpe · this session'
+        : 'RPE $planRpe target';
+  } else if (lastTodayWorking != null) {
+    // 4. No plan, but already lifting today → hold the load, autoregulate reps off the last set's RPE.
+    weight = lastTodayWorking.weightKg!;
+    final lastSetRpe = lastTodayWorking.rpe;
+    final lastSetReps = lastTodayWorking.reps!;
+    if (lastSetRpe != null && lastSetRpe <= 7) {
+      reps = lastSetReps + 1;
+      reason = 'Maintain · room to push';
+    } else if (lastSetRpe != null && lastSetRpe >= 9) {
+      reps = (lastSetReps - 1).clamp(1, 99);
+      reason = 'Maintain · ease a rep';
+    } else {
+      reps = lastSetReps;
+      reason = 'Maintain';
+    }
   } else if (lastW > 0 && lastR > 0) {
-    // 1b. Last time + a small double-progression on a working set (top of range → +2.5kg, else +1 rep).
+    // 5. First working set today, no plan → standard double progression off last session: at the top of
+    // the rep range take the smallest plate jump (+2.5kg) and reset reps; below it, add a rep first.
     if (setType == PerformedSetType.working && lastR >= 12) {
       weight = roundToStep(lastW + 2.5);
       reps = (lastR - 2).clamp(1, 99);
@@ -528,13 +564,6 @@ SetSuggestion? suggestNextSet({
     }
   } else {
     return null; // no plan, no history → nothing honest to suggest
-  }
-
-  // 3. Readiness nudge — only ever eases the load.
-  final mod = readinessModifier(wellness);
-  if (mod.factor < 1.0 && weight > 0) {
-    weight = roundToStep(weight * mod.factor);
-    reason = '$reason · ${mod.note}';
   }
 
   if (weight <= 0 || reps <= 0) return null;
