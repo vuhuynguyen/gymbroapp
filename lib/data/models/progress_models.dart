@@ -1,4 +1,9 @@
 import '../../core/utils/json.dart';
+import 'coach_models.dart';
+
+// `LoadTrend` (detraining/steady/ramping) is shared with the coach acute-vs-chronic model — re-exported so
+// consumers of the overview get the trainee LoadBalance's trend without a second import.
+export 'coach_models.dart' show LoadTrend;
 
 /// Hand-written DTOs for `GET /api/me/progress/overview` — the single self-scoped read that
 /// powers the trainee Progress home (see gymbro/docs/progress/API-CONTRACTS.md §1). Field names
@@ -173,6 +178,201 @@ class PersonalRecord {
       );
 }
 
+// ── v2 window differentiation (gymbro/docs/progress/WINDOW-DIFFERENTIATION.md) ──
+// 4-week "block" reads the period deltas + load; 12-week "phase" reads strength gain + weekly slope +
+// muscle balance; both lead with the rule-based coach's read. Every field degrades to an empty default so a
+// pre-v2 payload (or a thin user) renders cleanly.
+
+/// The coach's-read tone — drives the verdict banner accent (encouraging / neutral / watch).
+enum CoachTone {
+  positive,
+  neutral,
+  watch;
+
+  static CoachTone parse(Object? v) {
+    switch (v?.toString().trim().toLowerCase()) {
+      case 'positive':
+        return CoachTone.positive;
+      case 'watch':
+        return CoachTone.watch;
+      case 'neutral':
+      default:
+        return CoachTone.neutral;
+    }
+  }
+}
+
+/// Period-over-period output: the selected window vs the previous equal-length window. The 4-week block
+/// view reads the `prev*` deltas; the 12-week phase view reads [weeklyVolumeKg] (dense, oldest→newest).
+class PeriodStats {
+  const PeriodStats({
+    required this.sessions,
+    required this.prevSessions,
+    required this.volumeKg,
+    required this.prevVolumeKg,
+    required this.workingSets,
+    required this.prevWorkingSets,
+    required this.prCount,
+    required this.weeklyVolumeKg,
+  });
+
+  final int sessions;
+  final int prevSessions;
+  final double volumeKg;
+  final double prevVolumeKg;
+  final int workingSets;
+  final int prevWorkingSets;
+  final int prCount;
+  final List<double> weeklyVolumeKg;
+
+  /// Signed volume change vs the previous block as a fraction; null when there's no prior baseline.
+  double? get volumeDelta =>
+      prevVolumeKg > 0 ? (volumeKg - prevVolumeKg) / prevVolumeKg : null;
+
+  static const empty = PeriodStats(
+    sessions: 0,
+    prevSessions: 0,
+    volumeKg: 0,
+    prevVolumeKg: 0,
+    workingSets: 0,
+    prevWorkingSets: 0,
+    prCount: 0,
+    weeklyVolumeKg: [],
+  );
+
+  factory PeriodStats.fromJson(Map<String, dynamic> j) => PeriodStats(
+        sessions: asInt(j['sessions']) ?? 0,
+        prevSessions: asInt(j['prevSessions']) ?? 0,
+        volumeKg: asDouble(j['volumeKg']) ?? 0,
+        prevVolumeKg: asDouble(j['prevVolumeKg']) ?? 0,
+        workingSets: asInt(j['workingSets']) ?? 0,
+        prevWorkingSets: asInt(j['prevWorkingSets']) ?? 0,
+        prCount: asInt(j['prCount']) ?? 0,
+        weeklyVolumeKg: _asDoubleList(j['weeklyVolumeKg']),
+      );
+}
+
+/// One lift's strength change over the window (first→latest e1RM) + weeks since its best (the plateau).
+class LiftGain {
+  const LiftGain({
+    required this.exerciseId,
+    this.exerciseName,
+    required this.startE1rmKg,
+    required this.currentE1rmKg,
+    required this.gainKg,
+    required this.gainPct,
+    required this.plateauWeeks,
+  });
+
+  final String exerciseId;
+  final String? exerciseName;
+  final double startE1rmKg;
+  final double currentE1rmKg;
+  final double gainKg;
+  final double gainPct;
+  final int plateauWeeks;
+
+  factory LiftGain.fromJson(Map<String, dynamic> j) => LiftGain(
+        exerciseId: j['exerciseId'].toString(),
+        exerciseName: asString(j['exerciseName']),
+        startE1rmKg: asDouble(j['startE1rmKg']) ?? 0,
+        currentE1rmKg: asDouble(j['currentE1rmKg']) ?? 0,
+        gainKg: asDouble(j['gainKg']) ?? 0,
+        gainPct: asDouble(j['gainPct']) ?? 0,
+        plateauWeeks: asInt(j['plateauWeeks']) ?? 0,
+      );
+}
+
+/// Aggregate strength adaptation over the window — the 12-week phase headline.
+class StrengthGain {
+  const StrengthGain({required this.avgGainPct, required this.lifts});
+
+  final double avgGainPct;
+  final List<LiftGain> lifts;
+
+  static const empty = StrengthGain(avgGainPct: 0, lifts: []);
+
+  factory StrengthGain.fromJson(Map<String, dynamic> j) => StrengthGain(
+        avgGainPct: asDouble(j['avgGainPct']) ?? 0,
+        lifts: asList(j['lifts'], LiftGain.fromJson),
+      );
+}
+
+/// Hard sets / muscle group / week over the window (six coarse groups), with the previous window delta.
+class MuscleVolume {
+  const MuscleVolume({
+    required this.muscle,
+    required this.setsPerWeek,
+    required this.prevSetsPerWeek,
+  });
+
+  final String muscle;
+  final double setsPerWeek;
+  final double prevSetsPerWeek;
+
+  factory MuscleVolume.fromJson(Map<String, dynamic> j) => MuscleVolume(
+        muscle: asString(j['muscle']) ?? '',
+        setsPerWeek: asDouble(j['setsPerWeek']) ?? 0,
+        prevSetsPerWeek: asDouble(j['prevSetsPerWeek']) ?? 0,
+      );
+}
+
+/// The trainee's own acute (7d) vs chronic (weekly avg) load — two raw volumes + a soft band.
+class LoadBalance {
+  const LoadBalance({
+    required this.acuteVolumeKg,
+    required this.chronicWeeklyVolumeKg,
+    required this.trend,
+  });
+
+  final double acuteVolumeKg;
+  final double chronicWeeklyVolumeKg;
+  final LoadTrend trend;
+
+  static const empty = LoadBalance(
+    acuteVolumeKg: 0,
+    chronicWeeklyVolumeKg: 0,
+    trend: LoadTrend.steady,
+  );
+
+  factory LoadBalance.fromJson(Map<String, dynamic> j) => LoadBalance(
+        acuteVolumeKg: asDouble(j['acuteVolumeKg']) ?? 0,
+        chronicWeeklyVolumeKg: asDouble(j['chronicWeeklyVolumeKg']) ?? 0,
+        trend: LoadTrend.parse(j['trend']),
+      );
+}
+
+/// The rule-based "coach's read": a one-line verdict, supporting detail, and the single top action.
+class CoachRead {
+  const CoachRead({
+    required this.headline,
+    required this.detail,
+    this.action,
+    required this.tone,
+  });
+
+  final String headline;
+  final String detail;
+  final String? action;
+  final CoachTone tone;
+
+  bool get hasContent => headline.isNotEmpty;
+
+  static const empty = CoachRead(
+    headline: '',
+    detail: '',
+    action: null,
+    tone: CoachTone.neutral,
+  );
+
+  factory CoachRead.fromJson(Map<String, dynamic> j) => CoachRead(
+        headline: asString(j['headline']) ?? '',
+        detail: asString(j['detail']) ?? '',
+        action: asString(j['action']),
+        tone: CoachTone.parse(j['tone']),
+      );
+}
+
 /// The whole trainee Progress home in one payload. Always present and empty-but-valid for new users
 /// (`topLifts: []`, `recentPrs: []`, `consistency.days: []`).
 class ProgressOverview {
@@ -182,6 +382,11 @@ class ProgressOverview {
     required this.topLifts,
     required this.recentPrs,
     this.generatedAtUtc,
+    this.period = PeriodStats.empty,
+    this.strengthGain = StrengthGain.empty,
+    this.muscleVolume = const [],
+    this.load = LoadBalance.empty,
+    this.coach = CoachRead.empty,
   });
 
   final WeekAdherence thisWeek;
@@ -193,6 +398,21 @@ class ProgressOverview {
   /// Top 3 PRs by e1RM.
   final List<PersonalRecord> recentPrs;
   final DateTime? generatedAtUtc;
+
+  /// v2: period-over-period output (block deltas + 12-week weekly slope).
+  final PeriodStats period;
+
+  /// v2: per-lift strength gain over the window (the phase headline).
+  final StrengthGain strengthGain;
+
+  /// v2: hard sets / muscle / week (six coarse groups) — the 12-week structural-balance card.
+  final List<MuscleVolume> muscleVolume;
+
+  /// v2: the trainee's acute-vs-chronic load (4-week recovery flag).
+  final LoadBalance load;
+
+  /// v2: the rule-based coach's-read verdict for the selected window.
+  final CoachRead coach;
 
   /// True for a brand-new trainee: never completed a session, so there's nothing to glance at yet.
   /// Drives the first-run hero (PHASE-1 §5) — distinguished from "thin data" by zero sessions AND
@@ -214,6 +434,19 @@ class ProgressOverview {
         topLifts: asList(j['topLifts'], LiftDirection.fromJson),
         recentPrs: asList(j['recentPrs'], PersonalRecord.fromJson),
         generatedAtUtc: asDate(j['generatedAtUtc']),
+        period: j['period'] is Map<String, dynamic>
+            ? PeriodStats.fromJson(j['period'] as Map<String, dynamic>)
+            : PeriodStats.empty,
+        strengthGain: j['strengthGain'] is Map<String, dynamic>
+            ? StrengthGain.fromJson(j['strengthGain'] as Map<String, dynamic>)
+            : StrengthGain.empty,
+        muscleVolume: asList(j['muscleVolume'], MuscleVolume.fromJson),
+        load: j['load'] is Map<String, dynamic>
+            ? LoadBalance.fromJson(j['load'] as Map<String, dynamic>)
+            : LoadBalance.empty,
+        coach: j['coach'] is Map<String, dynamic>
+            ? CoachRead.fromJson(j['coach'] as Map<String, dynamic>)
+            : CoachRead.empty,
       );
 }
 

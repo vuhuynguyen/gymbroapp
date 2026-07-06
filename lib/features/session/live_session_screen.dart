@@ -206,25 +206,25 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
     );
   }
 
-  Future<void> _confirmAbandon() async {
+  /// The single end-of-session entry point (the header finish action). Summarises progress, then lets
+  /// the user finish (complete & save) or abandon. With nothing logged there's nothing to complete, so
+  /// the sheet offers a plain discard instead.
+  Future<void> _endSession() async {
     final st = ref.read(liveSessionControllerProvider);
     final logged = countLoggedSets(st.exercises);
     final total = st.session?.snapshot?.exercises
             .fold<int>(0, (a, e) => a + e.sets.length) ??
         logged;
-    final ok = await showGbSheet<bool>(
+    final choice = await showGbSheet<_EndChoice>(
       context,
-      builder: (ctx) => _ConfirmSheet(
-        icon: Icons.flag_outlined,
-        title: 'Abandon session?',
-        message:
-            "You've logged $logged of ${total > logged ? total : logged} sets. "
-            "The session will be saved as abandoned and you can't resume it.",
-        confirmLabel: 'Abandon session',
-        cancelLabel: 'Keep training',
+      builder: (ctx) => _EndSessionSheet(
+        logged: logged,
+        total: total > logged ? total : logged,
       ),
     );
-    if (ok == true) {
+    if (choice == _EndChoice.finish) {
+      await _finish();
+    } else if (choice == _EndChoice.abandon) {
       final done = await _ctrl.abandon();
       if (done && mounted) context.go('/log');
     }
@@ -262,6 +262,22 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
 
   void _openExerciseMenu(PerformedExercise ex) {
     final hasLogged = ex.sets.isNotEmpty;
+    // "Superset with previous" links this exercise with the one directly above it (by order); if it's
+    // already in a real (2+ member) superset, the action flips to "Leave superset".
+    final ordered = [
+      ...?ref.read(liveSessionControllerProvider).session?.exercises
+    ]..sort((a, b) => a.order.compareTo(b.order));
+    final prevIdx = ordered.indexWhere((e) => e.id == ex.id) - 1;
+    final prev = prevIdx >= 0 ? ordered[prevIdx] : null;
+    final inSuperset = supersetTags([
+          for (final e in ordered)
+            SupersetMember(
+                id: e.id,
+                order: e.order,
+                groupId: e.supersetGroupId,
+                name: e.exerciseName),
+        ])[ex.id] !=
+        null;
     showGbSheet<void>(
       context,
       builder: (ctx) => Padding(
@@ -277,6 +293,21 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
               child: Text(ex.exerciseName ?? 'Exercise ${ex.order}',
                   style: const TextStyle(
                       fontSize: 16, fontWeight: FontWeight.w800)),
+            ),
+            GbSheetActionTile(
+              icon: inSuperset ? Icons.link_off_rounded : Icons.link_rounded,
+              label: inSuperset ? 'Leave superset' : 'Superset with previous',
+              sub: inSuperset
+                  ? 'Unlink — log and rest on its own again'
+                  : (prev != null
+                      ? 'Pair with ${prev.exerciseName ?? 'the previous exercise'} — rotate, rest after the round'
+                      : 'No exercise before this one to pair with'),
+              onTap: (inSuperset || prev != null)
+                  ? () {
+                      Navigator.of(ctx).pop();
+                      _ctrl.setSupersetWithPrevious(ex.id, link: !inSuperset);
+                    }
+                  : null,
             ),
             GbSheetActionTile(
               icon: Icons.swap_horiz,
@@ -360,8 +391,6 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
     final st = ref.watch(liveSessionControllerProvider);
     final catalog = ref.watch(exerciseCatalogProvider).valueOrNull ??
         const <String, ExerciseSummary>{};
-    // Today's recovery/fuel signals for the pre-log set suggestion (fields degrade to null if absent).
-    final wellness = ref.watch(wellnessSignalsProvider);
 
     if (st.loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
@@ -392,9 +421,12 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
     final totalPlanned =
         session.snapshot?.exercises.fold<int>(0, (a, e) => a + e.sets.length) ??
             0;
-    final total = totalPlanned > logged ? totalPlanned : logged;
-    final exIndex =
-        ex == null ? -1 : session.exercises.indexWhere((e) => e.id == ex.id);
+    // Y in the header "X of Y" + progress bar = the per-exercise targets (plan count, lowered by deletes
+    // / raised by extra sets), not the frozen plan total — so deleting a set actually drops the goal.
+    final totalTarget = session.exercises.fold<int>(0,
+        (a, e) => a + (st.setTargets[e.id] ?? _snapshotSetsFor(st, e).length));
+    final total = totalTarget > logged ? totalTarget : logged;
+    final hasRestBar = !editing && st.rest != null;
     // Superset rotation cue for the current exercise (null when standalone / not in a 2+ group).
     final supersetTag = ex == null
         ? null
@@ -421,8 +453,10 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
             logged: logged,
             total: total,
             hasTarget: totalPlanned > 0,
-            // Editing a finished workout: no "abandon" — leaving via back/Done just saves the edits.
-            onAbandon: editing ? null : _confirmAbandon,
+            // Live: the finish action (top-right) opens the end-of-session sheet (finish / abandon).
+            // Editing a finished workout: a "Done" check that saves the edits and leaves.
+            onEnd: editing ? null : _endSession,
+            onDone: editing ? _done : null,
             onBack: () => context.canPop() ? context.pop() : context.go('/log'),
           ),
           _ExercisePager(
@@ -447,13 +481,24 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
                         onPick: (e) => _ctrl.addExercise(e.id)),
                   )
                 : ListView(
-                    padding: const EdgeInsets.all(AppSpacing.md),
+                    // No bottom action bar any more, so the scroll view owns the bottom safe-area
+                    // inset — unless the rest bar is showing, which carries its own SafeArea.
+                    padding: EdgeInsets.fromLTRB(
+                        AppSpacing.md,
+                        AppSpacing.md,
+                        AppSpacing.md,
+                        AppSpacing.md +
+                            (hasRestBar
+                                ? 0.0
+                                : MediaQuery.paddingOf(context).bottom)),
                     children: [
                       _ExerciseCard(
                         exercise: ex,
                         supersetTag: supersetTag,
                         catalog: catalog[ex.exerciseId],
                         snapshotSets: _snapshotSetsFor(st, ex),
+                        setTarget: st.setTargets[ex.id] ??
+                            _snapshotSetsFor(st, ex).length,
                         profile: trackingProfileFor(ex.trackingType),
                         entry: _entry,
                         entryType: _entryType,
@@ -490,7 +535,6 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
                               catalog[ex.exerciseId]?.name ??
                               'Exercise',
                         ),
-                        wellness: wellness,
                       ),
                       const SizedBox(height: AppSpacing.gap),
                       Center(
@@ -503,31 +547,14 @@ class _LiveSessionScreenState extends ConsumerState<LiveSessionScreen> {
                     ],
                   ),
           ),
-          if (!editing && st.rest != null)
-            _RestBar(
-                rest: st.rest!,
-                onAdd: () => _ctrl.adjustRest(15),
-                onSkip: _ctrl.skipRest),
-          SafeArea(
-            top: false,
-            child: _ActionBar(
-              canPrev: exIndex > 0,
-              isLast: exIndex == session.exercises.length - 1,
-              busy: st.busy,
-              editing: editing,
-              onPrev: () {
-                if (exIndex > 0) {
-                  _ctrl.setCurrentExercise(session.exercises[exIndex - 1].id);
-                }
-              },
-              onNext: () {
-                if (exIndex < session.exercises.length - 1) {
-                  _ctrl.setCurrentExercise(session.exercises[exIndex + 1].id);
-                }
-              },
-              onFinish: editing ? _done : _finish,
+          if (hasRestBar)
+            SafeArea(
+              top: false,
+              child: _RestBar(
+                  rest: st.rest!,
+                  onAdd: () => _ctrl.adjustRest(15),
+                  onSkip: _ctrl.skipRest),
             ),
-          ),
         ],
       ),
     );
@@ -542,7 +569,8 @@ class _Header extends StatelessWidget {
     required this.logged,
     required this.total,
     required this.hasTarget,
-    required this.onAbandon,
+    required this.onEnd,
+    required this.onDone,
     required this.onBack,
   });
   final double topInset;
@@ -555,8 +583,12 @@ class _Header extends StatelessWidget {
   /// "logged/total" count. Ad-hoc sessions have no target, so they show a bare "N sets" instead.
   final bool hasTarget;
 
-  /// Null when editing a finished workout — there's nothing to abandon, so the X is hidden.
-  final VoidCallback? onAbandon;
+  /// Live session: opens the end-of-session sheet (finish / abandon). Null while editing a finished workout.
+  final VoidCallback? onEnd;
+
+  /// Editing a finished workout: save the edits and leave. Null during a live session.
+  /// Exactly one of [onEnd] / [onDone] is set.
+  final VoidCallback? onDone;
   final VoidCallback onBack;
 
   @override
@@ -597,14 +629,18 @@ class _Header extends StatelessWidget {
                   ],
                 ),
               ),
-              if (onAbandon != null)
+              if (onEnd != null)
                 GbGlassButton(
-                    icon: Icons.close,
-                    onTap: onAbandon!,
-                    semanticLabel: 'Abandon workout')
+                    icon: Icons.sports_score_rounded,
+                    onTap: onEnd!,
+                    semanticLabel: 'Finish or end workout')
+              else if (onDone != null)
+                GbGlassButton(
+                    icon: Icons.check_rounded,
+                    onTap: onDone!,
+                    semanticLabel: 'Done editing')
               else
-                const SizedBox(
-                    width: 40), // keep the title centred when editing
+                const SizedBox(width: 40), // keep the title centred
             ],
           ),
           // Plan-only progress bar (full width). The elapsed timer moved to the exercise-pager row to
@@ -820,6 +856,7 @@ class _ExerciseCard extends StatelessWidget {
     this.supersetTag,
     required this.catalog,
     required this.snapshotSets,
+    required this.setTarget,
     required this.profile,
     required this.entry,
     required this.entryType,
@@ -836,7 +873,6 @@ class _ExerciseCard extends StatelessWidget {
     required this.onMenu,
     required this.onGuide,
     required this.onTrend,
-    required this.wellness,
   });
 
   final PerformedExercise exercise;
@@ -845,6 +881,11 @@ class _ExerciseCard extends StatelessWidget {
   final SupersetTag? supersetTag;
   final ExerciseSummary? catalog;
   final List<SessionSnapshotSet> snapshotSets;
+
+  /// Target number of sets for this exercise — the plan's count, lowered by deletes / raised by extra
+  /// sets (see [LiveSessionState.setTargets]). Drives the "X/Y" count and how many upcoming planned-set
+  /// previews show, so a deleted set doesn't re-appear as a placeholder.
+  final int setTarget;
   final TrackingProfile profile;
   final Map<TrackingMetric, num> entry;
   final PerformedSetType entryType;
@@ -867,9 +908,6 @@ class _ExerciseCard extends StatelessWidget {
 
   /// Opens the per-exercise trend sheet (the trend (i) button in the card header).
   final VoidCallback onTrend;
-
-  /// Today's recovery/fuel signals — used to gently autoregulate the suggested next set.
-  final WellnessSignals wellness;
 
   /// Lead (parentless) sets — the rows that carry a reorder position; drop stages ride with their lead.
   List<PerformedSet> get _leads =>
@@ -925,15 +963,15 @@ class _ExerciseCard extends StatelessWidget {
       setType: entryType,
       target: entryTarget,
       lastPerformed: exercise.lastPerformed,
-      wellness: wellness,
+      performedSets: exercise.sets,
     );
     // Per-exercise set count (logged vs planned). Count EVERY logged set incl. drop stages, so it matches
     // the prescription walk below (which indexes prescribed sets by total logged count) and the rows shown —
     // otherwise a plan with prescribed drop sets sticks at e.g. "4/7" and never completes.
     final loggedCount = exercise.sets.length;
-    final plannedCount = snapshotSets.length;
-    final setsLabel = plannedCount > 0
-        ? '$loggedCount/$plannedCount sets'
+    // "X/Y" Y = the (adjustable) target for a plan exercise; ad-hoc exercises just show "N sets".
+    final setsLabel = snapshotSets.isNotEmpty
+        ? '$loggedCount/$setTarget sets'
         : '$loggedCount ${loggedCount == 1 ? 'set' : 'sets'}';
     final pills = <String>[
       setsLabel,
@@ -1069,7 +1107,7 @@ class _ExerciseCard extends StatelessWidget {
                 // and RPE. The entry above covers the current set (planned index = sets.length).
                 if (!isSkipped)
                   for (var i = exercise.sets.length + 1;
-                      i < snapshotSets.length;
+                      i < setTarget && i < snapshotSets.length;
                       i++)
                     _PlannedSetRow(setNumber: i + 1, target: snapshotSets[i]),
               ],
@@ -1969,98 +2007,53 @@ class _RestBtn extends StatelessWidget {
   }
 }
 
-class _ActionBar extends StatelessWidget {
-  const _ActionBar({
-    required this.canPrev,
-    required this.isLast,
-    required this.busy,
-    required this.onPrev,
-    required this.onNext,
-    required this.onFinish,
-    this.editing = false,
-  });
-  final bool canPrev;
-  final bool isLast;
-  final bool busy;
-  final VoidCallback onPrev;
-  final VoidCallback onNext;
-  final VoidCallback onFinish;
-
-  /// Editing a finished workout → the primary action is "Done" (leave), not "Finish workout".
-  final bool editing;
-
-  @override
-  Widget build(BuildContext context) {
-    final gb = context.gb;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(
-          AppSpacing.md, AppSpacing.xs + 2, AppSpacing.md, AppSpacing.sm),
-      decoration: BoxDecoration(
-        color: gb.card,
-        border: Border(top: BorderSide(color: gb.borderCard)),
-      ),
-      child: Row(
-        children: [
-          // Prev = a clean square icon button (was an empty outlined box). Shown only when there's a
-          // previous exercise; back/forward is also available via the pager chips above.
-          if (canPrev) ...[
-            GbIconButton(
-              icon: Icons.chevron_left,
-              semanticLabel: 'Previous exercise',
-              size: AppSizes.buttonHeight,
-              fill: gb.card,
-              onTap: onPrev,
-            ),
-            const SizedBox(width: AppSpacing.xs + 2),
-          ],
-          Expanded(
-            child: isLast
-                ? GbButton(
-                    label: editing ? 'Done' : 'Finish workout',
-                    icon: editing ? Icons.check : Icons.flag,
-                    full: true,
-                    busy: busy,
-                    onPressed: onFinish,
-                  )
-                : GbButton(
-                    label: 'Next exercise',
-                    iconRight: Icons.chevron_right,
-                    variant: GbButtonVariant.outlined,
-                    severity: GbButtonSeverity.secondary,
-                    full: true,
-                    onPressed: onNext,
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 // Catalog filter taxonomies. Category = the API's 13 fine library codes (a superset of the 6 muscle groups);
 // equipment = the Equipment enum. Order is the chip display order; values absent from the catalog are skipped.
 const List<String> _kCategoryOrder = [
-  'chest', 'back', 'shoulders', 'biceps', 'triceps', 'quadriceps', 'hamstrings',
-  'glutes', 'calves', 'abs', 'cardio', 'full-body', 'mobility',
+  'chest',
+  'back',
+  'shoulders',
+  'biceps',
+  'triceps',
+  'quadriceps',
+  'hamstrings',
+  'glutes',
+  'calves',
+  'abs',
+  'cardio',
+  'full-body',
+  'mobility',
 ];
 const Map<String, String> _kCategoryLabels = {
-  'chest': 'Chest', 'back': 'Back', 'shoulders': 'Shoulders', 'biceps': 'Biceps',
-  'triceps': 'Triceps', 'quadriceps': 'Quads', 'hamstrings': 'Hamstrings',
-  'glutes': 'Glutes', 'calves': 'Calves', 'abs': 'Abs', 'cardio': 'Cardio',
-  'full-body': 'Full Body', 'mobility': 'Mobility',
+  'chest': 'Chest',
+  'back': 'Back',
+  'shoulders': 'Shoulders',
+  'biceps': 'Biceps',
+  'triceps': 'Triceps',
+  'quadriceps': 'Quads',
+  'hamstrings': 'Hamstrings',
+  'glutes': 'Glutes',
+  'calves': 'Calves',
+  'abs': 'Abs',
+  'cardio': 'Cardio',
+  'full-body': 'Full Body',
+  'mobility': 'Mobility',
 };
 const List<String> _kEquipmentOrder = [
-  'Barbell', 'Dumbbell', 'Cable', 'Machine', 'Bodyweight', 'ResistanceBand',
+  'Barbell',
+  'Dumbbell',
+  'Cable',
+  'Machine',
+  'Bodyweight',
+  'ResistanceBand',
 ];
 
 String _categoryLabel(String c) =>
     c == 'All' ? 'All' : (_kCategoryLabels[c] ?? _titleCase(c));
-String _equipmentLabel(String q) => q == 'All'
-    ? 'All'
-    : (q == 'ResistanceBand' ? 'Band' : q);
-String _titleCase(String s) => s.isEmpty
-    ? s
-    : s[0].toUpperCase() + s.substring(1).replaceAll('-', ' ');
+String _equipmentLabel(String q) =>
+    q == 'All' ? 'All' : (q == 'ResistanceBand' ? 'Band' : q);
+String _titleCase(String s) =>
+    s.isEmpty ? s : s[0].toUpperCase() + s.substring(1).replaceAll('-', ' ');
 
 /// Exercise-catalog picker (substitute / add) — search + category & equipment filters over the global catalog.
 /// Token-based exercise search: every word in the query must appear somewhere in the exercise's name,
@@ -2178,13 +2171,11 @@ class _CatalogSheetState extends ConsumerState<_CatalogSheet> {
           ),
       ],
       child: Container(
-        padding:
-            EdgeInsets.symmetric(horizontal: active ? 9 : 7, vertical: 7),
+        padding: EdgeInsets.symmetric(horizontal: active ? 9 : 7, vertical: 7),
         decoration: BoxDecoration(
           color: active ? gb.primary600 : gb.card,
           borderRadius: BorderRadius.circular(99),
-          border:
-              Border.all(color: active ? gb.primary600 : gb.borderCard),
+          border: Border.all(color: active ? gb.primary600 : gb.borderCard),
         ),
         // Compact: just a filter glyph + caret until a value is picked (then it shows the value).
         child: Row(
@@ -2490,6 +2481,83 @@ class _ConfirmSheet extends StatelessWidget {
             variant: GbButtonVariant.outlined,
             full: true,
             onPressed: () => Navigator.of(context).pop(false),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+enum _EndChoice { finish, abandon }
+
+/// End-of-session sheet — the one place the live session ends. Finishing completes & saves the workout;
+/// abandoning keeps every logged set but marks the session unresumable. With nothing logged there's
+/// nothing to complete, so it collapses to a single "Discard session".
+class _EndSessionSheet extends StatelessWidget {
+  const _EndSessionSheet({required this.logged, required this.total});
+  final int logged;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    final gb = context.gb;
+    final nothingLogged = logged == 0;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.lg, AppSpacing.sm, AppSpacing.lg, AppSpacing.lg),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          GbIconTile(
+            size: 48,
+            radius: AppRadius.sm + 2,
+            background: nothingLogged ? gb.danger0 : gb.primary50,
+            child: Icon(
+                nothingLogged
+                    ? Icons.delete_outline_rounded
+                    : Icons.sports_score_rounded,
+                size: AppSizes.iconXxl,
+                color: nothingLogged ? gb.danger : gb.primary600),
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          GbSheetHeader(
+            title: nothingLogged ? 'End session?' : 'Finish session?',
+            subtitle: nothingLogged
+                ? "You haven't logged any sets yet — ending now discards this session."
+                : 'Logged $logged of $total sets. Finishing saves it to your history.',
+          ),
+          const SizedBox(height: AppSpacing.md + 2),
+          if (nothingLogged)
+            GbButton(
+              label: 'Discard session',
+              severity: GbButtonSeverity.danger,
+              full: true,
+              onPressed: () => Navigator.of(context).pop(_EndChoice.abandon),
+            )
+          else ...[
+            GbButton(
+              label: 'Finish workout',
+              icon: Icons.check_rounded,
+              full: true,
+              onPressed: () => Navigator.of(context).pop(_EndChoice.finish),
+            ),
+            const SizedBox(height: AppSpacing.xs + 2),
+            GbButton(
+              label: 'Abandon session',
+              severity: GbButtonSeverity.danger,
+              variant: GbButtonVariant.text,
+              full: true,
+              onPressed: () => Navigator.of(context).pop(_EndChoice.abandon),
+            ),
+          ],
+          const SizedBox(height: AppSpacing.xs + 2),
+          GbButton(
+            label: 'Keep training',
+            severity: GbButtonSeverity.secondary,
+            variant: GbButtonVariant.outlined,
+            full: true,
+            onPressed: () => Navigator.of(context).pop(),
           ),
         ],
       ),
@@ -2975,7 +3043,8 @@ class _MediaSlotState extends State<_MediaSlot> {
   void _go(int target, int count) {
     if (!_controller.hasClients) return;
     _controller.animateToPage(target.clamp(0, count - 1),
-        duration: const Duration(milliseconds: 280), curve: Curves.easeOutCubic);
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOutCubic);
   }
 
   @override
@@ -3030,8 +3099,7 @@ class _MediaSlotState extends State<_MediaSlot> {
               // to the nested draggable bottom sheet, so we disable it (NeverScrollable) and page on the
               // GestureDetector's horizontal-drag (swipe) and tap (toggle) instead.
               GestureDetector(
-                onTap: () =>
-                    _go((activePage + 1) % pages.length, pages.length),
+                onTap: () => _go((activePage + 1) % pages.length, pages.length),
                 onHorizontalDragEnd: (d) {
                   final v = d.primaryVelocity ?? 0;
                   if (v < -80) {
@@ -3153,11 +3221,22 @@ class _MediaChip extends StatelessWidget {
 /// "TARGETS" label + muscle pills (primary tinted, secondary neutral, each with a leading dot).
 // Fine muscle-slug → human label for the TARGETS pills (e.g. `biceps` → "Biceps", `gluteal` → "Glutes").
 const Map<String, String> _kMuscleLabels = {
-  'chest': 'Chest', 'obliques': 'Obliques', 'abs': 'Abs', 'biceps': 'Biceps',
-  'triceps': 'Triceps', 'forearm': 'Forearms', 'trapezius': 'Traps',
-  'deltoids': 'Delts', 'upper-back': 'Upper back', 'lower-back': 'Lower back',
-  'adductors': 'Adductors', 'quadriceps': 'Quads', 'tibialis': 'Shins',
-  'calves': 'Calves', 'hamstring': 'Hamstrings', 'gluteal': 'Glutes',
+  'chest': 'Chest',
+  'obliques': 'Obliques',
+  'abs': 'Abs',
+  'biceps': 'Biceps',
+  'triceps': 'Triceps',
+  'forearm': 'Forearms',
+  'trapezius': 'Traps',
+  'deltoids': 'Delts',
+  'upper-back': 'Upper back',
+  'lower-back': 'Lower back',
+  'adductors': 'Adductors',
+  'quadriceps': 'Quads',
+  'tibialis': 'Shins',
+  'calves': 'Calves',
+  'hamstring': 'Hamstrings',
+  'gluteal': 'Glutes',
 };
 String _muscleLabel(String slug) => _kMuscleLabels[slug] ?? _titleCase(slug);
 

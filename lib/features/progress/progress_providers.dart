@@ -31,6 +31,12 @@ extension ProgressRangeX on ProgressRange {
 final progressRangeProvider =
     StateProvider<ProgressRange>((ref) => ProgressRange.week);
 
+/// The last trend window (Week / 4w / 12w) the user picked, remembered so toggling **Today ↔ Trends**
+/// restores it instead of snapping back to Week. Never `today` — the merged Trends tab reads this to
+/// know which window to re-enter.
+final progressTrendWindowProvider =
+    StateProvider<ProgressRange>((ref) => ProgressRange.week);
+
 /// The selected look-back window in weeks, derived from [progressRangeProvider]. The overview +
 /// per-lift e1RM + strength + nutrition fetches read it and re-request with the matching window. The
 /// This Week hero is intentionally NOT period-sensitive — it always reflects the current week.
