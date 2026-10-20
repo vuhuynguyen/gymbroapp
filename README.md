@@ -234,7 +234,7 @@ environments are baked into [`lib/core/config/app_config.dart`](lib/core/config/
 
 ```bash
 flutter run                                          # dev  → http://localhost:5216  (local `dotnet run`)
-flutter run --dart-define-from-file=config/prod.json # prod → https://gymbro.ddns.net (live)
+flutter run --dart-define-from-file=config/prod.json # prod → https://gymbro-api.fly.dev (live)
 flutter run --dart-define=GYMBRO_ENV=prod            # prod, flag form (no file)
 ```
 

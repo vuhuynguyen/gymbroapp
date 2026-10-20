@@ -5,7 +5,7 @@ TestFlight. Covers the first (cabled) install, enabling **wireless installs**, a
 **7-day re-sign**.
 
 > This is a free-Apple-ID side-load. The app points at the **live** backend
-> (`https://gymbro.ddns.net`) via `config/prod.json`, so no local API is needed on the phone.
+> (`https://gymbro-api.fly.dev`) via `config/prod.json`, so no local API is needed on the phone.
 
 ---
 
@@ -148,5 +148,5 @@ TestFlight for sharing with others.
 
 - Device on file: **Autunna** — iPhone 13 Pro Max, iOS 26.5
   - Flutter device id: `00008110-001874C80221801E`
-- Backend (prod): `https://gymbro.ddns.net` (see [`config/prod.json`](../config/prod.json))
+- Backend (prod): `https://gymbro-api.fly.dev` (see [`config/prod.json`](../config/prod.json))
 - Env resolution & config flags: [`lib/core/config/app_config.dart`](../lib/core/config/app_config.dart)
