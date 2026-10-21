@@ -5,7 +5,7 @@
 /// the live host only when you actually need it:
 ///
 ///   flutter run                                          # dev  → http://localhost:5216 (local API)
-///   flutter run --dart-define-from-file=config/prod.json # prod → https://gymbro.ddns.net (live)
+///   flutter run --dart-define-from-file=config/prod.json # prod → https://gymbro-api.fly.dev (live)
 ///   flutter run --dart-define=GYMBRO_ENV=prod            # prod, flag form (no file)
 ///
 /// Resolution order for [apiBaseUrl] (highest priority first):
@@ -30,8 +30,8 @@ class AppConfig {
     defaultValue: 'http://localhost:5216',
   );
 
-  /// Live production host (real TLS via Caddy / Let's Encrypt).
-  static const String _prodApiBaseUrl = 'https://gymbro.ddns.net';
+  /// Live production host (the API on Fly.io; TLS terminates at its edge).
+  static const String _prodApiBaseUrl = 'https://gymbro-api.fly.dev';
 
   /// Explicit override — wins over the [environment] switch when non-empty.
   static const String _explicitApiBaseUrl = String.fromEnvironment(
